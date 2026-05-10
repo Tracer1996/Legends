@@ -968,7 +968,7 @@ local KNOWN_BOSSES = {
   ["Masterpiece Harvester"] = true, ["Mr. Smite"] = true, ["Cookie"] = true,
   ["Captain Greenskin"] = true, ["Edwin VanCleef"] = true,
   -- Shadowfang Keep
-  ["Rethilgore"] = true, ["Fel Steed"] = true, ["Razorclaw the Butcher"] = true,
+  ["Rethilgore"] = true, ["Razorclaw the Butcher"] = true,
   ["Baron Silverlaine"] = true, ["Commander Springvale"] = true,
   ["Sever"] = true, ["Odo the Blindwatcher"] = true, ["Deathsworn Captain"] = true,
   ["Fenrus the Devourer"] = true, ["Arugal's Voidwalker"] = true,
@@ -1569,8 +1569,9 @@ function LeafVE:GetAchievementMeta(achId)
     return directMeta
   end
 
-  if LeafVE_AchTest and LeafVE_AchTest.GetAchievementMeta then
-    local legacyMeta = LeafVE_AchTest.GetAchievementMeta(achId)
+  local achievementsAddon = LeafVillageAchievements or LeafVE_AchTest
+  if achievementsAddon and achievementsAddon.GetAchievementMeta then
+    local legacyMeta = achievementsAddon.GetAchievementMeta(achId)
     if legacyMeta then
       return {
         id = achId,
@@ -1618,18 +1619,20 @@ end
 
 function LeafVE:GetAchievementsTestEntriesForPlayer(playerName, limit)
   local targetName = ShortName(playerName or UnitName("player"))
-  local api = LeafVE_AchTest and LeafVE_AchTest.API
+  local achievementsAddon = LeafVillageAchievements or LeafVE_AchTest
+  local achievementsDB = LeafVillageAchievements_DB or LeafVE_AchTest_DB
+  local api = achievementsAddon and achievementsAddon.API
   local hasAuthority = false
   if not targetName or not api or type(api.GetRecentAchievements) ~= "function" then
     return nil
   end
 
-  if LeafVE_AchTest_DB and type(LeafVE_AchTest_DB.achievements) == "table" then
-    if LeafVE_AchTest_DB.achievements[targetName] then
+  if achievementsDB and type(achievementsDB.achievements) == "table" then
+    if achievementsDB.achievements[targetName] then
       hasAuthority = true
     else
       local targetLower = Lower(targetName)
-      for storedName, storedAchievements in pairs(LeafVE_AchTest_DB.achievements) do
+      for storedName, storedAchievements in pairs(achievementsDB.achievements) do
         if type(storedName) == "string" and type(storedAchievements) == "table" and Lower(storedName) == targetLower then
           hasAuthority = true
           targetName = storedName
@@ -1673,7 +1676,9 @@ end
 
 function LeafVE:GetAchievementsTestPointsForPlayer(playerName)
   local targetName = ShortName(playerName or UnitName("player"))
-  local api = LeafVE_AchTest and LeafVE_AchTest.API
+  local achievementsAddon = LeafVillageAchievements or LeafVE_AchTest
+  local achievementsDB = LeafVillageAchievements_DB or LeafVE_AchTest_DB
+  local api = achievementsAddon and achievementsAddon.API
   local hasAuthority = false
   local me = ShortName(UnitName("player"))
   local isSelf = targetName and me and Lower(targetName) == Lower(me)
@@ -1681,12 +1686,12 @@ function LeafVE:GetAchievementsTestPointsForPlayer(playerName)
     return nil, false
   end
 
-  if LeafVE_AchTest_DB and type(LeafVE_AchTest_DB.achievements) == "table" then
-    if LeafVE_AchTest_DB.achievements[targetName] then
+  if achievementsDB and type(achievementsDB.achievements) == "table" then
+    if achievementsDB.achievements[targetName] then
       hasAuthority = true
     else
       local targetLower = Lower(targetName)
-      for storedName, storedAchievements in pairs(LeafVE_AchTest_DB.achievements) do
+      for storedName, storedAchievements in pairs(achievementsDB.achievements) do
         if type(storedName) == "string" and type(storedAchievements) == "table" and Lower(storedName) == targetLower then
           hasAuthority = true
           targetName = storedName
@@ -1845,8 +1850,9 @@ function LeafVE:GetAchievementPointsForPlayer(playerName)
     return total
   end
 
-  if LeafVE_AchTest and LeafVE_AchTest.API and LeafVE_AchTest.API.GetPlayerPoints then
-    return LeafVE_AchTest.API.GetPlayerPoints(playerName) or 0
+  local achievementsAddon = LeafVillageAchievements or LeafVE_AchTest
+  if achievementsAddon and achievementsAddon.API and achievementsAddon.API.GetPlayerPoints then
+    return achievementsAddon.API.GetPlayerPoints(playerName) or 0
   end
 
   return 0
@@ -4942,8 +4948,9 @@ function LeafVE:InstallAllianceSendHook()
                   or string.sub(rawMessage, 1, string.len(ownBracketedPrefix)) == ownBracketedPrefix
               end
             end
-            if not hasExistingTitle and LeafVE_AchTest and LeafVE_AchTest.GetCurrentTitle then
-              local achTitle = LeafVE_AchTest:GetCurrentTitle(me)
+            local achievementsAddon = LeafVillageAchievements or LeafVE_AchTest
+            if not hasExistingTitle and achievementsAddon and achievementsAddon.GetCurrentTitle then
+              local achTitle = achievementsAddon:GetCurrentTitle(me)
               local achTitleName = achTitle and achTitle.name or nil
               if achTitleName and achTitleName ~= "" then
                 local achPlainPrefix = tostring(achTitleName) .. " "
@@ -17145,14 +17152,14 @@ function LeafVE.UI:ShowPlayerCard(playerName)
   local recentAch = LeafVE:GetAchievementEntriesForPlayer(playerName, 5)
   if self.cardAchSummary then
     if table.getn(recentAch) > 0 then
-      if LeafVE_AchTest and LeafVE_AchTest.API then
-        self.cardAchSummary:SetText("Latest LeafVE achievement progress")
+      if (LeafVillageAchievements or LeafVE_AchTest) and (LeafVillageAchievements or LeafVE_AchTest).API then
+        self.cardAchSummary:SetText("Latest LeafVillageAchievements progress")
       else
         self.cardAchSummary:SetText("Latest client and synced achievements")
       end
       self.cardAchSummary:SetTextColor(0.74, 0.79, 0.84)
     else
-      if LeafVE_AchTest and LeafVE_AchTest.API then
+      if (LeafVillageAchievements or LeafVE_AchTest) and (LeafVillageAchievements or LeafVE_AchTest).API then
         self.cardAchSummary:SetText("LeafVillageAchievements will populate here")
       else
         self.cardAchSummary:SetText("Built-in client or guild sync will populate here")
@@ -30793,10 +30800,11 @@ function LeafVE.UI:RefreshAchievementPopup(playerName)
           GameTooltip:AddLine(achPts.." Achievement Points", 1.0, 0.5, 0.0)
           -- Boss criteria list for dungeon/raid completion achievements
           if meta and meta.criteria_key and meta.criteria_type then
-            local bossList = LeafVE_AchTest and LeafVE_AchTest.GetBossCriteria and
-                             LeafVE_AchTest.GetBossCriteria(meta.criteria_key, meta.criteria_type)
-            local progress = LeafVE_AchTest and LeafVE_AchTest.GetBossProgress and
-                             LeafVE_AchTest.GetBossProgress(this.achPlayerName, meta.criteria_key, meta.criteria_type)
+            local achievementsAddon = LeafVillageAchievements or LeafVE_AchTest
+            local bossList = achievementsAddon and achievementsAddon.GetBossCriteria and
+                             achievementsAddon.GetBossCriteria(meta.criteria_key, meta.criteria_type)
+            local progress = achievementsAddon and achievementsAddon.GetBossProgress and
+                             achievementsAddon.GetBossProgress(this.achPlayerName, meta.criteria_key, meta.criteria_type)
             if bossList then
               GameTooltip:AddLine(" ", 1, 1, 1)
               GameTooltip:AddLine("Criteria:", 1.0, 0.82, 0.2)
@@ -39176,7 +39184,18 @@ function LeafVE:RegisterBadgeHyperlinkHandler()
 
   self.badgeHyperlinkOriginalSetItemRef = SetItemRef
   self.badgeHyperlinkWrappedRef = function(link, text, button, chatFrame)
-    local badgeId = string.match(link, "^leafve_badge:(.+)$")
+    local badgeId = nil
+    local titleId = nil
+    local achId = nil
+    if type(link) == "string" then
+      if string.sub(link, 1, 13) == "leafve_badge:" then
+        badgeId = string.sub(link, 14)
+      elseif string.sub(link, 1, 13) == "leafve_title:" then
+        titleId = string.sub(link, 14)
+      elseif string.sub(link, 1, 11) == "leafve_ach:" then
+        achId = string.sub(link, 12)
+      end
+    end
     if badgeId then
       local badge = GetBadgeDefinition(badgeId)
       if badge and LeafVE:ShowChatAnnouncementTooltip("badge", badge) then
@@ -39185,7 +39204,6 @@ function LeafVE:RegisterBadgeHyperlinkHandler()
     end
 
     -- Handle achievement hyperlinks ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â same panel, populated with achievement data
-    local titleId = string.match(link, "^leafve_title:(.+)$")
     if titleId then
       local titleDef = LeafVE:GetTitleDefinition(titleId)
       if titleDef and LeafVE:ShowChatAnnouncementTooltip("title", titleDef) then
@@ -39193,7 +39211,6 @@ function LeafVE:RegisterBadgeHyperlinkHandler()
       end
     end
 
-    local achId = string.match(link, "^leafve_ach:(.+)$")
     if achId then
       local achData = LeafVE:GetAchievementMeta(achId)
       if achData then

@@ -3,6 +3,8 @@
 local hasRegisterAddonMessagePrefix = type(RegisterAddonMessagePrefix) == "function"
 local hasStringMatch = type(string.match) == "function"
 local hasUnitFactionGroup = type(UnitFactionGroup) == "function"
+local legacyStringFind = string.find
+local legacyStringGFind = string.gfind
 
 LEAFVE_COMPAT_112 = (not hasRegisterAddonMessagePrefix) or (not hasStringMatch) or (not hasUnitFactionGroup)
 
@@ -13,12 +15,31 @@ if type(RegisterAddonMessagePrefix) ~= "function" then
 end
 
 if type(string.match) ~= "function" then
-  function string.match(text, pattern)
+  function string.match(text, pattern, init)
     if text == nil or pattern == nil then
       return nil
     end
 
-    local results = { string.find(text, pattern) }
+    text = tostring(text)
+    pattern = tostring(pattern)
+
+    local startIndex = tonumber(init)
+    if startIndex and startIndex > 1 then
+      text = string.sub(text, startIndex)
+    end
+
+    if type(legacyStringGFind) == "function" then
+      local iterator = legacyStringGFind(text, pattern)
+      if iterator then
+        return iterator()
+      end
+    end
+
+    if type(legacyStringFind) ~= "function" then
+      return nil
+    end
+
+    local results = { legacyStringFind(text, pattern) }
     if not results[1] then
       return nil
     end
@@ -31,8 +52,8 @@ if type(string.match) ~= "function" then
   end
 end
 
-if type(string.gmatch) ~= "function" and type(string.gfind) == "function" then
-  string.gmatch = string.gfind
+if type(string.gmatch) ~= "function" and type(legacyStringGFind) == "function" then
+  string.gmatch = legacyStringGFind
 end
 
 if type(UnitFactionGroup) ~= "function" and type(UnitRace) == "function" then
