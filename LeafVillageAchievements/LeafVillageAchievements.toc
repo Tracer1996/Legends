@@ -1,0 +1,14 @@
+## Interface: 11200
+## Title: LeafVillageAchievements
+## Notes: Achievement system for Leaf Village Legends
+## Version: 3.0
+## SavedVariablesPerCharacter: LeafVE_AchTest_DB
+data\LeafVE_ConsumablesDB.lua
+LeafVillageAchievements.lua
+data\LeafVE_Ach_Kills.lua
+data\LeafVE_Ach_Skills.lua
+data\LeafVE_Ach_Identity.lua
+data\LeafVE_Ach_Roleplay.lua
+data\LeafVE_Ach_Reputation.lua
+data\LeafVE_Ach_Quests.lua
+data\LeafVE_Ach_QuestRewards.lua

@@ -1,0 +1,175 @@
+# Epoch Native Achievement Summary
+
+- Generated: `2026-04-30 17:48:47`
+- Player: `Methl` on `Kezan`
+- Build: `3.3.5` (`12340`)
+- Dumped achievements: `1994`
+- Visible achievements: `366`
+- Hidden achievements: `1628`
+- Dependency closure for visible achievements: `750`
+- Hidden dependencies actually referenced by visible achievements: `384`
+- Visible custom achievements (`>= 4900`): `98`
+
+## Categories
+
+- `81` Feats of Strength: 0 visible achievements
+- `92` General: 40 visible achievements
+- `95` Player vs. Player: 11 visible achievements
+- `96` Quests: 48 visible achievements
+- `97` Exploration: 3 visible achievements
+- `155` World Events: 8 visible achievements
+- `156` Winter Veil: 11 visible achievements
+- `158` Hallow's End: 16 visible achievements
+- `159` Noblegarden: 11 visible achievements
+- `160` Lunar Festival: 14 visible achievements
+- `161` Midsummer: 12 visible achievements
+- `163` Children's Week: 6 visible achievements
+- `168` Dungeons & Raids: 0 visible achievements
+- `169` Professions: 5 visible achievements
+- `170` Cooking: 11 visible achievements
+- `171` Fishing: 23 visible achievements
+- `172` First Aid: 7 visible achievements
+- `187` Love is in the Air: 15 visible achievements
+- `201` Reputation: 16 visible achievements
+- `14777` Eastern Kingdoms: 22 visible achievements
+- `14778` Kalimdor: 18 visible achievements
+- `14803` Gillijim's Isle: 13 visible achievements
+- `14804` Warsong Gulch: 15 visible achievements
+- `14808` Raids: 7 visible achievements
+- `15100` World: 12 visible achievements
+- `15101` Dungeons: 23 visible achievements
+- `15102` Mirage Raceway: 6 visible achievements
+- `15103` Alchemy: 4 visible achievements
+- `15104` Blacksmithing: 4 visible achievements
+- `15105` Enchanting: 4 visible achievements
+- `15106` Engineering: 4 visible achievements
+- `15107` Leatherworking: 4 visible achievements
+- `15108` Tailoring: 4 visible achievements
+- `15109` Herbalism: 4 visible achievements
+- `15110` Mining: 4 visible achievements
+- `15111` Skinning: 4 visible achievements
+- `15112` World: 1 visible achievements
+
+## Top Criteria Types
+
+- Type `27`: 1856 criteria rows across 119 achievements; example `The Numismatist` -> `A Coin of Unknown Origin`
+- Type `5`: 1093 criteria rows across 1093 achievements; example `(Deprecated) Level 70` -> `Reach level 10`
+- Type `41`: 771 criteria rows across 28 achievements; example `Tastes Like Chicken` -> `Alterac Manna Biscuit`
+- Type `43`: 521 criteria rows across 40 achievements; example `Explore Dun Morogh` -> `Coldridge Pass`
+- Type `8`: 399 criteria rows across 63 achievements; example `The Loremaster` -> `Loremaster of Eastern Kingdoms`
+- Type `0`: 223 criteria rows across 40 achievements; example `Pest Control` -> `Adder`
+- Type `68`: 68 criteria rows across 3 achievements; example `Well Read` -> `Aegwynn and the Dragon Hunt`
+- Type `110`: 60 criteria rows across 11 achievements; example `Bros. Before Ho Ho Ho's` -> `Brother Malach in the Undercity`
+- Type `7`: 59 criteria rows across 17 achievements; example `Did Somebody Order a Knuckle Sandwich?` -> `Unarmed skill raised to 300`
+- Type `29`: 52 criteria rows across 27 achievements; example `High Warlord` -> `High Warlord`
+- Type `28`: 50 criteria rows across 8 achievements; example `The Masquerade` -> `Transformed by Hallowed Wand - Bat`
+- Type `46`: 46 criteria rows across 5 achievements; example `Ambassador of the Horde` -> `Exalted Orgrimmar`
+- Type `42`: 42 criteria rows across 5 achievements; example `Sinister Calling` -> `Hallowed Helm`
+- Type `54`: 37 criteria rows across 12 achievements; example `To All The Squirrels I've Loved Before` -> `Squirrel`
+- Type `56`: 34 criteria rows across 14 achievements; example `Wrecking Ball` -> `Alterac Valley`
+- Type `36`: 33 criteria rows across 9 achievements; example `The Keymaster` -> `Crescent Key`
+- Type `78`: 33 criteria rows across 6 achievements; example `Creatures killed` -> `Beasts`
+- Type `35`: 25 criteria rows across 9 achievements; example `G.N.E.R.D. Rage` -> `50 Honorable Kills with the G.N.E.R.D. buff`
+- Type `33`: 25 criteria rows across 9 achievements; example `Ruins of Lordaeron matches` -> `Ruins of Lordaeron matches`
+- Type `32`: 25 criteria rows across 9 achievements; example `Ring of Trials victories` -> `Ring of Trials victories`
+
+## Notable Custom Visible Achievements
+
+- `4903` Blackmaw Angler
+- `4904` Rite of the Depths
+- `4905` Plenty of Fish in the Sea
+- `4907` Fishing Freelancer
+- `4909` Fishing Mastery
+- `4910` Accomplished Angler
+- `4912` Broodmother's Lair
+- `4919` The Numismatist
+- `4920` Rite of the Laboratory
+- `4921` Alchemy Workhorse
+- `4923` Alchemy Freelancer
+- `4925` Alchemy Mastery
+- `4926` Rite of the Forge
+- `4927` Blacksmithing Workhorse
+- `4929` Blacksmithing Freelancer
+- `4931` Blacksmithing Mastery
+- `4932` Rite of the Fire
+- `4933` Cooking Workhorse
+- `4937` Cooking Freelancer
+- `4939` Cooking Mastery
+- `4940` Rite of the Arcane
+- `4941` Enchanting Workhorse
+- `4943` Enchanting Freelancer
+- `4945` Enchanting Mastery
+- `4946` Rite of the Workshop
+- `4947` Engineering Workhorse
+- `4949` Engineering Freelancer
+- `4951` Engineering Mastery
+- `4952` Stocking Up
+- `4953` Rite of the Medicant
+- `4955` First Aid Freelancer
+- `4957` First Aid Mastery
+- `4958` Rite of the Fields
+- `4959` Herbalism Workhorse
+- `4961` Herbalism Freelancer
+- `4963` Herbalism Mastery
+- `4964` Rite of the Hunt
+- `4965` Leatherworking Workhorse
+- `4967` Leatherworking Freelancer
+- `4969` Leatherworking Mastery
+- `4970` Rite of the Mountains
+- `4971` Mining Workhorse
+- `4973` Mining Freelancer
+- `4975` Mining Mastery
+- `4976` Rite of the Wilds
+- `4977` Skinning Workhorse
+- `4979` Skinning Freelancer
+- `4981` Skinning Mastery
+- `4982` Rite of the Loom
+- `4983` Tailoring Workhorse
+- `4985` Tailoring Freelancer
+- `4987` Tailoring Mastery
+- `4988` Battle for Hillsbrad: Assault
+- `4989` Battle for Hillsbrad: Defense
+- `4990` The Veiled Blade
+- `4994` Glittermurk Mines
+- `4995` Attunement to the Core
+- `4996` Stratholme: Service Gate
+- `4997` Baradin Hold
+- `5002` Bloodthirsty
+- `5007` Raceway License
+- `5008` Podium Placement
+- `5009` Winner Winner Chicken Dinner
+- `5055` Loremaster of Eastern Kingdoms
+- `5056` Loremaster of Kalimdor
+- `5057` The Loremaster
+- `5058` Lorewalker of Alterac Mountains
+- `5059` Lorewalker of Arathi Highlands
+- `5060` Lorewalker of Ashenvale
+- `5061` Lorewalker of Azshara
+- `5062` Lorewalker of Badlands
+- `5063` Lorewalker of Blasted Lands
+- `5064` Lorewalker of Burning Steppes
+- `5065` Lorewalker of Desolace
+- `5066` Lorewalker of Durotar
+- `5067` Lorewalker of Dustwallow Marsh
+- `5068` Lorewalker of Eastern Plaguelands
+- `5069` Lorewalker of Felwood
+- `5070` Lorewalker of Feralas
+- `5071` Lorewalker of Hillsbrad Foothills
+- `5072` Lorewalker of Mulgore
+- `5073` Lorewalker of Searing Gorge
+- `5074` Lorewalker of Silverpine Forest
+- `5075` Lorewalker of Stonetalon Mountains
+- `5076` Lorewalker of Stranglethorn Vale
+- `5077` Lorewalker of Swamp of Sorrows
+- `5078` Lorewalker of Tanaris
+- `5079` Lorewalker of The Barrens
+- `5080` Lorewalker of The Hinterlands
+- `5081` Lorewalker of Thousand Needles
+- `5082` Lorewalker of Tirisfal Glades
+- `5083` Lorewalker of Un'Goro Crater
+- `5084` Lorewalker of Western Plaguelands
+- `5085` Lorewalker of Winterspring
+- `5087` The Thorium Brotherhood
+- `5088` Valor's Expedition
+- `5089` Volchan
+- `5090` Deck The Halls With Bows and Volley

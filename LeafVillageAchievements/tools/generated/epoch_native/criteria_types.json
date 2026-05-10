@@ -1,0 +1,1192 @@
+[
+  {
+    "criteriaType": 27,
+    "criteriaRows": 1856,
+    "achievementCount": 119,
+    "hiddenAchievementRefRows": 219,
+    "example": {
+      "achievementID": 4919,
+      "achievementName": "The Numismatist",
+      "criteriaID": 14692,
+      "description": "A Coin of Unknown Origin",
+      "quantityString": "0",
+      "assetID": 26163
+    }
+  },
+  {
+    "criteriaType": 5,
+    "criteriaRows": 1093,
+    "achievementCount": 1093,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 12,
+      "achievementName": "(Deprecated) Level 70",
+      "criteriaID": 13681,
+      "description": "Reach level 10",
+      "quantityString": "30",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 41,
+    "criteriaRows": 771,
+    "achievementCount": 28,
+    "hiddenAchievementRefRows": 12,
+    "example": {
+      "achievementID": 1832,
+      "achievementName": "Tastes Like Chicken",
+      "criteriaID": 6448,
+      "description": "Alterac Manna Biscuit",
+      "quantityString": "4 / 50",
+      "assetID": 19301
+    }
+  },
+  {
+    "criteriaType": 43,
+    "criteriaRows": 521,
+    "achievementCount": 40,
+    "hiddenAchievementRefRows": 264,
+    "example": {
+      "achievementID": 627,
+      "achievementName": "Explore Dun Morogh",
+      "criteriaID": 502,
+      "description": "Coldridge Pass",
+      "quantityString": "0",
+      "assetID": 117
+    }
+  },
+  {
+    "criteriaType": 8,
+    "criteriaRows": 399,
+    "achievementCount": 63,
+    "hiddenAchievementRefRows": 108,
+    "example": {
+      "achievementID": 1682,
+      "achievementName": "The Loremaster",
+      "criteriaID": 6147,
+      "description": "Loremaster of Eastern Kingdoms",
+      "quantityString": "0",
+      "assetID": 1677
+    }
+  },
+  {
+    "criteriaType": 0,
+    "criteriaRows": 223,
+    "achievementCount": 40,
+    "hiddenAchievementRefRows": 5,
+    "example": {
+      "achievementID": 2556,
+      "achievementName": "Pest Control",
+      "criteriaID": 9358,
+      "description": "Adder",
+      "quantityString": "1",
+      "assetID": 3300
+    }
+  },
+  {
+    "criteriaType": 68,
+    "criteriaRows": 68,
+    "achievementCount": 3,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 1244,
+      "achievementName": "Well Read",
+      "criteriaID": 3762,
+      "description": "Aegwynn and the Dragon Hunt",
+      "quantityString": "0",
+      "assetID": 175738
+    }
+  },
+  {
+    "criteriaType": 110,
+    "criteriaRows": 60,
+    "achievementCount": 11,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 1685,
+      "achievementName": "Bros. Before Ho Ho Ho's",
+      "criteriaID": 6225,
+      "description": "Brother Malach in the Undercity",
+      "quantityString": "0",
+      "assetID": 26004
+    }
+  },
+  {
+    "criteriaType": 7,
+    "criteriaRows": 59,
+    "achievementCount": 17,
+    "hiddenAchievementRefRows": 26,
+    "example": {
+      "achievementID": 16,
+      "achievementName": "Did Somebody Order a Knuckle Sandwich?",
+      "criteriaID": 167,
+      "description": "Unarmed skill raised to 300",
+      "quantityString": "122 / 300",
+      "assetID": 162
+    }
+  },
+  {
+    "criteriaType": 29,
+    "criteriaRows": 52,
+    "achievementCount": 27,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 443,
+      "achievementName": "High Warlord",
+      "criteriaID": 727,
+      "description": "High Warlord",
+      "quantityString": "36 / 100000",
+      "assetID": 150140
+    }
+  },
+  {
+    "criteriaType": 28,
+    "criteriaRows": 50,
+    "achievementCount": 8,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 283,
+      "achievementName": "The Masquerade",
+      "criteriaID": 3209,
+      "description": "Transformed by Hallowed Wand - Bat",
+      "quantityString": "0",
+      "assetID": 24733
+    }
+  },
+  {
+    "criteriaType": 46,
+    "criteriaRows": 46,
+    "achievementCount": 5,
+    "hiddenAchievementRefRows": 17,
+    "example": {
+      "achievementID": 762,
+      "achievementName": "Ambassador of the Horde",
+      "criteriaID": 992,
+      "description": "Exalted Orgrimmar",
+      "quantityString": "6889",
+      "assetID": 76
+    }
+  },
+  {
+    "criteriaType": 42,
+    "criteriaRows": 42,
+    "achievementCount": 5,
+    "hiddenAchievementRefRows": 1,
+    "example": {
+      "achievementID": 292,
+      "achievementName": "Sinister Calling",
+      "criteriaID": 12908,
+      "description": "Hallowed Helm",
+      "quantityString": "0",
+      "assetID": 33292
+    }
+  },
+  {
+    "criteriaType": 54,
+    "criteriaRows": 37,
+    "achievementCount": 12,
+    "hiddenAchievementRefRows": 31,
+    "example": {
+      "achievementID": 1206,
+      "achievementName": "To All The Squirrels I've Loved Before",
+      "criteriaID": 3615,
+      "description": "Squirrel",
+      "quantityString": "0",
+      "assetID": 225
+    }
+  },
+  {
+    "criteriaType": 56,
+    "criteriaRows": 34,
+    "achievementCount": 14,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 231,
+      "achievementName": "Wrecking Ball",
+      "criteriaID": 3368,
+      "description": "Alterac Valley",
+      "quantityString": "3 / 20",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 36,
+    "criteriaRows": 33,
+    "achievementCount": 9,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 1187,
+      "achievementName": "The Keymaster",
+      "criteriaID": 3560,
+      "description": "Crescent Key",
+      "quantityString": "0",
+      "assetID": 18249
+    }
+  },
+  {
+    "criteriaType": 78,
+    "criteriaRows": 33,
+    "achievementCount": 6,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 107,
+      "achievementName": "Creatures killed",
+      "criteriaID": 4948,
+      "description": "Beasts",
+      "quantityString": "5523",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 35,
+    "criteriaRows": 25,
+    "achievementCount": 9,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 1261,
+      "achievementName": "G.N.E.R.D. Rage",
+      "criteriaID": 3882,
+      "description": "50 Honorable Kills with the G.N.E.R.D. buff",
+      "quantityString": "0 / 50",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 33,
+    "criteriaRows": 25,
+    "achievementCount": 9,
+    "hiddenAchievementRefRows": 15,
+    "example": {
+      "achievementID": 99,
+      "achievementName": "Ruins of Lordaeron matches",
+      "criteriaID": 5732,
+      "description": "Ruins of Lordaeron matches",
+      "quantityString": "--",
+      "assetID": 572
+    }
+  },
+  {
+    "criteriaType": 32,
+    "criteriaRows": 25,
+    "achievementCount": 9,
+    "hiddenAchievementRefRows": 15,
+    "example": {
+      "achievementID": 100,
+      "achievementName": "Ring of Trials victories",
+      "criteriaID": 5735,
+      "description": "Ring of Trials victories",
+      "quantityString": "--",
+      "assetID": 559
+    }
+  },
+  {
+    "criteriaType": 70,
+    "criteriaRows": 21,
+    "achievementCount": 13,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 213,
+      "achievementName": "Marooned Five",
+      "criteriaID": 3685,
+      "description": "5 Flag Carriers",
+      "quantityString": "0 / 5",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 75,
+    "criteriaRows": 19,
+    "achievementCount": 19,
+    "hiddenAchievementRefRows": 5,
+    "example": {
+      "achievementID": 15,
+      "achievementName": "Plenty of Pets",
+      "criteriaID": 3689,
+      "description": "Obtain 15 companion pets",
+      "quantityString": "0 / 15",
+      "assetID": 778
+    }
+  },
+  {
+    "criteriaType": 1,
+    "criteriaRows": 19,
+    "achievementCount": 9,
+    "hiddenAchievementRefRows": 14,
+    "example": {
+      "achievementID": 784,
+      "achievementName": "Gillijim's Isle Domination",
+      "criteriaID": 1239,
+      "description": "Win Gillijim's Isle 10 times while holding 4 bases",
+      "quantityString": "0 / 10",
+      "assetID": 566
+    }
+  },
+  {
+    "criteriaType": 49,
+    "criteriaRows": 19,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 6,
+    "example": {
+      "achievementID": 927,
+      "achievementName": "Equipped epic items in item slots",
+      "criteriaID": 4768,
+      "description": "Cloak is Epic!",
+      "quantityString": "--",
+      "assetID": 14
+    }
+  },
+  {
+    "criteriaType": 15,
+    "criteriaRows": 16,
+    "achievementCount": 6,
+    "hiddenAchievementRefRows": 11,
+    "example": {
+      "achievementID": 52,
+      "achievementName": "Warsong Gulch battles",
+      "criteriaID": 5747,
+      "description": "Warsong Gulch",
+      "quantityString": "7",
+      "assetID": 489
+    }
+  },
+  {
+    "criteriaType": 34,
+    "criteriaRows": 12,
+    "achievementCount": 3,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 727,
+      "achievementName": "Call in the Cavalry",
+      "criteriaID": 6213,
+      "description": "Black Battlestrider",
+      "quantityString": "0",
+      "assetID": 22719
+    }
+  },
+  {
+    "criteriaType": 112,
+    "criteriaRows": 12,
+    "achievementCount": 12,
+    "hiddenAchievementRefRows": 5,
+    "example": {
+      "achievementID": 1795,
+      "achievementName": "Lunch Lady",
+      "criteriaID": 6751,
+      "description": "Learn 25 cooking recipes",
+      "quantityString": "0 / 25",
+      "assetID": 185
+    }
+  },
+  {
+    "criteriaType": 30,
+    "criteriaRows": 11,
+    "achievementCount": 8,
+    "hiddenAchievementRefRows": 7,
+    "example": {
+      "achievementID": 1786,
+      "achievementName": "School of Hard Knocks",
+      "criteriaID": 6641,
+      "description": "Capture the flag in Eye of the Storm",
+      "quantityString": "0",
+      "assetID": 183
+    }
+  },
+  {
+    "criteriaType": 40,
+    "criteriaRows": 11,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 5,
+    "example": {
+      "achievementID": 1199,
+      "achievementName": "Professions learned",
+      "criteriaID": 5551,
+      "description": "Alchemy",
+      "quantityString": "5",
+      "assetID": 171
+    }
+  },
+  {
+    "criteriaType": 9,
+    "criteriaRows": 10,
+    "achievementCount": 10,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 504,
+      "achievementName": "100 Quests Completed",
+      "criteriaID": 231,
+      "description": "Complete 100 quests",
+      "quantityString": "100 / 100",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 121,
+    "criteriaRows": 10,
+    "achievementCount": 10,
+    "hiddenAchievementRefRows": 5,
+    "example": {
+      "achievementID": 4933,
+      "achievementName": "Cooking Workhorse",
+      "criteriaID": 14749,
+      "description": "Delicious dishes created",
+      "quantityString": "0 / 500",
+      "assetID": 185
+    }
+  },
+  {
+    "criteriaType": 109,
+    "criteriaRows": 10,
+    "achievementCount": 9,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 150,
+      "achievementName": "The Fishing Diplomat",
+      "criteriaID": 5274,
+      "description": "Orgrimmar",
+      "quantityString": "0",
+      "assetID": 3
+    }
+  },
+  {
+    "criteriaType": 52,
+    "criteriaRows": 9,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 2,
+    "example": {
+      "achievementID": 245,
+      "achievementName": "That Takes Class",
+      "criteriaID": 2360,
+      "description": "Druid",
+      "quantityString": "1",
+      "assetID": 11
+    }
+  },
+  {
+    "criteriaType": 14,
+    "criteriaRows": 9,
+    "achievementCount": 9,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 974,
+      "achievementName": "50 Daily Quests Complete",
+      "criteriaID": 2233,
+      "description": "Complete 50 daily quests",
+      "quantityString": "0 / 50",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 47,
+    "criteriaRows": 9,
+    "achievementCount": 9,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 518,
+      "achievementName": "30 Exalted Reputations",
+      "criteriaID": 985,
+      "description": "30 reputations to exalted",
+      "quantityString": "0 / 30",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 18,
+    "criteriaRows": 9,
+    "achievementCount": 4,
+    "hiddenAchievementRefRows": 3,
+    "example": {
+      "achievementID": 321,
+      "achievementName": "Total raid and dungeon deaths",
+      "criteriaID": 169,
+      "description": "5 man instances",
+      "quantityString": "17",
+      "assetID": 5
+    }
+  },
+  {
+    "criteriaType": 67,
+    "criteriaRows": 8,
+    "achievementCount": 8,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 1176,
+      "achievementName": "Got My Mind On My Money",
+      "criteriaID": 3506,
+      "description": "Loot 100 gold",
+      "quantityString": "7|TInterface\\\\MoneyFrame\\\\UI-GoldIcon:0:0:2:0|t 19|TInterface\\\\MoneyFrame\\\\UI-SilverIcon:0:0:2:0|t 38|TInterface\\\\MoneyFrame\\\\UI-CopperIcon:0:0:2:0|t / 100|TInterface\\\\MoneyFrame\\\\UI-GoldIcon:0:0:2:0|t",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 53,
+    "criteriaRows": 8,
+    "achievementCount": 2,
+    "hiddenAchievementRefRows": 2,
+    "example": {
+      "achievementID": 1005,
+      "achievementName": "Know Thy Enemy",
+      "criteriaID": 2375,
+      "description": "Human",
+      "quantityString": "1",
+      "assetID": 1
+    }
+  },
+  {
+    "criteriaType": 16,
+    "criteriaRows": 6,
+    "achievementCount": 6,
+    "hiddenAchievementRefRows": 5,
+    "example": {
+      "achievementID": 56,
+      "achievementName": "Deaths in Warsong Gulch",
+      "criteriaID": 107,
+      "description": "Deaths in Warsong Gulch",
+      "quantityString": "37",
+      "assetID": 489
+    }
+  },
+  {
+    "criteriaType": 17,
+    "criteriaRows": 5,
+    "achievementCount": 5,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 60,
+      "achievementName": "Total deaths",
+      "criteriaID": 111,
+      "description": "Total deaths",
+      "quantityString": "75",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 26,
+    "criteriaRows": 5,
+    "achievementCount": 4,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 112,
+      "achievementName": "Deaths from drowning",
+      "criteriaID": 147,
+      "description": "Deaths from drowning",
+      "quantityString": "2",
+      "assetID": 1
+    }
+  },
+  {
+    "criteriaType": 62,
+    "criteriaRows": 4,
+    "achievementCount": 4,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 1182,
+      "achievementName": "The Bread Winner",
+      "criteriaID": 3513,
+      "description": "10,000 gold from quest rewards",
+      "quantityString": "5|TInterface\\\\MoneyFrame\\\\UI-GoldIcon:0:0:2:0|t 4|TInterface\\\\MoneyFrame\\\\UI-SilverIcon:0:0:2:0|t 32|TInterface\\\\MoneyFrame\\\\UI-CopperIcon:0:0:2:0|t / 10000|TInterface\\\\MoneyFrame\\\\UI-GoldIcon:0:0:2:0|t",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 72,
+    "criteriaRows": 4,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 1257,
+      "achievementName": "The Scavenger",
+      "criteriaID": 3873,
+      "description": "Bloodsail Wreckage",
+      "quantityString": "0",
+      "assetID": 180901
+    }
+  },
+  {
+    "criteriaType": 31,
+    "criteriaRows": 4,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 587,
+      "achievementName": "Tropical Assassin",
+      "criteriaID": 441,
+      "description": "Kill 5 people at the Naga Ruins",
+      "quantityString": "0",
+      "assetID": 3870
+    }
+  },
+  {
+    "criteriaType": 20,
+    "criteriaRows": 4,
+    "achievementCount": 3,
+    "hiddenAchievementRefRows": 1,
+    "example": {
+      "achievementID": 58,
+      "achievementName": "Deaths from Drek'Thar",
+      "criteriaID": 456,
+      "description": "Killed by Drek'Thar",
+      "quantityString": "--",
+      "assetID": 11946
+    }
+  },
+  {
+    "criteriaType": 59,
+    "criteriaRows": 3,
+    "achievementCount": 3,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 328,
+      "achievementName": "Total gold acquired",
+      "criteriaID": 4091,
+      "description": "Money from vendors",
+      "quantityString": "47|TInterface\\\\MoneyFrame\\\\UI-GoldIcon:0:0:2:0|t 56|TInterface\\\\MoneyFrame\\\\UI-SilverIcon:0:0:2:0|t 31|TInterface\\\\MoneyFrame\\\\UI-CopperIcon:0:0:2:0|t",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 80,
+    "criteriaRows": 3,
+    "achievementCount": 3,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 328,
+      "achievementName": "Total gold acquired",
+      "criteriaID": 4225,
+      "description": "Money from auctions",
+      "quantityString": "47|TInterface\\\\MoneyFrame\\\\UI-GoldIcon:0:0:2:0|t 56|TInterface\\\\MoneyFrame\\\\UI-SilverIcon:0:0:2:0|t 31|TInterface\\\\MoneyFrame\\\\UI-CopperIcon:0:0:2:0|t",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 39,
+    "criteriaRows": 3,
+    "achievementCount": 3,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 370,
+      "achievementName": "Highest 2 man personal rating",
+      "criteriaID": 451,
+      "description": "Highest 2 man personal rating",
+      "quantityString": "--",
+      "assetID": 2
+    }
+  },
+  {
+    "criteriaType": 38,
+    "criteriaRows": 3,
+    "achievementCount": 3,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 374,
+      "achievementName": "Highest 2 man team rating",
+      "criteriaID": 448,
+      "description": "",
+      "quantityString": "--",
+      "assetID": 2
+    }
+  },
+  {
+    "criteriaType": 19,
+    "criteriaRows": 3,
+    "achievementCount": 3,
+    "hiddenAchievementRefRows": 1,
+    "example": {
+      "achievementID": 932,
+      "achievementName": "Total 5-player dungeons entered",
+      "criteriaID": 4987,
+      "description": "5-man instances run",
+      "quantityString": "--",
+      "assetID": 5
+    }
+  },
+  {
+    "criteriaType": 45,
+    "criteriaRows": 2,
+    "achievementCount": 2,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 546,
+      "achievementName": "Safe Deposit",
+      "criteriaID": 752,
+      "description": "Purchase 7 bank slots",
+      "quantityString": "0 / 7",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 57,
+    "criteriaRows": 2,
+    "achievementCount": 2,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 1020,
+      "achievementName": "Ten Tabards",
+      "criteriaID": 2335,
+      "description": "Arathor Battle Tabard",
+      "quantityString": "0 / 10",
+      "assetID": 20132
+    }
+  },
+  {
+    "criteriaType": 91,
+    "criteriaRows": 2,
+    "achievementCount": 2,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 336,
+      "achievementName": "Legendary items acquired",
+      "criteriaID": 6141,
+      "description": "Legendary items obtained",
+      "quantityString": "--",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 10,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 31,
+      "achievementName": "A Simple Re-Quest",
+      "criteriaID": 72,
+      "description": "Complete a daily quest every day for five consecutive days",
+      "quantityString": "0 / 5",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 107,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 94,
+      "achievementName": "Quests abandoned",
+      "criteriaID": 5289,
+      "description": "Quests abandoned",
+      "quantityString": "52",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 104,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 189,
+      "achievementName": "Largest heal cast",
+      "criteriaID": 5376,
+      "description": "Largest heal cast",
+      "quantityString": "772",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 101,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 193,
+      "achievementName": "Largest hit dealt",
+      "criteriaID": 5373,
+      "description": "Largest hit dealt",
+      "quantityString": "524",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 13,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 197,
+      "achievementName": "Total damage done",
+      "criteriaID": 162,
+      "description": "Total damage done",
+      "quantityString": "2448236",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 55,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 198,
+      "achievementName": "Total healing done",
+      "criteriaID": 4943,
+      "description": "Total healing done",
+      "quantityString": "33573",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 76,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 319,
+      "achievementName": "Duels won",
+      "criteriaID": 3629,
+      "description": "Duels won",
+      "quantityString": "--",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 77,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 320,
+      "achievementName": "Duels lost",
+      "criteriaID": 3630,
+      "description": "Duels lost",
+      "quantityString": "--",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 82,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 329,
+      "achievementName": "Auctions posted",
+      "criteriaID": 4220,
+      "description": "Auctions Posted",
+      "quantityString": "459",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 84,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 330,
+      "achievementName": "Auction purchases",
+      "criteriaID": 4221,
+      "description": "Total Auction Purchases",
+      "quantityString": "490",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 83,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 331,
+      "achievementName": "Most expensive bid on auction",
+      "criteriaID": 4222,
+      "description": "Highest Auction Bid",
+      "quantityString": "5|TInterface\\\\MoneyFrame\\\\UI-GoldIcon:0:0:2:0|t 95|TInterface\\\\MoneyFrame\\\\UI-SilverIcon:0:0:2:0|t",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 85,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 332,
+      "achievementName": "Most expensive auction sold",
+      "criteriaID": 4223,
+      "description": "Highest sale value on an auction",
+      "quantityString": "90|TInterface\\\\MoneyFrame\\\\UI-SilverIcon:0:0:2:0|t 98|TInterface\\\\MoneyFrame\\\\UI-CopperIcon:0:0:2:0|t",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 86,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 334,
+      "achievementName": "Most gold ever owned",
+      "criteriaID": 4224,
+      "description": "Most gold ever owned:",
+      "quantityString": "55|TInterface\\\\MoneyFrame\\\\UI-GoldIcon:0:0:2:0|t 17|TInterface\\\\MoneyFrame\\\\UI-SilverIcon:0:0:2:0|t 10|TInterface\\\\MoneyFrame\\\\UI-CopperIcon:0:0:2:0|t",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 90,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 341,
+      "achievementName": "Epic items looted",
+      "criteriaID": 6140,
+      "description": "Epic Items Looted",
+      "quantityString": "--",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 108,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 349,
+      "achievementName": "Flight paths taken",
+      "criteriaID": 5305,
+      "description": "Flight paths taken",
+      "quantityString": "65",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 87,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 378,
+      "achievementName": "Most factions at Revered or higher",
+      "criteriaID": 5299,
+      "description": "Factions at revered",
+      "quantityString": "--",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 102,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 527,
+      "achievementName": "Largest hit received",
+      "criteriaID": 5371,
+      "description": "Largest hit received",
+      "quantityString": "1154",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 103,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 528,
+      "achievementName": "Total damage received",
+      "criteriaID": 5372,
+      "description": "Total damage received",
+      "quantityString": "1380370",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 88,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 529,
+      "achievementName": "Most factions at Honored or higher",
+      "criteriaID": 5300,
+      "description": "Factions at honored",
+      "quantityString": "1",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 106,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 829,
+      "achievementName": "Largest heal received",
+      "criteriaID": 5374,
+      "description": "Largest heal received",
+      "quantityString": "1148",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 105,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 830,
+      "achievementName": "Total healing received",
+      "criteriaID": 5375,
+      "description": "Total healing received",
+      "quantityString": "940262",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 89,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 931,
+      "achievementName": "Total factions encountered",
+      "criteriaID": 5301,
+      "description": "Total factions encountered",
+      "quantityString": "14",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 94,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 1043,
+      "achievementName": "Greed rolls made on loot",
+      "criteriaID": 5803,
+      "description": "Greed rolls on loot",
+      "quantityString": "331",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 93,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 1044,
+      "achievementName": "Need rolls made on loot",
+      "criteriaID": 5802,
+      "description": "Need rolls for loot",
+      "quantityString": "71",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 63,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 1146,
+      "achievementName": "Gold spent on travel",
+      "criteriaID": 3356,
+      "description": "Gold spent on travel",
+      "quantityString": "1|TInterface\\\\MoneyFrame\\\\UI-GoldIcon:0:0:2:0|t 31|TInterface\\\\MoneyFrame\\\\UI-SilverIcon:0:0:2:0|t 70|TInterface\\\\MoneyFrame\\\\UI-CopperIcon:0:0:2:0|t",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 65,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 1147,
+      "achievementName": "Gold spent at barber shops",
+      "criteriaID": 3357,
+      "description": "Gold spent at barber shops",
+      "quantityString": "--",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 66,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 1148,
+      "achievementName": "Gold spent on postage",
+      "criteriaID": 3358,
+      "description": "Gold spent on postage",
+      "quantityString": "2|TInterface\\\\MoneyFrame\\\\UI-SilverIcon:0:0:2:0|t 40|TInterface\\\\MoneyFrame\\\\UI-CopperIcon:0:0:2:0|t",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 61,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 1149,
+      "achievementName": "Talent tree respecs",
+      "criteriaID": 3359,
+      "description": "Talent tree respecs",
+      "quantityString": "2",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 60,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 1150,
+      "achievementName": "Gold spent on talent tree respecs",
+      "criteriaID": 3360,
+      "description": "Gold spent on talent tree respecs",
+      "quantityString": "6|TInterface\\\\MoneyFrame\\\\UI-GoldIcon:0:0:2:0|t",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 23,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 1501,
+      "achievementName": "Total deaths from other players",
+      "criteriaID": 5594,
+      "description": "Total deaths from other players",
+      "quantityString": "34",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 114,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 2277,
+      "achievementName": "Summons accepted",
+      "criteriaID": 8586,
+      "description": "Summons accepted",
+      "quantityString": "10",
+      "assetID": 0
+    }
+  },
+  {
+    "criteriaType": 117,
+    "criteriaRows": 1,
+    "achievementCount": 1,
+    "hiddenAchievementRefRows": 0,
+    "example": {
+      "achievementID": 4778,
+      "achievementName": "Disenchant rolls made on loot",
+      "criteriaID": 13258,
+      "description": "Disenchant rolls made on loot",
+      "quantityString": "--",
+      "assetID": 0
+    }
+  }
+]
