@@ -1,1 +1,0 @@
-LeafVE = LeafVE or {}
