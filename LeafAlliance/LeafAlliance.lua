@@ -2,7 +2,7 @@
 -- WoW 1.12 / Lua 5.0 addon
 -- Joins the custom "Alliance" channel on login, suppresses all
 -- join/leave notices for that channel, and locally restyles chat lines
--- from that channel with a yellow guild-aware Alliance tag and yellow linked text.
+-- from that channel with a yellow [Alliance] tag and yellow linked text.
 -- Automatically joins the passworded Alliance channel.
 
 local ADDON_NAME  = "LeafAlliance"
@@ -43,6 +43,7 @@ frame:RegisterEvent("WHO_LIST_UPDATE")
 
 local allianceChannelId = nil
 local handlerGuard      = false
+local setItemRefGuard   = false
 local pratAllianceChannelKey = nil
 local pratAllianceSavedShortname = nil
 local pratAllianceSavedReplace = nil
@@ -218,11 +219,6 @@ local function GetPlayerGuildName()
 end
 
 local function GetAllianceChannelDisplayName(guildName)
-    local displayGuild = Trim(guildName or "")
-    if displayGuild ~= "" then
-        return displayGuild .. " | " .. CHANNEL_NAME
-    end
-
     return CHANNEL_NAME
 end
 
@@ -715,7 +711,11 @@ local function IsAllianceSystemNoticeText(text)
         or string.find(text, "changed owner to", 1, true) ~= nil
         or string.find(text, "channel owner", 1, true) ~= nil
         or string.find(text, "joined channel", 1, true) ~= nil
+        or string.find(text, "joined the channel", 1, true) ~= nil
+        or string.find(text, "has joined", 1, true) ~= nil
         or string.find(text, "left channel", 1, true) ~= nil
+        or string.find(text, "left the channel", 1, true) ~= nil
+        or string.find(text, "has left", 1, true) ~= nil
 end
 
 local function MessageTargetsAllianceChannel(text)
@@ -788,6 +788,13 @@ end
 
 local function ShouldSuppressAllianceNoticeEvent(...)
     local parts = {}
+    local message = arg and arg[1]
+    local channelString = arg and arg[4]
+    local channelNumber = arg and arg[8]
+    local channelName = arg and arg[9]
+    local derivedChannelName = channelName
+    local targetsAlliance = false
+
     for i = 1, table.getn(arg) do
         local value = arg[i]
         if value ~= nil and value ~= "" then
@@ -804,12 +811,22 @@ local function ShouldSuppressAllianceNoticeEvent(...)
         string.find(combined, "join", 1, true) ~= nil
         or string.find(combined, "left", 1, true) ~= nil
         or string.find(combined, "leave", 1, true) ~= nil
+        or string.find(combined, "logout", 1, true) ~= nil
+        or string.find(combined, "log out", 1, true) ~= nil
         or string.find(combined, "owner", 1, true) ~= nil
     ) then
         return false
     end
 
-    return MessageTargetsAllianceChannel(combined)
+    if (not derivedChannelName or derivedChannelName == "") and channelString then
+        derivedChannelName = string.gsub(channelString, "^%d+%.%s*", "")
+    end
+
+    targetsAlliance = IsAllianceChannel(derivedChannelName, channelNumber)
+        or MessageTargetsAllianceChannel(combined)
+        or MessageTargetsAllianceChannel(message or "")
+
+    return targetsAlliance
 end
 
 local function GetPratChannelNamesModule()
@@ -867,7 +884,7 @@ local function ApplyPratAllianceChannelName()
         pratAllianceChannelKey = desiredKey
     end
 
-    prat.db.profile.shortnames[desiredKey] = GetAllianceChannelTagText(GetPlayerGuildName())
+    prat.db.profile.shortnames[desiredKey] = GetAllianceChannelTagText()
     prat.db.profile.replace[desiredKey] = true
 
     if prat.doReplacement then
@@ -1030,6 +1047,8 @@ local function IsSuppressedNoticeType(noticeType)
         or v == "leave"
         or v == "you_joined"
         or v == "you_left"
+        or v == "owner_changed"
+        or v == "owner change"
 end
 
 -- ------------------------------------------------------------------ --
@@ -1041,15 +1060,7 @@ local function AllianceChannelLink(text)
 end
 
 local function BuildAllianceChannelTag(guildName)
-    local displayGuild = Trim(guildName or "")
-
-    if displayGuild == "" then
-        return AllianceChannelLink("[Alliance]")
-    end
-
-    return AllianceChannelLink("[" .. displayGuild .. " ")
-        .. "|c" .. ALLIANCE_TEXT_HEX .. "||" .. "|r"
-        .. AllianceChannelLink(" " .. CHANNEL_NAME .. "]")
+    return AllianceChannelLink("[Alliance]")
 end
 
 local function AllianceGuildLink(guildName)
@@ -1281,7 +1292,13 @@ end
 -- Hyperlink click handler (replaces global SetItemRef)
 -- ------------------------------------------------------------------ --
 
-wrappedSetItemRef = function(link, text, button)
+wrappedSetItemRef = function(...)
+    local args = arg or {}
+    local link = tostring(args[1] or "")
+    local text = args[2]
+
+    args.n = args.n or table.getn(args)
+
     if string.sub(link, 1, string.len(ALLIANCE_LINK_PREFIX)) == ALLIANCE_LINK_PREFIX then
         ShowAllianceTooltip("Alliance Chat", 1, 1, 0)
         return
@@ -1307,8 +1324,22 @@ wrappedSetItemRef = function(link, text, button)
         return
     end
 
-    if originalSetItemRef then
-        originalSetItemRef(link, text, button)
+    if not originalSetItemRef or originalSetItemRef == wrappedSetItemRef then
+        return
+    end
+
+    if setItemRefGuard then
+        return originalSetItemRef(unpack(args, 1, args.n))
+    end
+
+    setItemRefGuard = true
+    local ok, err = pcall(function()
+        originalSetItemRef(unpack(args, 1, args.n))
+    end)
+    setItemRefGuard = false
+
+    if not ok then
+        error(err)
     end
 end
 
@@ -1447,10 +1478,15 @@ wrappedMessageEventHandler = function(...)
 end
 
 local function InstallItemRefHook()
-    if SetItemRef ~= wrappedSetItemRef then
-        originalSetItemRef = SetItemRef
-        SetItemRef = wrappedSetItemRef
+    if SetItemRef == wrappedSetItemRef then
+        return
     end
+    if type(SetItemRef) ~= "function" then
+        return
+    end
+
+    originalSetItemRef = SetItemRef
+    SetItemRef = wrappedSetItemRef
 end
 
 local function InstallMessageEventHook()
