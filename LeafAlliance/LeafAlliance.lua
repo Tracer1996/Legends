@@ -829,6 +829,26 @@ local function ShouldSuppressAllianceNoticeEvent(...)
     return targetsAlliance
 end
 
+local function ShouldSuppressRenderedAllianceNotice(text)
+    local renderedPlain = StripAllianceRenderedMarkup(text or "")
+    local lowered = SafeLower(StripLeadingAllianceRenderedPrefixes(renderedPlain))
+
+    if lowered == "" then
+        return false
+    end
+    if not (
+        string.find(lowered, "joined channel", 1, true) ~= nil
+        or string.find(lowered, "left channel", 1, true) ~= nil
+        or string.find(lowered, "owner changed", 1, true) ~= nil
+        or string.find(lowered, "changed owner", 1, true) ~= nil
+        or string.find(lowered, "channel owner", 1, true) ~= nil
+    ) then
+        return false
+    end
+
+    return MessageTargetsAllianceChannel(renderedPlain)
+end
+
 local function GetPratChannelNamesModule()
     if Prat_ChannelNames
             and Prat_ChannelNames.db
@@ -1182,6 +1202,10 @@ local function WrapAllianceChatFrame(frameToWrap)
 
     frameToWrap.leafAllianceOriginalAddMessage = frameToWrap.AddMessage
     frameToWrap.leafAllianceWrappedAddMessage = function(selfFrame, text, r, g, b, chatTypeID, holdTime, accessID, lineID)
+        if ShouldSuppressRenderedAllianceNotice(text) then
+            return
+        end
+
         local strippedText, transmittedGuild, hadInlineWirePayload = StripAllianceWirePayloadInline(text)
 
         if hadInlineWirePayload then
@@ -1293,15 +1317,20 @@ end
 -- ------------------------------------------------------------------ --
 
 wrappedSetItemRef = function(...)
-    local link, text, button = ...
     local args = arg
     local argsCount = 0
+    local link = nil
+    local text = nil
+    local button = nil
 
     if args then
         argsCount = table.getn(args)
         if args.n and args.n > argsCount then
             argsCount = args.n
         end
+        link = args[1]
+        text = args[2]
+        button = args[3]
     end
 
     link = tostring(link or "")
