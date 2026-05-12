@@ -218,12 +218,12 @@ local function GetPlayerGuildName()
     return playerGuildNameCache or ""
 end
 
-local function GetAllianceChannelDisplayName(guildName)
+local function GetAllianceChannelDisplayName()
     return CHANNEL_NAME
 end
 
-local function GetAllianceChannelTagText(guildName)
-    return "[" .. GetAllianceChannelDisplayName(guildName) .. "]"
+local function GetAllianceChannelTagText()
+    return "[" .. GetAllianceChannelDisplayName() .. "]"
 end
 
 local function GetTimeSeconds()
@@ -1059,7 +1059,7 @@ local function AllianceChannelLink(text)
     return BuildAllianceTooltipLink(ALLIANCE_LINK_PREFIX .. "channel", text)
 end
 
-local function BuildAllianceChannelTag(guildName)
+local function BuildAllianceChannelTag()
     return AllianceChannelLink("[Alliance]")
 end
 
@@ -1282,7 +1282,7 @@ BuildAllianceChatLine = function(author, msg, transmittedGuildName)
     lastAllianceAuthorNormalized = tostring(normalizedAuthor or "")
     lastAllianceGuildTitle = tostring(guildName or "")
     lastAllianceMessageBody = tostring(displayBody or "")
-    lastAllianceRenderedLine = BuildAllianceChannelTag(guildName) .. " "
+    lastAllianceRenderedLine = BuildAllianceChannelTag() .. " "
         .. BuildLinkedAllianceText(displayAuthor .. ": " .. displayBody)
 
     return lastAllianceRenderedLine
@@ -1292,12 +1292,8 @@ end
 -- Hyperlink click handler (replaces global SetItemRef)
 -- ------------------------------------------------------------------ --
 
-wrappedSetItemRef = function(...)
-    local args = arg or {}
-    local link = tostring(args[1] or "")
-    local text = args[2]
-
-    args.n = args.n or table.getn(args)
+wrappedSetItemRef = function(link, text, button, chatFrame)
+    link = tostring(link or "")
 
     if string.sub(link, 1, string.len(ALLIANCE_LINK_PREFIX)) == ALLIANCE_LINK_PREFIX then
         ShowAllianceTooltip("Alliance Chat", 1, 1, 0)
@@ -1329,13 +1325,11 @@ wrappedSetItemRef = function(...)
     end
 
     if setItemRefGuard then
-        return originalSetItemRef(unpack(args, 1, args.n))
+        return originalSetItemRef(link, text, button, chatFrame)
     end
 
     setItemRefGuard = true
-    local ok, err = pcall(function()
-        originalSetItemRef(unpack(args, 1, args.n))
-    end)
+    local ok, err = pcall(originalSetItemRef, link, text, button, chatFrame)
     setItemRefGuard = false
 
     if not ok then
