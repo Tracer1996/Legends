@@ -689,8 +689,16 @@ local function AreDefaultChannelSlotsReady()
 end
 
 local function IsAllianceChannel(channelName, channelNumber)
-    if channelName and SafeLower(channelName) == SafeLower(CHANNEL_NAME) then
-        return true
+    if type(channelName) == "string" then
+        local cleanedChannelName = Trim(channelName)
+        local baseChannelName = string.gsub(cleanedChannelName, "^%d+%.%s*", "")
+
+        if SafeLower(cleanedChannelName) == SafeLower(CHANNEL_NAME)
+                or SafeLower(baseChannelName) == SafeLower(CHANNEL_NAME)
+                or IsAllianceRenderedChannelTag(cleanedChannelName)
+                or IsAllianceRenderedChannelTag(baseChannelName) then
+            return true
+        end
     end
 
     if allianceChannelId and channelNumber
@@ -1293,7 +1301,9 @@ end
 -- ------------------------------------------------------------------ --
 
 wrappedSetItemRef = function(...)
-    local link, text, button = ...
+    local link = arg and arg[1]
+    local text = arg and arg[2]
+    local button = arg and arg[3]
     local args = arg
     local argsCount = 0
 
