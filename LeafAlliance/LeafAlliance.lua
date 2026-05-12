@@ -1292,7 +1292,18 @@ end
 -- Hyperlink click handler (replaces global SetItemRef)
 -- ------------------------------------------------------------------ --
 
-wrappedSetItemRef = function(link, text, button, chatFrame)
+wrappedSetItemRef = function(...)
+    local link, text, button = ...
+    local args = arg
+    local argsCount = 0
+
+    if args then
+        argsCount = table.getn(args)
+        if args.n and args.n > argsCount then
+            argsCount = args.n
+        end
+    end
+
     link = tostring(link or "")
 
     if string.sub(link, 1, string.len(ALLIANCE_LINK_PREFIX)) == ALLIANCE_LINK_PREFIX then
@@ -1325,11 +1336,21 @@ wrappedSetItemRef = function(link, text, button, chatFrame)
     end
 
     if setItemRefGuard then
-        return originalSetItemRef(link, text, button, chatFrame)
+        if not args or argsCount <= 0 then
+            return originalSetItemRef(link, text, button)
+        end
+        return originalSetItemRef(unpack(args, 1, argsCount))
     end
 
     setItemRefGuard = true
-    local ok, err = pcall(originalSetItemRef, link, text, button, chatFrame)
+    local ok, err
+    if not args or argsCount <= 0 then
+        ok, err = pcall(originalSetItemRef, link, text, button)
+    else
+        ok, err = pcall(function()
+            originalSetItemRef(unpack(args, 1, argsCount))
+        end)
+    end
     setItemRefGuard = false
 
     if not ok then
