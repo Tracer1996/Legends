@@ -2260,6 +2260,7 @@ local function GetAchievementRewardTitle(achId)
 end
 
 local announcementTitleLookupBuilt = false
+local announcementTitlesById = {}
 local announcementTitlesByName = {}
 local announcementAchievementsByName = {}
 
@@ -2270,8 +2271,12 @@ end
 local function EnsureAnnouncementLookups()
   if announcementTitleLookupBuilt then return end
 
+  announcementTitlesById = {}
   announcementTitlesByName = {}
   for _, titleData in ipairs(TITLES) do
+    if titleData.id and titleData.id ~= "" then
+      announcementTitlesById[titleData.id] = titleData
+    end
     local key = NormalizeAnnouncementLabel(titleData.name)
     if key ~= "" then
       announcementTitlesByName[key] = titleData
@@ -2295,19 +2300,20 @@ local function GetAnnouncementTitleColorHex(titleData)
   return "ffff7f00"
 end
 
-local function BuildAnnouncementItemLink(displayText, colorHex)
+local function BuildAnnouncementChatLink(linkType, payloadId, displayText, colorHex)
+  if not linkType or linkType == "" or not payloadId or payloadId == "" then return nil end
   if not displayText or displayText == "" then return nil end
-  return "|c"..colorHex.."|Hitem:"..LEAFVE_ANNOUNCEMENT_ITEM_ID..":0:0:0|h"..displayText.."|h|r"
+  return "|H"..linkType..":"..tostring(payloadId).."|h|c"..colorHex..displayText.."|r|h"
 end
 
 local function BuildAnnouncementTitleLink(titleData)
   if not titleData then return nil end
-  return BuildAnnouncementItemLink(titleData.name, GetAnnouncementTitleColorHex(titleData))
+  return BuildAnnouncementChatLink("leafve_title", titleData.id, titleData.name, GetAnnouncementTitleColorHex(titleData))
 end
 
 local function BuildAnnouncementAchievementLink(achievement)
-  if not achievement or not achievement.name then return nil end
-  return BuildAnnouncementItemLink("["..achievement.name.."]", "ffffd700")
+  if not achievement or not achievement.id or not achievement.name then return nil end
+  return BuildAnnouncementChatLink("leafve_ach", achievement.id, "["..achievement.name.."]", "ffffd700")
 end
 
 local function ExtractAnnouncementLinkText(text)
@@ -2332,8 +2338,7 @@ local function ResolveAnnouncementLink(text)
   return "title", announcementTitlesByName[NormalizeAnnouncementLabel(displayText)]
 end
 
-local function ShowAnnouncementTooltip(linkText)
-  local kind, payload = ResolveAnnouncementLink(linkText)
+local function ShowAnnouncementTooltipFromPayload(kind, payload)
   if not kind or not payload then return false end
 
   local tooltip = ItemRefTooltip or GameTooltip
@@ -2376,6 +2381,27 @@ local function ShowAnnouncementTooltip(linkText)
 
   tooltip:Show()
   return true
+end
+
+local function ShowAnnouncementTooltip(linkText)
+  local kind, payload = ResolveAnnouncementLink(linkText)
+  return ShowAnnouncementTooltipFromPayload(kind, payload)
+end
+
+local function ShowAnnouncementTooltipFromLink(link, linkText)
+  EnsureAnnouncementLookups()
+
+  local titleId = smatch(link or "", "^leafve_title:(.+)$")
+  if titleId and announcementTitlesById[titleId] then
+    return ShowAnnouncementTooltipFromPayload("title", announcementTitlesById[titleId])
+  end
+
+  local achId = smatch(link or "", "^leafve_ach:(.+)$")
+  if achId and ACHIEVEMENTS[achId] then
+    return ShowAnnouncementTooltipFromPayload("achievement", {id = achId, data = ACHIEVEMENTS[achId]})
+  end
+
+  return ShowAnnouncementTooltip(linkText)
 end
 
 local function FormatAchievementTitleText(playerName, titleData)
@@ -5456,11 +5482,12 @@ local function HookChatWithTitles()
     SendChatMessage = function(msg, chatType, language, channel)
       if chatType == "GUILD" and type(msg) == "string" and msg ~= "" then
         local hasLeafLink = string.find(msg, "|Hitem:"..LEAFVE_ANNOUNCEMENT_ITEM_ID..":0:0:0|h", 1, true)
+        local hasLeafVillageAchievement = string.find(msg, "|Hleafve_ach:", 1, true)
         local hasLeafVillageBadge = string.find(msg, "|Hleafve_badge:", 1, true)
         local hasLeafVillageTitle = string.find(msg, "|Hleafve_title:", 1, true)
         local me = ShortName(UnitName("player"))
         local title = me and LeafVE_AchTest and LeafVE_AchTest.GetCurrentTitle and LeafVE_AchTest:GetCurrentTitle(me)
-        local hasExistingTitle = hasLeafLink or hasLeafVillageBadge or hasLeafVillageTitle
+        local hasExistingTitle = hasLeafLink or hasLeafVillageAchievement or hasLeafVillageBadge or hasLeafVillageTitle
         if not hasExistingTitle and me and LeafVE and LeafVE.GetEquippedTitleNameForPlayer then
           local leafVillageTitle = LeafVE:GetEquippedTitleNameForPlayer(me)
           if leafVillageTitle and leafVillageTitle ~= "" then
@@ -5489,6 +5516,10 @@ local function HookChatWithTitles()
 
   if type(originalSetItemRef) == "function" then
     SetItemRef = function(link, text, button, chatFrame)
+      if ShowAnnouncementTooltipFromLink(link, text) then
+        return
+      end
+
       local itemId = tonumber(smatch(link or "", "item:(%d+)"))
       if itemId == LEAFVE_ANNOUNCEMENT_ITEM_ID and ShowAnnouncementTooltip(text) then
         return

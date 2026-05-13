@@ -4960,6 +4960,174 @@ function LeafVE:InstallAllianceChatHandler()
   ChatFrame_MessageEventHandler = self.wrappedAllianceMessageEventHandler
 end
 
+function LeafVE:NormalizeMalformedAnnouncementLinks(message)
+  local text = tostring(message or "")
+  if text == "" then
+    return text
+  end
+
+  text = string.gsub(text, "|H(leafve_[^:|]+:[^|]+)|h|c([0-9A-Fa-f]+)(.-)|r|h", function(linkTarget, colorHex, displayText)
+    return "|c" .. tostring(colorHex or "") .. "|H" .. tostring(linkTarget or "") .. "|h" .. tostring(displayText or "") .. "|h|r"
+  end)
+
+  return text
+end
+
+function LeafVE:GetSafeAchievementAnnouncementLink(linkTarget, displayText, colorHex)
+  local safeLink = tostring(linkTarget or "")
+  local safeText = tostring(displayText or "")
+  local safeColor = tostring(colorHex or "")
+  if safeLink == "" or safeText == "" or safeColor == "" then
+    return nil
+  end
+  return "|c" .. safeColor .. "|H" .. safeLink .. "|h" .. safeText .. "|h|r"
+end
+
+function LeafVE:BuildSafeAchievementGuildMessage(playerName, achievementID, achievementData)
+  local achievementsAddon = LeafVillageAchievements or LeafVE_AchTest
+  local shortPlayerName = ShortName(playerName) or tostring(playerName or "")
+  local achievement = achievementData
+  if not achievement and achievementsAddon and achievementsAddon.GetAchievementMeta then
+    achievement = achievementsAddon.GetAchievementMeta(achievementID)
+  end
+  if shortPlayerName == "" or not achievement then
+    return nil
+  end
+
+  local achId = tostring(achievement.id or achievementID or "")
+  local achName = tostring(achievement.name or achievementID or "Achievement")
+  local achLink = self:GetSafeAchievementAnnouncementLink("leafve_ach:" .. achId, "[" .. achName .. "]", "ffffd700")
+    or ("[" .. achName .. "]")
+
+  local titleLink = nil
+  if achievementsAddon and achievementsAddon.GetCurrentTitle then
+    local currentTitle = achievementsAddon:GetCurrentTitle(shortPlayerName)
+    if currentTitle and currentTitle.id and currentTitle.name then
+      local colorHex = "ffff7f00"
+      if currentTitle.legendary then
+        colorHex = "ffff0000"
+      elseif currentTitle.guild then
+        colorHex = "ff8b4513"
+      end
+      titleLink = self:GetSafeAchievementAnnouncementLink("leafve_title:" .. tostring(currentTitle.id or ""), tostring(currentTitle.name or ""), colorHex)
+    end
+  end
+
+  local me = ShortName(UnitName("player"))
+  local earnedByOtherPlayer = shortPlayerName ~= (me or "")
+  if titleLink and earnedByOtherPlayer then
+    return shortPlayerName .. " " .. titleLink .. " has earned the achievement " .. achLink
+  end
+  if titleLink then
+    return titleLink .. " has earned the achievement " .. achLink
+  end
+  if earnedByOtherPlayer then
+    return shortPlayerName .. " has earned the achievement " .. achLink
+  end
+  return "has earned the achievement " .. achLink
+end
+
+function LeafVE:InstallChatAnnouncementSendHook()
+  if self.chatAnnouncementSendHookInstalled and SendChatMessage == self.wrappedChatAnnouncementSendChatMessage then
+    return true
+  end
+  if type(SendChatMessage) ~= "function" then
+    return false
+  end
+
+  self.chatAnnouncementSendHookInstalled = true
+  self.originalChatAnnouncementSendChatMessage = SendChatMessage
+  self.wrappedChatAnnouncementSendChatMessage = function(msg, chatType, language, channel)
+    local outgoing = msg
+    if type(outgoing) == "string" and outgoing ~= "" then
+      outgoing = LeafVE:NormalizeMalformedAnnouncementLinks(outgoing)
+    end
+    return LeafVE.originalChatAnnouncementSendChatMessage(outgoing, chatType, language, channel)
+  end
+
+  SendChatMessage = self.wrappedChatAnnouncementSendChatMessage
+  return true
+end
+
+function LeafVE:PatchAchievementsChatAnnouncements()
+  local achievementsAddon = LeafVillageAchievements or LeafVE_AchTest
+  if not achievementsAddon then
+    return false
+  end
+  if achievementsAddon._leafveChatAnnouncementPatched then
+    return true
+  end
+
+  if type(achievementsAddon.AwardAchievement) == "function" then
+    achievementsAddon._leafveOriginalAwardAchievement = achievementsAddon.AwardAchievement
+    achievementsAddon.AwardAchievement = function(this, achievementID, silent)
+      local me = ShortName(UnitName("player"))
+      local alreadyHad = me and this.HasAchievement and this:HasAchievement(me, achievementID)
+      local originalIsInGuild = IsInGuild
+      if type(originalIsInGuild) == "function" then
+        IsInGuild = function()
+          return false
+        end
+      end
+
+      local ok, err = pcall(achievementsAddon._leafveOriginalAwardAchievement, this, achievementID, silent)
+
+      if type(originalIsInGuild) == "function" then
+        IsInGuild = originalIsInGuild
+      end
+
+      if not ok then
+        error(err)
+      end
+
+      if not alreadyHad and not silent and type(originalIsInGuild) == "function" and originalIsInGuild() then
+        local achievement = this.GetAchievementMeta and this.GetAchievementMeta(achievementID) or nil
+        local guildMessage = LeafVE:BuildSafeAchievementGuildMessage(me, achievementID, achievement)
+        if guildMessage and guildMessage ~= "" then
+          LeafVE:SendSystemChatMessage(guildMessage, "GUILD")
+        end
+      end
+    end
+  end
+
+  if type(achievementsAddon.AdminGrantAchievement) == "function" then
+    achievementsAddon._leafveOriginalAdminGrantAchievement = achievementsAddon.AdminGrantAchievement
+    achievementsAddon.AdminGrantAchievement = function(this, targetInput, achInput, requireGuildMember)
+      local originalIsInGuild = IsInGuild
+      if type(originalIsInGuild) == "function" then
+        IsInGuild = function()
+          return false
+        end
+      end
+
+      local results = { pcall(achievementsAddon._leafveOriginalAdminGrantAchievement, this, targetInput, achInput, requireGuildMember) }
+
+      if type(originalIsInGuild) == "function" then
+        IsInGuild = originalIsInGuild
+      end
+
+      if not results[1] then
+        error(results[2])
+      end
+
+      local granted = results[2]
+      local targetName = results[3]
+      local achievement = results[4]
+      if granted and type(originalIsInGuild) == "function" and originalIsInGuild() then
+        local guildMessage = LeafVE:BuildSafeAchievementGuildMessage(targetName, achievement and achievement.id or achInput, achievement)
+        if guildMessage and guildMessage ~= "" then
+          LeafVE:SendSystemChatMessage(guildMessage, "GUILD")
+        end
+      end
+
+      return unpack(results, 2, table.getn(results))
+    end
+  end
+
+  achievementsAddon._leafveChatAnnouncementPatched = true
+  return true
+end
+
 function LeafVE:InstallAllianceSendHook()
   if self.allianceSendHookInstalled and SendChatMessage == self.wrappedAllianceSendChatMessage then
     return
@@ -5029,6 +5197,7 @@ function LeafVE:InstallAllianceSendHook()
         outgoing = LeafVE:BuildAlliancePlainOutgoingPrefix() .. LeafVE:StripAllianceChatDecorators(outgoing)
       end
     end
+    outgoing = LeafVE:NormalizeMalformedAnnouncementLinks(outgoing)
     if isAllianceChannelSend then
       LeafVE.allianceChatStickyEnabled = true
     elseif chatType and chatType ~= "" and chatType ~= "AFK" and chatType ~= "DND" then
@@ -5050,6 +5219,7 @@ function LeafVE:SendSystemChatMessage(message, chatType, language, channel)
     return false
   end
 
+  message = self:NormalizeMalformedAnnouncementLinks(message)
   self.suppressOutgoingChatDecorators = (self.suppressOutgoingChatDecorators or 0) + 1
   local ok, err = pcall(sender, message, chatType, language, channel)
   self.suppressOutgoingChatDecorators = math.max(0, (self.suppressOutgoingChatDecorators or 1) - 1)
@@ -38196,6 +38366,12 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
     if LeafVE and LeafVE.RegisterBadgeHyperlinkHandler then
       pcall(LeafVE.RegisterBadgeHyperlinkHandler, LeafVE)
     end
+    if LeafVE and LeafVE.InstallChatAnnouncementSendHook then
+      pcall(LeafVE.InstallChatAnnouncementSendHook, LeafVE)
+    end
+    if LeafVE and LeafVE.PatchAchievementsChatAnnouncements then
+      pcall(LeafVE.PatchAchievementsChatAnnouncements, LeafVE)
+    end
   end
   
   if event == "PLAYER_LOGIN" then
@@ -38250,6 +38426,8 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
     LeafVE:CacheQuestLog()
     -- Register badge hyperlink handler last so it wraps any other addon's hook
     LeafVE:RegisterBadgeHyperlinkHandler()
+    LeafVE:InstallChatAnnouncementSendHook()
+    LeafVE:PatchAchievementsChatAnnouncements()
     if LeafVE.allianceEnabled == true then
       LeafVE:InstallAllianceChatSupport()
     end
@@ -38258,6 +38436,14 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
     end)
     LeafVE:ScheduleDeferred("player_login_badge_link_hook_2", 9, function()
       LeafVE:RegisterBadgeHyperlinkHandler()
+    end)
+    LeafVE:ScheduleDeferred("player_login_chat_announce_hook_1", 3, function()
+      LeafVE:InstallChatAnnouncementSendHook()
+      LeafVE:PatchAchievementsChatAnnouncements()
+    end)
+    LeafVE:ScheduleDeferred("player_login_chat_announce_hook_2", 9, function()
+      LeafVE:InstallChatAnnouncementSendHook()
+      LeafVE:PatchAchievementsChatAnnouncements()
     end)
 
     LeafVE:ScheduleDeferred("player_login_sync_phase_1", 5, function()
@@ -39247,6 +39433,82 @@ function LeafVE:ShowChatAnnouncementTooltip(kind, payload)
   return true
 end
 
+function LeafVE:HandleCustomHyperlinkClick(link, text)
+  local safeLink = tostring(link or "")
+  local badgeId = nil
+  local titleId = nil
+  local achId = nil
+
+  if string.sub(safeLink, 1, 13) == "leafve_badge:" then
+    badgeId = string.sub(safeLink, 14)
+  elseif string.sub(safeLink, 1, 13) == "leafve_title:" then
+    titleId = string.sub(safeLink, 14)
+  elseif string.sub(safeLink, 1, 11) == "leafve_ach:" then
+    achId = string.sub(safeLink, 12)
+  else
+    return false
+  end
+
+  if badgeId then
+    local badge = GetBadgeDefinition(badgeId)
+    if not badge then
+      local fallbackKind, fallbackPayload = self:ResolveChatAnnouncementPayload(text)
+      if fallbackKind == "badge" then
+        badge = fallbackPayload
+      end
+    end
+    if badge then
+      self:ShowChatAnnouncementTooltip("badge", badge)
+    end
+    return true
+  end
+
+  if titleId then
+    local titleDef = self:GetTitleDefinition(titleId)
+    if not titleDef then
+      local fallbackKind, fallbackPayload = self:ResolveChatAnnouncementPayload(text)
+      if fallbackKind == "title" then
+        titleDef = fallbackPayload
+      end
+    end
+    if titleDef then
+      self:ShowChatAnnouncementTooltip("title", titleDef)
+    end
+    return true
+  end
+
+  if achId then
+    local achData = self:GetAchievementMeta(achId)
+    if achData then
+      local panel = GetOrCreateBadgeInfoPanel()
+      local safeName = tostring(achData.name or achId)
+      local safeCategory = tostring(achData.category or "Achievement")
+      local safeDesc = tostring(achData.desc or "Achievement details unavailable.")
+      local safePoints = tonumber(achData.points) or 0
+
+      if achData.icon then
+        panel.icon:SetTexture(achData.icon)
+        panel.icon:Show()
+      else
+        panel.icon:Hide()
+      end
+
+      panel.nameFS:SetText(safeName)
+      panel.nameFS:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3])
+      panel.qualityFS:SetText("|cFF888888" .. safeCategory .. "|r")
+      panel.descFS:SetText(safeDesc .. "  |cFFFF7F00(" .. safePoints .. " pts)|r")
+
+      local neededHeight = 24 + panel.nameFS:GetHeight() + panel.qualityFS:GetHeight() + panel.descFS:GetHeight() + 20
+      if neededHeight < 80 then neededHeight = 80 end
+      panel:SetHeight(neededHeight)
+      panel:Show()
+    end
+    return true
+  end
+
+  return false
+end
+
 function LeafVE:RegisterBadgeHyperlinkHandler()
   if type(SetItemRef) ~= "function" then
     return false
@@ -39257,61 +39519,37 @@ function LeafVE:RegisterBadgeHyperlinkHandler()
 
   self.badgeHyperlinkOriginalSetItemRef = SetItemRef
   self.badgeHyperlinkWrappedRef = function(link, text, button, chatFrame)
-    local badgeId = nil
-    local titleId = nil
-    local achId = nil
-    if type(link) == "string" then
-      if string.sub(link, 1, 13) == "leafve_badge:" then
-        badgeId = string.sub(link, 14)
-      elseif string.sub(link, 1, 13) == "leafve_title:" then
-        titleId = string.sub(link, 14)
-      elseif string.sub(link, 1, 11) == "leafve_ach:" then
-        achId = string.sub(link, 12)
-      end
-    end
-    if badgeId then
-      local badge = GetBadgeDefinition(badgeId)
-      if badge and LeafVE:ShowChatAnnouncementTooltip("badge", badge) then
-        return
-      end
-    end
+    local safeLink = tostring(link or "")
+    local isLeafLink = string.sub(safeLink, 1, 13) == "leafve_badge:"
+      or string.sub(safeLink, 1, 13) == "leafve_title:"
+      or string.sub(safeLink, 1, 11) == "leafve_ach:"
 
-    -- Handle achievement hyperlinks ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â same panel, populated with achievement data
-    if titleId then
-      local titleDef = LeafVE:GetTitleDefinition(titleId)
-      if titleDef and LeafVE:ShowChatAnnouncementTooltip("title", titleDef) then
-        return
-      end
-    end
-
-    if achId then
-      local achData = LeafVE:GetAchievementMeta(achId)
-      if achData then
-        local panel = GetOrCreateBadgeInfoPanel()
-
-        if achData.icon then
-          panel.icon:SetTexture(achData.icon)
-          panel.icon:Show()
-        else
-          panel.icon:Hide()
-        end
-
-        panel.nameFS:SetText(achData.name)
-        panel.nameFS:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3])
-        panel.qualityFS:SetText("|cFF888888"..achData.category.."|r")
-        panel.descFS:SetText(achData.desc.."  |cFFFF7F00("..achData.points.." pts)|r")
-
-        local neededHeight = 24 + panel.nameFS:GetHeight() + panel.qualityFS:GetHeight() + panel.descFS:GetHeight() + 20
-        if neededHeight < 80 then neededHeight = 80 end
-        panel:SetHeight(neededHeight)
-
-        panel:Show()
+    if isLeafLink then
+      local ok, err = pcall(function()
+        LeafVE:HandleCustomHyperlinkClick(link, text)
+      end)
+      if not ok then
+        Print("|cFFFF6666LeafVE link preview failed:|r " .. tostring(err))
       end
       return
     end
 
-    -- Fall back to default behaviour for all other link types
-    return LeafVE.badgeHyperlinkOriginalSetItemRef(link, text, button, chatFrame)
+    -- Handle achievement hyperlinks ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â same panel, populated with achievement data
+    local originalSetItemRef = LeafVE.badgeHyperlinkOriginalSetItemRef
+    if type(originalSetItemRef) ~= "function" or originalSetItemRef == LeafVE.badgeHyperlinkWrappedRef then
+      return
+    end
+
+    if LeafVE.badgeHyperlinkSetItemRefGuard then
+      return
+    end
+
+    LeafVE.badgeHyperlinkSetItemRefGuard = true
+    local ok, err = pcall(originalSetItemRef, link, text, button, chatFrame)
+    LeafVE.badgeHyperlinkSetItemRefGuard = false
+    if not ok then
+      Print("|cFFFF6666LeafVE SetItemRef fallback failed:|r " .. tostring(err))
+    end
   end
   SetItemRef = self.badgeHyperlinkWrappedRef
   return true
