@@ -105,8 +105,19 @@ local function CompareVersions(leftVersion, rightVersion)
   return 0
 end
 
+local function NormalizeGuildRankName(rankName)
+  return string.lower(Trim(rankName or ""))
+end
+
 local function IsOfficerRank(rankName)
-  return rankName == "Anbu" or rankName == "Sannin" or rankName == "Hokage"
+  local normalized = NormalizeGuildRankName(rankName)
+  return normalized == "anbu"
+    or normalized == "sannin"
+    or normalized == "hokage"
+    or normalized == "flame"
+    or normalized == "flame keeper"
+    or normalized == "banner warden"
+    or normalized == "oath captain"
 end
 
 local function ResolveGuildMemberName(name)
@@ -162,6 +173,7 @@ local function EnsureDB()
   if not LeafVE_AchTest_DB.peakGold then LeafVE_AchTest_DB.peakGold = {} end
   if not LeafVE_AchTest_DB.goldEarnedTotal then LeafVE_AchTest_DB.goldEarnedTotal = {} end
   if not LeafVE_AchTest_DB.goldLastSeen then LeafVE_AchTest_DB.goldLastSeen = {} end
+  if type(LeafVE_AchTest_DB.guildRankState) ~= "table" then LeafVE_AchTest_DB.guildRankState = {} end
   if type(LeafVE_AchTest_DB.versionInfo) ~= "table" then LeafVE_AchTest_DB.versionInfo = {} end
   if type(LeafVE_AchTest_DB.versionInfo.guildVersions) ~= "table" then LeafVE_AchTest_DB.versionInfo.guildVersions = {} end
   if not LeafVE_AchTest_DB.versionInfo.lastReminderAt then LeafVE_AchTest_DB.versionInfo.lastReminderAt = 0 end
@@ -777,6 +789,12 @@ local ACHIEVEMENTS = {
   casual_mount_60={id="casual_mount_60",name="First Mount",desc="Obtain your first mount",category="Casual",points=10,icon="Interface\\Icons\\Ability_Mount_Raptor"},
   casual_hearthstone_use={id="casual_hearthstone_use",name="Frequent Traveler",desc="Use your hearthstone 50 times",category="Casual",points=10,icon="Interface\\Icons\\INV_Misc_Rune_01"},
   casual_guild_join={id="casual_guild_join",name="Guild Member",desc="Join a guild",category="Casual",points=5,icon="Interface\\Icons\\INV_Shirt_GuildTabard_01"},
+  guild_rank_member_born={id="guild_rank_member_born",name="Member: Born",desc="Attain the guild rank of Member: Born in The Ashen Banner.",category="Guild",points=5,icon="Interface\\Icons\\INV_Shirt_GuildTabard_01"},
+  guild_rank_flamebound={id="guild_rank_flamebound",name="Flamebound",desc="Attain the guild rank of Flamebound in The Ashen Banner.",category="Guild",points=10,icon="Interface\\Icons\\Spell_Fire_Immolation"},
+  guild_rank_oath_captain={id="guild_rank_oath_captain",name="Oath Captain",desc="Attain the guild rank of Oath Captain in The Ashen Banner.",category="Guild",points=20,icon="Interface\\Icons\\INV_Sword_62"},
+  guild_rank_banner_warden={id="guild_rank_banner_warden",name="Banner Warden",desc="Attain the guild rank of Banner Warden in The Ashen Banner.",category="Guild",points=35,icon="Interface\\Icons\\INV_BannerPVP_02"},
+  guild_rank_flame_keeper={id="guild_rank_flame_keeper",name="Flame Keeper",desc="Attain the guild rank of Flame Keeper in The Ashen Banner.",category="Guild",points=50,icon="Interface\\Icons\\Spell_Fire_FireArmor"},
+  guild_rank_flame={id="guild_rank_flame",name="Flame",desc="Attain the guild rank of Flame in The Ashen Banner.",category="Guild",points=75,icon="Interface\\Icons\\Spell_Fire_Fire"},
   casual_hearthstone_1={id="casual_hearthstone_1",name="Home Is Where the Hearth Is",desc="Use your hearthstone for the first time",category="Casual",points=5,icon="Interface\\Icons\\INV_Misc_Rune_01"},
   casual_drown={id="casual_drown",name="Landlubber",desc="Drown 10 times",category="Casual",points=5,icon="Interface\\Icons\\Spell_Frost_FrostShock"},
   casual_quest_1000={id="casual_quest_1000",name="Loremaster",desc="Complete 1000 quests",category="Casual",points=50,icon="Interface\\Icons\\INV_Misc_Book_09"},
@@ -847,6 +865,14 @@ local TITLES = {
   -- Leveling Titles
   {id="title_champion",name="Champion",achievement="lvl_60",prefix=false,category="Leveling",icon="Interface\\Icons\\Spell_Holy_BlessingOfStrength"},
   {id="title_elder",name="the Elder",achievement="lvl_60",prefix=false,category="Leveling",icon="Interface\\Icons\\Spell_Holy_BlessingOfStrength"},
+
+  -- Guild Rank Titles
+  {id="title_member_born",name="Member: Born",chatName="Born",achievement="guild_rank_member_born",prefix=true,category="Guild",icon="Interface\\Icons\\INV_Shirt_GuildTabard_01",guild=true,desc="A new ember of The Ashen Banner, beginning their path beneath its flame and oath."},
+  {id="title_flamebound",name="Flamebound",chatName="Bound",achievement="guild_rank_flamebound",prefix=true,category="Guild",icon="Interface\\Icons\\Spell_Fire_Immolation",guild=true,desc="A proven warrior bound to the Banner's flame through loyalty, skill, and battle."},
+  {id="title_oath_captain",name="Oath Captain",chatName="Captain",achievement="guild_rank_oath_captain",prefix=true,category="Guild",icon="Interface\\Icons\\INV_Sword_62",guild=true,desc="Keeper of class discipline and raid readiness, leading their sworn allies by example."},
+  {id="title_banner_warden",name="Banner Warden",chatName="Warden",achievement="guild_rank_banner_warden",prefix=true,category="Guild",icon="Interface\\Icons\\INV_BannerPVP_02",guild=true,desc="Protector of the Banner's order, enforcing standards and supporting the guild's members."},
+  {id="title_flame_keeper",name="Flame Keeper",chatName="Keeper",achievement="guild_rank_flame_keeper",prefix=true,category="Guild",icon="Interface\\Icons\\Spell_Fire_FireArmor",guild=true,desc="Guardian of the Flame's will, helping lead the guild and keep its spirit burning strong."},
+  {id="title_flame",name="Flame",chatName="Flame",achievement="guild_rank_flame",prefix=true,category="Guild",icon="Interface\\Icons\\Spell_Fire_Fire",guild=true,desc="The living spark of the guild, guiding The Ashen Banner's purpose, direction, and legacy."},
   
   -- Molten Core Titles
   {id="title_firelord",name="Firelord",achievement="raid_mc_ragnaros",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Fire_LavaSpawn"},
@@ -974,6 +1000,60 @@ local TITLES = {
   {id="title_one_man_army",name="the One-Man Army",achievement="legendary_solo_60_boss",prefix=false,category="Legendary",icon="Interface\\Icons\\Spell_Holy_BlessingOfStrength",legendary=true},
   {id="title_pure_mortal",name="the Pure Mortal",achievement="legendary_no_consumes_t2plus",prefix=false,category="Legendary",icon="Interface\\Icons\\INV_Potion_01",legendary=true},
 }
+
+local TRACKED_GUILD_RANKS = {
+  {rankName="Member: Born", achievement="guild_rank_member_born", title="title_member_born"},
+  {rankName="Flamebound", achievement="guild_rank_flamebound", title="title_flamebound"},
+  {rankName="Oath Captain", achievement="guild_rank_oath_captain", title="title_oath_captain"},
+  {rankName="Banner Warden", achievement="guild_rank_banner_warden", title="title_banner_warden"},
+  {rankName="Flame Keeper", achievement="guild_rank_flame_keeper", title="title_flame_keeper"},
+  {rankName="Flame", achievement="guild_rank_flame", title="title_flame"},
+}
+
+local TRACKED_GUILD_RANK_INDEX = {}
+local TRACKED_GUILD_RANK_TITLE_IDS = {}
+for i, rankData in ipairs(TRACKED_GUILD_RANKS) do
+  TRACKED_GUILD_RANK_INDEX[NormalizeGuildRankName(rankData.rankName)] = i
+  TRACKED_GUILD_RANK_TITLE_IDS[rankData.title] = true
+end
+
+local function GetTitleDefinition(titleID)
+  for _, titleData in ipairs(TITLES) do
+    if titleData.id == titleID then
+      return titleData
+    end
+  end
+  return nil
+end
+
+local function MaybeAutoEquipGuildRankTitle(playerName, titleID)
+  EnsureDB()
+  playerName = ShortName(playerName or UnitName("player"))
+  if not playerName or not titleID then return false end
+
+  local titleData = GetTitleDefinition(titleID)
+  if not titleData then return false end
+
+  local currentTitleData = LeafVE_AchTest_DB.selectedTitles[playerName]
+  local currentTitleID = currentTitleData
+  local currentAsPrefix = false
+  if type(currentTitleData) == "table" then
+    currentTitleID = currentTitleData.id
+    currentAsPrefix = currentTitleData.asPrefix or false
+  end
+
+  if currentTitleID and currentTitleID ~= "" and not TRACKED_GUILD_RANK_TITLE_IDS[currentTitleID] then
+    return false
+  end
+
+  local desiredPrefix = titleData.prefix or false
+  if currentTitleID == titleID and currentAsPrefix == desiredPrefix then
+    return false
+  end
+
+  LeafVE_AchTest_DB.selectedTitles[playerName] = {id = titleID, asPrefix = desiredPrefix}
+  return true
+end
 
 -- ==========================================
 -- BOSS CRITERIA DATA (from AtlasLoot)
@@ -1203,6 +1283,11 @@ local function GetAchievementIcon(achId)
   -- Profession icons
   if string.find(lowerAchId, "^prof_") then
     return "Interface\\Icons\\Trade_Engineering"
+  end
+
+  -- Guild rank icons
+  if string.find(lowerAchId, "^guild_rank_") then
+    return "Interface\\Icons\\INV_Shirt_GuildTabard_01"
   end
   
   -- Gold icons
@@ -1655,6 +1740,38 @@ function LeafVE_AchTest:CheckPvPRankAchievements(silent)
   if not UnitPVPRank then return end
   local rank = UnitPVPRank("player") or 0
   if rank >= 14 then self:AwardAchievement("elite_pvp_rank_14", silent) end
+end
+
+function LeafVE_AchTest:CheckGuildRankAchievements(silent)
+  local me = ShortName(UnitName("player"))
+  if not me then return false end
+
+  EnsureDB()
+  local awardSilent = true
+
+  local guildName, rankName = GetGuildInfo("player")
+  local normalizedRank = NormalizeGuildRankName(rankName)
+  local tier = TRACKED_GUILD_RANK_INDEX[normalizedRank]
+  local titleChanged = false
+
+  if guildName and guildName ~= "" then
+    self:AwardAchievement("casual_guild_join", awardSilent)
+  end
+
+  if tier then
+    for i = 1, tier do
+      self:AwardAchievement(TRACKED_GUILD_RANKS[i].achievement, awardSilent)
+    end
+    titleChanged = MaybeAutoEquipGuildRankTitle(me, TRACKED_GUILD_RANKS[tier].title)
+  end
+
+  LeafVE_AchTest_DB.guildRankState[me] = normalizedRank
+
+  if titleChanged and LeafVE_AchTest.UI and LeafVE_AchTest.UI.Refresh then
+    LeafVE_AchTest.UI:Refresh()
+  end
+
+  return titleChanged
 end
 
 local function CountExaltedFactions()
@@ -2218,7 +2335,7 @@ local function NormalizeGrantAchievementId(rawAchId)
   if ACHIEVEMENTS[achId] then return achId end
   local prefixes = {
     "dung_","raid_","explore_","casual_","elite_",
-    "pvp_","gold_","prof_","legendary_","lvl_","item_","quest_","rp_",
+    "pvp_","gold_","prof_","legendary_","lvl_","item_","quest_","rp_","guild_rank_",
   }
   for _, prefix in ipairs(prefixes) do
     local candidate = prefix..achId
@@ -2260,6 +2377,7 @@ local function GetAchievementRewardTitle(achId)
 end
 
 local announcementTitleLookupBuilt = false
+local announcementTitlesById = {}
 local announcementTitlesByName = {}
 local announcementAchievementsByName = {}
 
@@ -2270,11 +2388,19 @@ end
 local function EnsureAnnouncementLookups()
   if announcementTitleLookupBuilt then return end
 
+  announcementTitlesById = {}
   announcementTitlesByName = {}
   for _, titleData in ipairs(TITLES) do
+    if titleData.id and titleData.id ~= "" then
+      announcementTitlesById[titleData.id] = titleData
+    end
     local key = NormalizeAnnouncementLabel(titleData.name)
     if key ~= "" then
       announcementTitlesByName[key] = titleData
+    end
+    local chatKey = NormalizeAnnouncementLabel(titleData.chatName)
+    if chatKey ~= "" then
+      announcementTitlesByName[chatKey] = titleData
     end
   end
 
@@ -2291,8 +2417,12 @@ end
 
 local function GetAnnouncementTitleColorHex(titleData)
   if titleData and titleData.legendary then return "ffff0000" end
-  if titleData and titleData.guild then return "ff8b4513" end
-  return "ffff7f00"
+  return "ffffb347"
+end
+
+local function GetAnnouncementTitleDisplayText(titleData)
+  if not titleData then return nil end
+  return titleData.chatName or titleData.name
 end
 
 local function BuildAnnouncementItemLink(displayText, colorHex)
@@ -2300,14 +2430,20 @@ local function BuildAnnouncementItemLink(displayText, colorHex)
   return "|c"..colorHex.."|Hitem:"..LEAFVE_ANNOUNCEMENT_ITEM_ID..":0:0:0|h"..displayText.."|h|r"
 end
 
+local function BuildAnnouncementChatLink(linkType, payloadId, displayText, colorHex)
+  if not linkType or linkType == "" or not payloadId or payloadId == "" then return nil end
+  if not displayText or displayText == "" then return nil end
+  return "|c"..colorHex.."|H"..linkType..":"..tostring(payloadId).."|h"..displayText.."|h|r"
+end
+
 local function BuildAnnouncementTitleLink(titleData)
   if not titleData then return nil end
-  return BuildAnnouncementItemLink(titleData.name, GetAnnouncementTitleColorHex(titleData))
+  return BuildAnnouncementItemLink(GetAnnouncementTitleDisplayText(titleData), GetAnnouncementTitleColorHex(titleData))
 end
 
 local function BuildAnnouncementAchievementLink(achievement)
-  if not achievement or not achievement.name then return nil end
-  return BuildAnnouncementItemLink("["..achievement.name.."]", "ffffd700")
+  if not achievement or not achievement.id or not achievement.name then return nil end
+  return BuildAnnouncementChatLink("leafve_ach", achievement.id, "["..achievement.name.."]", "ffffd700")
 end
 
 local function ExtractAnnouncementLinkText(text)
@@ -2332,8 +2468,7 @@ local function ResolveAnnouncementLink(text)
   return "title", announcementTitlesByName[NormalizeAnnouncementLabel(displayText)]
 end
 
-local function ShowAnnouncementTooltip(linkText)
-  local kind, payload = ResolveAnnouncementLink(linkText)
+local function ShowAnnouncementTooltipFromPayload(kind, payload)
   if not kind or not payload then return false end
 
   local tooltip = ItemRefTooltip or GameTooltip
@@ -2353,6 +2488,9 @@ local function ShowAnnouncementTooltip(linkText)
     tooltip:AddLine("|c"..GetAnnouncementTitleColorHex(payload)..payload.name.."|r")
     tooltip:AddLine("LeafVE title", 1.0, 0.82, 0.0)
     tooltip:AddLine("Category: "..(payload.category or "Unknown"), 0.75, 0.75, 0.75)
+    if payload.desc and payload.desc ~= "" then
+      tooltip:AddLine(payload.desc, 0.95, 0.95, 0.95, 1)
+    end
     tooltip:AddLine(payload.prefix and "Format: Prefix title" or "Format: Suffix title", 0.75, 0.75, 0.75)
     local sourceAchievement = payload.achievement and ACHIEVEMENTS[payload.achievement]
     if sourceAchievement then
@@ -2378,6 +2516,27 @@ local function ShowAnnouncementTooltip(linkText)
   return true
 end
 
+local function ShowAnnouncementTooltip(linkText)
+  local kind, payload = ResolveAnnouncementLink(linkText)
+  return ShowAnnouncementTooltipFromPayload(kind, payload)
+end
+
+local function ShowAnnouncementTooltipFromLink(link, linkText)
+  EnsureAnnouncementLookups()
+
+  local titleId = smatch(link or "", "^leafve_title:(.+)$")
+  if titleId and announcementTitlesById[titleId] then
+    return ShowAnnouncementTooltipFromPayload("title", announcementTitlesById[titleId])
+  end
+
+  local achId = smatch(link or "", "^leafve_ach:(.+)$")
+  if achId and ACHIEVEMENTS[achId] then
+    return ShowAnnouncementTooltipFromPayload("achievement", {id = achId, data = ACHIEVEMENTS[achId]})
+  end
+
+  return ShowAnnouncementTooltip(linkText)
+end
+
 local function FormatAchievementTitleText(playerName, titleData)
   local titleLink = BuildAnnouncementTitleLink(titleData)
   if titleLink then return titleLink end
@@ -2385,20 +2544,11 @@ local function FormatAchievementTitleText(playerName, titleData)
 end
 
 local function BuildGuildAchievementMessage(playerName, achId, ach)
-  local rewardTitle = GetAchievementRewardTitle(achId)
-  local currentTitle = LeafVE_AchTest and LeafVE_AchTest.GetCurrentTitle and LeafVE_AchTest:GetCurrentTitle(playerName)
-  local titleLink = BuildAnnouncementTitleLink(rewardTitle or currentTitle)
   local achLink = BuildAnnouncementAchievementLink(ach) or ("["..ach.name.."]")
 
   local me = ShortName(UnitName("player"))
   local earnedByOtherPlayer = ShortName(playerName) ~= me
 
-  if titleLink and earnedByOtherPlayer then
-    return playerName.." "..titleLink.." has earned the achievement "..achLink
-  end
-  if titleLink then
-    return titleLink.." has earned the achievement "..achLink
-  end
   if earnedByOtherPlayer then
     return playerName.." has earned the achievement "..achLink
   end
@@ -2537,10 +2687,20 @@ function LeafVE_AchTest:GetCurrentTitle(playerName)
     titleID = titleData.id
     asPrefix = titleData.asPrefix or false
   end
-  for _, title in ipairs(TITLES) do
-    if title.id == titleID then
-      return {id=title.id,name=title.name,achievement=title.achievement,prefix=asPrefix,legendary=title.legendary,guild=title.guild}
-    end
+  local title = GetTitleDefinition(titleID)
+  if title then
+    return {
+      id = title.id,
+      name = title.name,
+      chatName = title.chatName,
+      achievement = title.achievement,
+      prefix = asPrefix,
+      legendary = title.legendary,
+      guild = title.guild,
+      category = title.category,
+      icon = title.icon,
+      desc = title.desc,
+    }
   end
   return nil
 end
@@ -2550,10 +2710,7 @@ function LeafVE_AchTest:SetTitle(playerName, titleID, usePrefix)
   playerName = ShortName(playerName or UnitName("player"))
   if not playerName then return end
   if not titleID or titleID == "" then return end
-  local titleData = nil
-  for _, title in ipairs(TITLES) do
-    if title.id == titleID then titleData = title break end
-  end
+  local titleData = GetTitleDefinition(titleID)
   if not titleData then return end
   if self:HasAchievement(playerName, titleData.achievement) then
     LeafVE_AchTest_DB.selectedTitles[playerName] = {id=titleID,asPrefix=usePrefix or false}
@@ -3495,7 +3652,7 @@ function LeafVE_AchTest.UI:Build()
   adminTab:SetScript("OnClick", function()
     local _, rankName = GetGuildInfo("player")
     if not IsOfficerRank(rankName) then
-      Print("Only Anbu, Sannin, or Hokage may access the Admin panel.")
+      Print("Only guild officers may access the Admin panel.")
       return
     end
     LeafVE_AchTest.UI.currentView = "admin"
@@ -3512,7 +3669,7 @@ function LeafVE_AchTest.UI:Build()
   awardBtn:SetScript("OnClick", function()
     local _, rankName = GetGuildInfo("player")
     if not IsOfficerRank(rankName) then
-      Print("Only Anbu, Sannin, or Hokage may use the Award button.")
+      Print("Only guild officers may use the Award button.")
       return
     end
     local me = ShortName(UnitName("player") or "")
@@ -3541,7 +3698,7 @@ function LeafVE_AchTest.UI:Build()
   resetBtn:SetScript("OnClick", function()
     local _, rankName = GetGuildInfo("player")
     if not IsOfficerRank(rankName) then
-      Print("Only Anbu, Sannin, or Hokage may reset achievements.")
+      Print("Only guild officers may reset achievements.")
       return
     end
     LeafVE_AchTest_DB.achievements    = {}
@@ -3551,6 +3708,7 @@ function LeafVE_AchTest.UI:Build()
     LeafVE_AchTest_DB.exploredZones   = {}
     LeafVE_AchTest_DB.dungeonProgress = {}
     LeafVE_AchTest_DB.raidProgress    = {}
+    LeafVE_AchTest_DB.guildRankState  = {}
     LeafVE_AchTest_DB.completedQuests = {}
     LeafVE_AchTest_DB.peakGold        = {}
     LeafVE_AchTest_DB.goldEarnedTotal = {}
@@ -3775,7 +3933,7 @@ function LeafVE_AchTest.UI:Build()
   adminGrantBtn:SetScript("OnClick", function()
     local _, rankName = GetGuildInfo("player")
     if not IsOfficerRank(rankName) then
-      Print("Only Anbu, Sannin, or Hokage may grant achievements.")
+      Print("Only guild officers may grant achievements.")
       return
     end
     local playerName = LeafVE_AchTest.UI.adminPlayerBox and LeafVE_AchTest.UI.adminPlayerBox:GetText() or ""
@@ -3796,7 +3954,7 @@ function LeafVE_AchTest.UI:Build()
   adminGrantGuildBtn:SetScript("OnClick", function()
     local _, rankName = GetGuildInfo("player")
     if not IsOfficerRank(rankName) then
-      Print("Only Anbu, Sannin, or Hokage may grant achievements.")
+      Print("Only guild officers may grant achievements.")
       return
     end
     local playerName = LeafVE_AchTest.UI.adminPlayerBox and LeafVE_AchTest.UI.adminPlayerBox:GetText() or ""
@@ -4521,6 +4679,9 @@ function LeafVE_AchTest.UI:RefreshTitles()
         if this.titleEarned then
           GameTooltip:SetText(td.name, THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 1, true)
           GameTooltip:AddLine("|cFF888888Title|r", 1, 1, 1)
+          if td.desc and td.desc ~= "" then
+            GameTooltip:AddLine(td.desc, 0.95, 0.95, 0.95, true)
+          end
           if achData then
             GameTooltip:AddLine("Requires: "..achData.name, 1, 1, 1, true)
           end
@@ -4529,6 +4690,9 @@ function LeafVE_AchTest.UI:RefreshTitles()
         else
           GameTooltip:SetText(td.name, 0.6, 0.6, 0.6, 1, true)
           GameTooltip:AddLine("|cFF888888Title|r", 1, 1, 1)
+          if td.desc and td.desc ~= "" then
+            GameTooltip:AddLine(td.desc, 0.85, 0.85, 0.85, true)
+          end
           if achData then
             GameTooltip:AddLine("Requires: "..achData.name, 0.7, 0.7, 0.7, true)
           end
@@ -4770,6 +4934,7 @@ ef:RegisterEvent("QUEST_LOG_UPDATE")
 ef:RegisterEvent("PARTY_MEMBERS_CHANGED")
 ef:RegisterEvent("CHAT_MSG_SYSTEM")
 ef:RegisterEvent("UPDATE_FACTION")
+ef:RegisterEvent("GUILD_ROSTER_UPDATE")
 ef:RegisterEvent("CHAT_MSG_BG_SYSTEM_ALLIANCE")
 ef:RegisterEvent("CHAT_MSG_BG_SYSTEM_HORDE")
 ef:RegisterEvent("CHAT_MSG_BG_SYSTEM_NEUTRAL")
@@ -4794,6 +4959,7 @@ ef:SetScript("OnEvent", function()
     LeafVE_AchTest:CheckProfessionAchievements(true)
     LeafVE_AchTest:CheckQuestAchievements(true)
     LeafVE_AchTest:CheckPvPRankAchievements(true)
+    LeafVE_AchTest:CheckGuildRankAchievements(true)
     LeafVE_AchTest:CheckReputationAchievements(true)
     LeafVE_AchTest:CheckBattlegroundAchievements(true)
     LeafVE_AchTest:CheckRunMilestoneAchievements(true)
@@ -4839,6 +5005,9 @@ ef:SetScript("OnEvent", function()
     end
   end
   if event == "PLAYER_MONEY" and LeafVE_AchTest.initialized then LeafVE_AchTest:CheckGoldAchievements() end
+  if event == "GUILD_ROSTER_UPDATE" and LeafVE_AchTest.initialized then
+    LeafVE_AchTest:CheckGuildRankAchievements(true)
+  end
   if event == "UPDATE_FACTION" and LeafVE_AchTest.initialized then LeafVE_AchTest:CheckReputationAchievements() end
   if event == "UNIT_INVENTORY_CHANGED" and arg1 == "player" and LeafVE_AchTest.initialized then
     LeafVE_AchTest:CheckEquipmentAchievements()
@@ -5403,7 +5572,7 @@ SLASH_ACHGRANT1 = "/achgrant"
 SlashCmdList["ACHGRANT"] = function(msg)
   local _, rankName = GetGuildInfo("player")
   if not IsOfficerRank(rankName) then
-    Print("Only Anbu, Sannin, or Hokage may grant achievements.")
+    Print("Only guild officers may grant achievements.")
     return
   end
   local target, achId = smatch(msg, "^(%S+)%s+(%S+)$")
@@ -5424,7 +5593,7 @@ SLASH_ACHGRANTGUILD1 = "/achgrantguild"
 SlashCmdList["ACHGRANTGUILD"] = function(msg)
   local _, rankName = GetGuildInfo("player")
   if not IsOfficerRank(rankName) then
-    Print("Only Anbu, Sannin, or Hokage may grant achievements.")
+    Print("Only guild officers may grant achievements.")
     return
   end
   local target, achId = smatch(msg, "^(%S+)%s+(%S+)$")
@@ -5456,11 +5625,12 @@ local function HookChatWithTitles()
     SendChatMessage = function(msg, chatType, language, channel)
       if chatType == "GUILD" and type(msg) == "string" and msg ~= "" then
         local hasLeafLink = string.find(msg, "|Hitem:"..LEAFVE_ANNOUNCEMENT_ITEM_ID..":0:0:0|h", 1, true)
+        local hasLeafVillageAchievement = string.find(msg, "|Hleafve_ach:", 1, true)
         local hasLeafVillageBadge = string.find(msg, "|Hleafve_badge:", 1, true)
         local hasLeafVillageTitle = string.find(msg, "|Hleafve_title:", 1, true)
         local me = ShortName(UnitName("player"))
         local title = me and LeafVE_AchTest and LeafVE_AchTest.GetCurrentTitle and LeafVE_AchTest:GetCurrentTitle(me)
-        local hasExistingTitle = hasLeafLink or hasLeafVillageBadge or hasLeafVillageTitle
+        local hasExistingTitle = hasLeafLink or hasLeafVillageAchievement or hasLeafVillageBadge or hasLeafVillageTitle
         if not hasExistingTitle and me and LeafVE and LeafVE.GetEquippedTitleNameForPlayer then
           local leafVillageTitle = LeafVE:GetEquippedTitleNameForPlayer(me)
           if leafVillageTitle and leafVillageTitle ~= "" then
@@ -5471,8 +5641,9 @@ local function HookChatWithTitles()
           end
         end
         if not hasExistingTitle and title and title.name and title.name ~= "" then
-          local ownPlainPrefix = tostring(title.name).." "
-          local ownBracketedPrefix = "["..tostring(title.name).."] "
+          local titleLabel = tostring(title.chatName or title.name)
+          local ownPlainPrefix = titleLabel.." "
+          local ownBracketedPrefix = "["..titleLabel.."] "
           hasExistingTitle = string.sub(msg, 1, string.len(ownPlainPrefix)) == ownPlainPrefix
             or string.sub(msg, 1, string.len(ownBracketedPrefix)) == ownBracketedPrefix
         end
@@ -5489,6 +5660,10 @@ local function HookChatWithTitles()
 
   if type(originalSetItemRef) == "function" then
     SetItemRef = function(link, text, button, chatFrame)
+      if ShowAnnouncementTooltipFromLink(link, text) then
+        return
+      end
+
       local itemId = tonumber(smatch(link or "", "item:(%d+)"))
       if itemId == LEAFVE_ANNOUNCEMENT_ITEM_ID and ShowAnnouncementTooltip(text) then
         return

@@ -289,27 +289,20 @@ LeafVE.weeklyRecapRankMessageTemplates = {
 }
 
 local ADMIN_RANKS = {
-  ["kage"] = true,
-  ["hokage"] = true,
+  ["flame"] = true,
+  ["flame keeper"] = true,
 }
 local ACCESS_RANKS = {
-  ["academy student"] = true,
-  ["genin"] = true,
-  ["chonun"] = true,
-  ["chunin"] = true,
-  ["chuunin"] = true,
-  ["jounin"] = true,
-  ["jonin"] = true,
-  ["anbu"] = true,
-  ["akatsuki"] = true,
-  ["kage"] = true,
-  ["hokage"] = true,
-  ["sannin"] = true,
+  ["born"] = true,
+  ["flamebound"] = true,
+  ["oath captain"] = true,
+  ["banner warden"] = true,
+  ["flame keeper"] = true,
+  ["flame"] = true,
 }
 local RANK_NAME_ALIASES = {
-  ["chunin"] = "chonun",
-  ["chuunin"] = "chonun",
-  ["jonin"] = "jounin",
+  ["member: born"] = "born",
+  ["member born"] = "born",
 }
 
 local LEAF_EMBLEM = "Interface\\Icons\\Spell_Nature_ResistNature"
@@ -3335,7 +3328,7 @@ function LeafVE:AddAllianceGuild(guildName)
   EnsureDB()
 
   if not self:IsAdminRank() then
-    return false, "Only Kage and Hokage can manage alliances."
+    return false, "Only Flame and Flame Keeper can manage alliances."
   end
 
   local trimmed = Trim(guildName or "")
@@ -3385,7 +3378,7 @@ function LeafVE:RemoveAllianceGuild(guildName)
   EnsureDB()
 
   if not self:IsAdminRank() then
-    return false, "Only Kage and Hokage can manage alliances."
+    return false, "Only Flame and Flame Keeper can manage alliances."
   end
 
   local trimmed = Trim(guildName or "")
@@ -5036,13 +5029,14 @@ function LeafVE:InstallChatAnnouncementSendHook()
   end
 
   self.chatAnnouncementSendHookInstalled = true
-  self.originalChatAnnouncementSendChatMessage = SendChatMessage
+  local originalSendChatMessage = SendChatMessage
+  self.originalChatAnnouncementSendChatMessage = originalSendChatMessage
   self.wrappedChatAnnouncementSendChatMessage = function(msg, chatType, language, channel)
     local outgoing = msg
     if type(outgoing) == "string" and outgoing ~= "" then
       outgoing = LeafVE:NormalizeMalformedAnnouncementLinks(outgoing)
     end
-    return LeafVE.originalChatAnnouncementSendChatMessage(outgoing, chatType, language, channel)
+    return originalSendChatMessage(outgoing, chatType, language, channel)
   end
 
   SendChatMessage = self.wrappedChatAnnouncementSendChatMessage
@@ -5137,7 +5131,8 @@ function LeafVE:InstallAllianceSendHook()
   end
 
   self.allianceSendHookInstalled = true
-  self.originalAllianceSendChatMessage = SendChatMessage
+  local originalSendChatMessage = SendChatMessage
+  self.originalAllianceSendChatMessage = originalSendChatMessage
   self.wrappedAllianceSendChatMessage = function(msg, chatType, language, channel)
     local outgoing = msg
     local isAllianceChannelSend = chatType == "CHANNEL" and LeafVE:IsAllianceOutgoingChannel(channel)
@@ -5203,7 +5198,7 @@ function LeafVE:InstallAllianceSendHook()
     elseif chatType and chatType ~= "" and chatType ~= "AFK" and chatType ~= "DND" then
       LeafVE.allianceChatStickyEnabled = false
     end
-    return LeafVE.originalAllianceSendChatMessage(outgoing, chatType, language, channel)
+    return originalSendChatMessage(outgoing, chatType, language, channel)
   end
 
   SendChatMessage = self.wrappedAllianceSendChatMessage
@@ -6556,7 +6551,7 @@ end
 function LeafVE:ResetMyBadges()
   EnsureDB()
   if not self:IsAdminRank() then
-return false, "Only Kage / Hokage can reset badges from the admin panel."
+return false, "Only Flame / Flame Keeper can reset badges from the admin panel."
   end
 
   local me = ShortName(UnitName("player"))
@@ -6880,7 +6875,7 @@ end
 -- Admin-only full wipe. This is the sole guild-wide reset path.
 function LeafVE:ExecuteAdminFullDataWipe()
   if not self:IsAdminRank() then
-Print("|cFFFF4444Access denied: only Kage / Hokage can perform a full data wipe.|r")
+Print("|cFFFF4444Access denied: only Flame / Flame Keeper can perform a full data wipe.|r")
     return
   end
 
@@ -7502,7 +7497,7 @@ function LeafVE:GetCanonicalGuildRankName(playerName)
   return RANK_NAME_ALIASES[rankName] or rankName
 end
 
--- Returns true if the current player holds an admin guild rank (Kage or Hokage).
+-- Returns true if the current player holds an admin guild rank (Flame or Flame Keeper).
 function LeafVE:IsAdminRank()
   local me = ShortName(UnitName("player"))
   if not me then
@@ -9926,7 +9921,7 @@ function LeafVE:SetGuildBankOwner(ownerName, suppressBroadcast, updatedAt, updat
 
   local me = ShortName(UnitName("player"))
   if updatedAt == nil and not self:IsAdminRank() then
-return nil, "Only Kage / Hokage can change the guild bank character."
+return nil, "Only Flame / Flame Keeper can change the guild bank character."
   end
 
   local config = self:GetGuildBankConfig()
@@ -10708,7 +10703,7 @@ function LeafVE:SetGuildBankItemCategoryOverride(itemId, tabKey, silent, updated
     return nil, "Item not found."
   end
   if updatedAt == nil and not self:IsAdminRank() then
-return nil, "Only Kage / Hokage can manually classify guild bank items."
+return nil, "Only Flame / Flame Keeper can manually classify guild bank items."
   end
 
   local itemInfo = self:GetGuildBankItemInfoRecord(itemId, self:GetWorkOrderItemName(itemId))
@@ -10816,7 +10811,7 @@ function LeafVE:SetGuildBankItemHighValue(itemId, isHighValue, silent, updatedAt
     return nil, "Item not found."
   end
   if updatedAt == nil and not self:IsAdminRank() then
-return nil, "Only Kage / Hokage can designate high value guild bank items."
+return nil, "Only Flame / Flame Keeper can designate high value guild bank items."
   end
 
   local store = self:GetGuildBankHighValueDB()
@@ -11203,7 +11198,7 @@ function LeafVE:SubmitGuildBankItemRequest(itemId, quantity)
     return nil, "Item not found."
   end
   if not self:CanPlayerRequestGuildBankItem(me, itemId) then
-    return nil, "High value items can only be requested by Jonin, Anbu, Sannin, or Hokage."
+    return nil, "High value items can only be requested by Flamebound and above."
   end
 
   local now = Now()
@@ -12234,7 +12229,7 @@ function LeafVE:CreateRaidEvent(raidKey, title, startAt, signupCloseAt, raidSize
     return nil, "Your player name could not be determined."
   end
   if not self:IsRaidEventCreatorRank(me) then
-    return nil, "Only Anbu, Sannin, or Hokage can create raid events."
+    return nil, "Only Oath Captains, Banner Wardens, Flame Keepers, or Flame can create raid events."
   end
 
   local now = Now()
@@ -12279,7 +12274,7 @@ function LeafVE:SetRaidEventStatus(eventId, status)
     return nil, "Raid event not found."
   end
   if not self:CanManageRaidEvent(eventRecord, me) then
-    return nil, "Only the raid lead or Jonin+ can manage this event."
+    return nil, "Only the raid lead or Flamebound+ can manage this event."
   end
 
   local updatedAt = Now()
@@ -12376,7 +12371,7 @@ function LeafVE:SetRaidRosterStatus(eventId, playerName, rosterStatus)
     return nil, "Raid event not found."
   end
   if not self:CanManageRaidEvent(eventRecord, me) then
-    return nil, "Only the raid lead or Jonin+ can manage this roster."
+    return nil, "Only the raid lead or Flamebound+ can manage this roster."
   end
 
   local existing = self:FindRaidSignupRecord(eventId, playerName)
@@ -12806,7 +12801,7 @@ function LeafVE:CreateGuildEvent(title, category, startAt, signupCloseAt, notes,
     return nil, "Your player name could not be determined."
   end
   if not self:IsRaidOrganizerRank(me) then
-    return nil, "Only Jonin, Anbu, Sannin, or Hokage can create guild events."
+    return nil, "Only Flamebound and above can create guild events."
   end
 
   local now = Now()
@@ -12848,7 +12843,7 @@ function LeafVE:SetGuildEventStatus(eventId, status)
     return nil, "Guild event not found."
   end
   if not self:CanManageRaidEvent(eventRecord, me) then
-    return nil, "Only the event lead or Jonin+ can manage this event."
+    return nil, "Only the event lead or Flamebound+ can manage this event."
   end
 
   local updatedAt = Now()
@@ -20461,13 +20456,13 @@ function LeafVE:GetShoutoutDailyLimitForPlayer(playerName)
   end
 
   local rank = self:GetNormalizedGuildRankName(playerName)
-  if rank == "kage" or rank == "hokage" then
+  if rank == "flame" or rank == "flame keeper" then
     return 0
   end
-  if rank == "akatsuki" or rank == "sannin" or rank == "anbu" then
+  if rank == "banner warden" or rank == "oath captain" then
     return math.max(baseLimit, 10)
   end
-  if rank == "jonin" or rank == "jounin" then
+  if rank == "flamebound" then
     return math.max(baseLimit, 3)
   end
 
@@ -23663,7 +23658,7 @@ function CreateGuildBankItemButton(parent)
     GameTooltip:AddLine("Requests reset weekly and are limited to 3 per player each cycle.", 0.88, 0.88, 0.88, true)
     GameTooltip:AddLine("Manual Category: " .. tostring(LeafVE:GetGuildBankManualCategoryDisplayLabel(manualTab)), 0.55, 0.8, 1, true)
     if LeafVE:IsGuildBankItemHighValue(this.itemData.itemId) then
-      GameTooltip:AddLine("High Value Item: only Jonin, Anbu, Sannin, and Hokage can request this.", 1, 0.82, 0.45, true)
+      GameTooltip:AddLine("High Value Item: only Flamebound and above can request this.", 1, 0.82, 0.45, true)
     else
       GameTooltip:AddLine("Normal Item: any guild member can request this.", 0.75, 0.95, 0.75, true)
     end
@@ -28674,7 +28669,7 @@ function LeafVE.UI:RefreshGuildBankInventoryView(popup, snapshot, ownerName, upd
   local categoryMode = popup.itemCategoryMode or "normal"
   if popup.hintText then
     if categoryMode == "high_value" then
-popup.hintText:SetText("|cFFAAAAAAHigh Value items can only be requested by Jonin, Anbu, Sannin, and Hokage. Kage / Hokage can mark items into this category.|r")
+popup.hintText:SetText("|cFFAAAAAAHigh Value items can only be requested by Flamebound and above. Flame / Flame Keeper can mark items into this category.|r")
     else
       popup.hintText:SetText("|cFFAAAAAANormal guild bank items can be requested by any guild member. Switch to High Value for restricted items.|r")
     end
@@ -28795,7 +28790,7 @@ popup.hintText:SetText("|cFFAAAAAAHigh Value items can only be requested by Joni
             btn.requestBtn:Disable()
           end
         else
-          btn.requestBtn:SetText("Jonin+")
+          btn.requestBtn:SetText("Flamebound+")
           btn.requestBtn:Disable()
         end
         btn.requestBtn:Show()
@@ -28866,7 +28861,7 @@ function LeafVE.UI:RefreshGuildBankRequestsView(popup)
   if popup.requestsHintText then
     popup.requestsHintText:SetText(
       "|cFFAAAAAAGuild bank requests are limited to |cFFFFD7003 per week|r per player and are reviewed on the weekly send-out timer. " ..
-"High Value requests are reserved for |cFFFFD700Jonin, Anbu, Sannin, and Hokage|r, and only |cFFFFD700Kage / Hokage|r can designate items into that category. " ..
+"High Value requests are reserved for |cFFFFD700Flamebound and above|r, and only |cFFFFD700Flame / Flame Keeper|r can designate items into that category. " ..
       "Requesters can cancel their own entries, and the guild bank alt or admin ranks can mark them filled. " ..
       "Next weekly reset: |cFFFFD700" .. tostring(resetText) .. "|r.|r"
     )
@@ -29036,9 +29031,9 @@ function LeafVE.UI:RefreshGuildBankPopup(skipRequest)
   end
   if popup.ownerStatusText then
     if isAdmin then
-popup.ownerStatusText:SetText("|cFF888888Kage / Hokage can switch which guild bank alt is synced.|r")
+popup.ownerStatusText:SetText("|cFF888888Flame / Flame Keeper can switch which guild bank alt is synced.|r")
     else
-local statusLine = "|cFF888888Only Kage / Hokage can change the designated guild bank alt.|r"
+local statusLine = "|cFF888888Only Flame / Flame Keeper can change the designated guild bank alt.|r"
       if config.updatedBy and config.updatedBy ~= "" then
         statusLine = statusLine .. " |cFF88CCFFSet by " .. tostring(config.updatedBy) .. ".|r"
       end
@@ -29763,7 +29758,7 @@ function LeafVE:GetGuildBankItemCategoryLine(item, sectionInfo)
 
   local accessText
   if item and item.isHighValue then
-    accessText = "|cFFFFD700High Value|r - Jonin, Anbu, Sannin, Hokage"
+    accessText = "|cFFFFD700High Value|r - Flamebound and above"
   else
     accessText = "|cFF88FF88Normal|r - Any guild member can request"
   end
@@ -30636,9 +30631,9 @@ function LeafVE.UI:RefreshGuildBankPanel(skipRequest)
   end
   if panel.ownerStatusText then
     if isAdmin then
-panel.ownerStatusText:SetText("|cFF888888Kage / Hokage can switch which guild bank alt is synced.|r")
+panel.ownerStatusText:SetText("|cFF888888Flame / Flame Keeper can switch which guild bank alt is synced.|r")
     else
-local statusLine = "|cFF888888Only Kage / Hokage can change the designated guild bank alt.|r"
+local statusLine = "|cFF888888Only Flame / Flame Keeper can change the designated guild bank alt.|r"
       if config.updatedBy and config.updatedBy ~= "" then
         statusLine = statusLine .. " |cFF88CCFFSet by " .. tostring(config.updatedBy) .. ".|r"
       end
@@ -30805,7 +30800,7 @@ local statusLine = "|cFF888888Only Kage / Hokage can change the designated guild
               btn.requestBtn:Disable()
             end
           else
-            btn.requestBtn:SetText("Jonin+")
+            btn.requestBtn:SetText("Flamebound+")
             btn.requestBtn:Disable()
           end
           btn.requestBtn:Show()
@@ -33114,7 +33109,7 @@ function LeafVE.UI:RefreshOptions()
 end
 
 -------------------------------------------------
--- ADMIN TAB PANEL (Kage / Hokage only)
+-- ADMIN TAB PANEL (Flame / Flame Keeper only)
 -------------------------------------------------
 function MakeNumberStepper(parent, label, yPos, getVal, setVal, minVal, maxVal, stepVal, formatVal)
   local lbl = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -33193,7 +33188,7 @@ function BuildAdminPanel(panel)
 
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   subtitle:SetPoint("TOP", h, "BOTTOM", 0, -3)
-subtitle:SetText("|cFF888888Kage / Hokage only|r")
+subtitle:SetText("|cFF888888Flame / Flame Keeper only|r")
 
   local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
   scrollFrame:SetPoint("TOPLEFT",     panel, "TOPLEFT",     0, -68)
@@ -33251,7 +33246,7 @@ subtitle:SetText("|cFF888888Kage / Hokage only|r")
     "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Daily Total LP Cap: 700",
   }
   ruleLines[3] = "* Dungeon Boss: 10 LP  |  Raid Boss: 25 LP  |  +5 LP per guildie"
-  ruleLines[6] = "* Shoutout: 10 LP  |  Akatsuki: 10 per day  |  Kage / Hokage: unlimited"
+  ruleLines[6] = "* Shoutout: 10 LP  |  Flamebound: 3 per day  |  Oath Captain / Banner Warden: 10 per day  |  Flame / Flame Keeper: unlimited"
   for _, ruleText in ipairs(ruleLines) do
     local ruleFS = subFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     ruleFS:SetPoint("TOPLEFT", subFrame, "TOPLEFT", 18, yBase)
@@ -34799,9 +34794,9 @@ function BuildWelcomePanel(panel)
   end
 
   -- Welcome
-  AddSection("Hokage's Briefing", "Interface\\Icons\\Ability_Warrior_BattleShout")
+  AddSection("Guild Briefing", "Interface\\Icons\\Ability_Warrior_BattleShout")
   AddLine("Welcome to |cFF2DD35CLeaf Village Legends|r, the village ledger that tracks your rise from academy hopeful to shinobi legend.")
-  AddLine("Think of this panel as the Hokage's mission desk: it records your Leaf Points, badges, titles, achievements, work orders, weekly duties, and events.")
+  AddLine("Think of this panel as the guild's mission desk: it records your Leaf Points, badges, titles, achievements, work orders, weekly duties, and events.")
   AddLine("If it honors the village, supports a comrade, or strengthens the Will of Fire, this addon is built to notice it.")
   yOffset = yOffset - 4
   AddDivider()
@@ -34811,7 +34806,7 @@ function BuildWelcomePanel(panel)
   AddBullet("Character", "View your shinobi dossier, weekly and lifetime leaderboards, achievements, badges, titles, roster, and shoutout history.")
   AddBullet("Orders", "Manage live work orders, sign up as a crafter, climb work order reputation, and complete weekly Shinobi Duties.")
   AddBullet("Calendar", "Review guild events, RSVP to upcoming missions, and keep pace with the village schedule.")
-  AddBullet("Options", "Adjust width, height, and scale, review point history, inspect live history, and access admin tools if you are Kage or Hokage.")
+  AddBullet("Options", "Adjust width, height, and scale, review point history, inspect live history, and access admin tools if you are Flame or Flame Keeper.")
   yOffset = yOffset - 4
   AddDivider()
 
@@ -36704,7 +36699,7 @@ function LeafVE.UI:Build()
     self:BuildGroupedNavigation(f)
   end
 
--- Show admin tab only to Kage or Hokage
+-- Show admin tab only to Flame or Flame Keeper
   if LeafVE:IsAdminRank() then
     self.tabAdmin:Show()
   else
@@ -41288,9 +41283,9 @@ function LeafVE.UI:RefreshRaidSignupPanel(skipRequest)
     local canCreate = LeafVE:IsRaidEventCreatorRank()
     panel.listPane:Hide()
     panel.detailPane:Show()
-    panel.summaryText:SetText("|cFF88CCFFRaid Sign-Ups|r lets Anbu, Sannin, and Hokage post guild raid events while the whole guild signs up.")
+    panel.summaryText:SetText("|cFF88CCFFRaid Sign-Ups|r lets Oath Captains and higher post guild raid events while the whole guild signs up.")
     panel.detailTitle:SetText("|cFFFFD700Create Raid Event|r")
-    panel.detailMeta:SetText(canCreate and "|cFF88FF88Anbu, Sannin, and Hokage can post guild raid events here.|r" or "|cFFFF6666Only Anbu, Sannin, and Hokage can post raid events. Everyone else can still sign up.|r")
+    panel.detailMeta:SetText(canCreate and "|cFF88FF88Oath Captains and higher can post guild raid events here.|r" or "|cFFFF6666Only Oath Captains and higher can post raid events. Everyone else can still sign up.|r")
     LeafVE_RaidUISeedAdminDefaults(panel)
     LeafVE_RaidUIApplyCatalogSelection(panel, 0)
     panel.detailBody:SetText((panel.createRaidKey and LeafVE_RaidUIGetBossSectionText(panel.createRaidKey) or "|cFF888888No raid catalog available.|r"))
@@ -42129,9 +42124,9 @@ function LeafVE.UI:RefreshGuildEventsPanel(skipRequest)
     local canCreate = LeafVE:IsRaidOrganizerRank()
     panel.listPane:Hide()
     panel.detailPane:Show()
-    panel.summaryText:SetText("|cFF88CCFFGuild Events|r lets Jonin+ post meetings, dungeon groups, social events, and more.")
+    panel.summaryText:SetText("|cFF88CCFFGuild Events|r lets Flamebound and higher post meetings, dungeon groups, social events, and more.")
     panel.detailTitle:SetText("|cFFFFD700Create Guild Event|r")
-    panel.detailMeta:SetText(canCreate and "|cFF88FF88Jonin, Anbu, Sannin, and Hokage can post guild events here.|r" or "|cFFFF6666Only Jonin, Anbu, Sannin, and Hokage can post guild events. Everyone else can still RSVP.|r")
+    panel.detailMeta:SetText(canCreate and "|cFF88FF88Flamebound and higher can post guild events here.|r" or "|cFFFF6666Only Flamebound and higher can post guild events. Everyone else can still RSVP.|r")
     panel.detailBody:SetText("|cFFAAAAAAPost a guild event with a title, category, schedule, and short note. Everyone using the addon can see it, RSVP, and track the start countdown.|r")
     panel.managerOpenBtn:Hide()
     panel.managerLockBtn:Hide()
