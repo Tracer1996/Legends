@@ -971,7 +971,7 @@ local TITLES = {
   -- Casual Titles
   {id="title_loremaster",name="Loremaster",achievement="casual_quest_1000",prefix=false,category="Casual",icon="Interface\\Icons\\INV_Misc_Book_09"},
   {id="title_angler",name="the Master Angler",achievement="casual_fish_1000",prefix=false,category="Casual",icon="Interface\\Icons\\Trade_Fishing"},
-  {id="title_pet_collector",name="the Pet Collector",achievement="casual_pet_fanatic",prefix=false,category="Casual",icon="Interface\\Icons\\INV_Misc_Toy_07"},
+  {id="title_pet_collector",name="Handler",chatName="Handler",achievement="casual_pet_fanatic",prefix=false,category="Companions",icon="Interface\\Icons\\INV_Misc_Toy_07",desc="Awarded for collecting 25 Turtle WoW companions."},
   {id="title_banker",name="the Banker",achievement="gold_5000",prefix=false,category="Casual",icon="Interface\\Icons\\INV_Misc_Coin_17"},
   {id="title_death_prone",name="Death-Prone",achievement="casual_deaths_100",prefix=false,category="Casual",icon="Interface\\Icons\\Spell_Shadow_DeathScream"},
   {id="title_clumsy",name="the Clumsy",achievement="casual_fall_death",prefix=false,category="Casual",icon="Interface\\Icons\\Ability_Rogue_FeintedStrike"},
@@ -2545,12 +2545,15 @@ end
 
 local function BuildGuildAchievementMessage(playerName, achId, ach)
   local achLink = BuildAnnouncementAchievementLink(ach) or ("["..ach.name.."]")
-
   local me = ShortName(UnitName("player"))
   local earnedByOtherPlayer = ShortName(playerName) ~= me
+  local titleData = me and not earnedByOtherPlayer and LeafVE_AchTest and LeafVE_AchTest.GetCurrentTitle and LeafVE_AchTest:GetCurrentTitle(me)
 
   if earnedByOtherPlayer then
     return playerName.." has earned the achievement "..achLink
+  end
+  if titleData then
+    return FormatAchievementTitleText(me, titleData).." has earned the achievement "..achLink
   end
   return "has earned the achievement "..achLink
 end
@@ -2885,6 +2888,11 @@ LeafVE_AchTest.UI.selectedCategory = "All"
 LeafVE_AchTest.UI.searchText = ""
 LeafVE_AchTest.UI.titleSearchText = ""
 LeafVE_AchTest.UI.titleCategoryFilter = "All"
+LeafVE_AchTest.UI.selectedCompanionFilter = "All"
+
+function LeafVE_AchTest.UI:IsAchievementListView()
+  return self.currentView == "achievements" or self.currentView == "companions"
+end
 
 -- Boss kill tracking: raid bosses only â€” dungeon bosses are tracked via BOSS_TO_DUNGEON
 local BOSS_ACHIEVEMENTS = {
@@ -3632,9 +3640,20 @@ function LeafVE_AchTest.UI:Build()
     LeafVE_AchTest.UI:Refresh()
   end)
   self.achTab = achTab
+
+  local companionTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  companionTab:SetPoint("LEFT", achTab, "RIGHT", 5, 0)
+  companionTab:SetWidth(95)
+  companionTab:SetHeight(25)
+  companionTab:SetText("Companions")
+  companionTab:SetScript("OnClick", function()
+    LeafVE_AchTest.UI.currentView = "companions"
+    LeafVE_AchTest.UI:Refresh()
+  end)
+  self.companionTab = companionTab
   
   local titlesTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  titlesTab:SetPoint("LEFT", achTab, "RIGHT", 5, 0)
+  titlesTab:SetPoint("LEFT", companionTab, "RIGHT", 5, 0)
   titlesTab:SetWidth(80)
   titlesTab:SetHeight(25)
   titlesTab:SetText("Titles")
@@ -3861,7 +3880,7 @@ function LeafVE_AchTest.UI:Build()
 
     local tokenKind, tokenCatIndex, tokenPage = nil, nil, nil
     if type(menuValue) == "string" then
-      tokenKind, tokenCatIndex, tokenPage = string.match(menuValue, "^(%u+):(%d+):?(%d*)$")
+      tokenKind, tokenCatIndex, tokenPage = smatch(menuValue, "^(%u+):(%d+):?(%d*)$")
     end
     local catIndex = tonumber(tokenCatIndex or "")
     local category = catIndex and adminAchCategories[catIndex]
@@ -4028,6 +4047,7 @@ function LeafVE_AchTest.UI:Build()
     {display="Gold",           filter="Gold"},
     {display="Elite",          filter="Elite"},
     {display="Casual",         filter="Casual"},
+    {display="Companions",     filter="Companions"},
     {display="Roleplay",       filter="Roleplay"},
     {display="Kills",          filter="Kills"},
     {display="Identity",       filter="Identity"},
@@ -4079,6 +4099,75 @@ function LeafVE_AchTest.UI:Build()
       end
     end)
     table.insert(self.categoryButtons, btn)
+  end
+
+  local companionSidebarFrame = CreateFrame("Frame", nil, f)
+  companionSidebarFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -110)
+  companionSidebarFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 10)
+  companionSidebarFrame:SetWidth(140)
+  companionSidebarFrame:SetBackdrop({
+    bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 8,
+    insets = {left=2, right=2, top=2, bottom=2},
+  })
+  companionSidebarFrame:SetBackdropColor(0.10, 0.10, 0.10, 0.95)
+  companionSidebarFrame:SetBackdropBorderColor(0.40, 0.40, 0.40, 0.90)
+  companionSidebarFrame:Hide()
+  self.companionSidebarFrame = companionSidebarFrame
+
+  local COMPANION_SIDEBAR_CATS = {
+    {display="All",         filter="All"},
+    {display="Collected",   filter="Collected"},
+    {display="Missing",     filter="Missing"},
+    {display="Milestones",  filter="Milestones"},
+    {display="Individuals", filter="Individuals"},
+  }
+  self.companionCategoryButtons = {}
+  for i, cat in ipairs(COMPANION_SIDEBAR_CATS) do
+    local filterVal = cat.filter
+    local btn = CreateFrame("Frame", nil, companionSidebarFrame)
+    btn:SetPoint("TOPLEFT", companionSidebarFrame, "TOPLEFT", 4, -(i-1)*27 - 4)
+    btn:SetWidth(132)
+    btn:SetHeight(24)
+    btn:EnableMouse(true)
+    btn:SetBackdrop({
+      bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+      tile = true, tileSize = 8,
+      insets = {left=2, right=2, top=2, bottom=2},
+    })
+    btn:SetBackdropColor(0, 0, 0, 0)
+    local lbl = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    lbl:SetAllPoints(btn)
+    lbl:SetJustifyH("CENTER")
+    lbl:SetText(cat.display)
+    lbl:SetTextColor(0.92, 0.78, 0.26)
+    btn.label = lbl
+    btn.filterValue = filterVal
+    local hi = btn:CreateTexture(nil, "BACKGROUND")
+    hi:SetAllPoints(btn)
+    hi:SetTexture(TEX.categoryHi)
+    hi:SetVertexColor(1, 1, 1, 0.70)
+    hi:Hide()
+    btn.highlight = hi
+    btn:SetScript("OnMouseDown", function()
+      LeafVE_AchTest.UI.selectedCompanionFilter = this.filterValue
+      LeafVE_AchTest.UI:Refresh()
+    end)
+    btn:SetScript("OnEnter", function()
+      if this.filterValue ~= LeafVE_AchTest.UI.selectedCompanionFilter then
+        if this.highlight then
+          this.highlight:SetVertexColor(1, 1, 1, 0.55)
+          this.highlight:Show()
+        end
+      end
+    end)
+    btn:SetScript("OnLeave", function()
+      if this.filterValue ~= LeafVE_AchTest.UI.selectedCompanionFilter then
+        if this.highlight then this.highlight:Hide() end
+      end
+    end)
+    table.insert(self.companionCategoryButtons, btn)
   end
   
   -- Achievement Search Bar
@@ -4194,6 +4283,7 @@ function LeafVE_AchTest.UI:Build()
     {display="Gold",         filter="Gold"},
     {display="Exploration",  filter="Exploration"},
     {display="Casual",       filter="Casual"},
+    {display="Companions",   filter="Companions"},
     {display="Roleplay",     filter="Roleplay"},
     {display="Quests",       filter="Quests"},
     {display="Legendary",    filter="Legendary"},
@@ -4285,7 +4375,7 @@ function LeafVE_AchTest.UI:Build()
   scrollbar:SetScript("OnValueChanged", function()
     if LeafVE_AchTest.UI and LeafVE_AchTest.UI.scrollFrame then
       LeafVE_AchTest.UI.scrollFrame:SetVerticalScroll(this:GetValue())
-      if LeafVE_AchTest.UI.currentView == "achievements" then
+      if LeafVE_AchTest.UI:IsAchievementListView() then
         LeafVE_AchTest.UI:UpdateVisibleAchievements()
       end
     end
@@ -4362,6 +4452,7 @@ function LeafVE_AchTest.UI:Refresh()
   
   if self.currentView == "achievements" then
     if self.achTab then self.achTab:Disable() end
+    if self.companionTab then self.companionTab:Enable() end
     if self.titlesTab then self.titlesTab:Enable() end
     if self.adminTab and hasAdminAccess then self.adminTab:Enable() end
     if self.awardBtn then
@@ -4379,6 +4470,7 @@ function LeafVE_AchTest.UI:Refresh()
     if self.titleClearBtn then self.titleClearBtn:Hide() end
     -- Show achievement sidebar, hide title sidebar and admin panel
     if self.sidebarFrame then self.sidebarFrame:Show() end
+    if self.companionSidebarFrame then self.companionSidebarFrame:Hide() end
     if self.titleSidebarFrame then self.titleSidebarFrame:Hide() end
     if self.adminFrame then self.adminFrame:Hide() end
     if self.scrollFrame then self.scrollFrame:Show() end
@@ -4398,8 +4490,48 @@ function LeafVE_AchTest.UI:Refresh()
       end
     end
     self:RefreshAchievements()
+  elseif self.currentView == "companions" then
+    if self.achTab then self.achTab:Enable() end
+    if self.companionTab then self.companionTab:Disable() end
+    if self.titlesTab then self.titlesTab:Enable() end
+    if self.adminTab and hasAdminAccess then self.adminTab:Enable() end
+    if self.awardBtn then
+      if hasAdminAccess then
+        self.awardBtn:Show()
+      else
+        self.awardBtn:Hide()
+      end
+    end
+    if self.searchLabel then self.searchLabel:Show() end
+    if self.searchBox then self.searchBox:Show() end
+    if self.clearBtn then self.clearBtn:Show() end
+    if self.titleSearchLabel then self.titleSearchLabel:Hide() end
+    if self.titleSearchBox then self.titleSearchBox:Hide() end
+    if self.titleClearBtn then self.titleClearBtn:Hide() end
+    if self.sidebarFrame then self.sidebarFrame:Hide() end
+    if self.companionSidebarFrame then self.companionSidebarFrame:Show() end
+    if self.titleSidebarFrame then self.titleSidebarFrame:Hide() end
+    if self.adminFrame then self.adminFrame:Hide() end
+    if self.scrollFrame then self.scrollFrame:Show() end
+    if self.scrollbar then self.scrollbar:Show() end
+    if self.companionCategoryButtons then
+      for _, btn in ipairs(self.companionCategoryButtons) do
+        if btn.filterValue == self.selectedCompanionFilter then
+          if btn.highlight then
+            btn.highlight:SetVertexColor(1, 1, 1, 0.88)
+            btn.highlight:Show()
+          end
+          btn.label:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3])
+        else
+          if btn.highlight then btn.highlight:Hide() end
+          btn.label:SetTextColor(0.92, 0.78, 0.26)
+        end
+      end
+    end
+    self:RefreshAchievements()
   elseif self.currentView == "admin" then
     if self.achTab then self.achTab:Enable() end
+    if self.companionTab then self.companionTab:Enable() end
     if self.titlesTab then self.titlesTab:Enable() end
     if self.adminTab and hasAdminAccess then self.adminTab:Disable() end
     if self.awardBtn then self.awardBtn:Hide() end
@@ -4410,12 +4542,14 @@ function LeafVE_AchTest.UI:Refresh()
     if self.titleSearchBox then self.titleSearchBox:Hide() end
     if self.titleClearBtn then self.titleClearBtn:Hide() end
     if self.sidebarFrame then self.sidebarFrame:Hide() end
+    if self.companionSidebarFrame then self.companionSidebarFrame:Hide() end
     if self.titleSidebarFrame then self.titleSidebarFrame:Hide() end
     if self.adminFrame then self.adminFrame:Show() end
     if self.scrollFrame then self.scrollFrame:Hide() end
     if self.scrollbar then self.scrollbar:Hide() end
   else
     if self.achTab then self.achTab:Enable() end
+    if self.companionTab then self.companionTab:Enable() end
     if self.titlesTab then self.titlesTab:Disable() end
     if self.adminTab and hasAdminAccess then self.adminTab:Enable() end
     if self.awardBtn then self.awardBtn:Hide() end
@@ -4427,6 +4561,7 @@ function LeafVE_AchTest.UI:Refresh()
     if self.titleClearBtn then self.titleClearBtn:Show() end
     -- Show title sidebar, hide achievement sidebar and admin panel
     if self.sidebarFrame then self.sidebarFrame:Hide() end
+    if self.companionSidebarFrame then self.companionSidebarFrame:Hide() end
     if self.titleSidebarFrame then self.titleSidebarFrame:Show() end
     if self.adminFrame then self.adminFrame:Hide() end
     if self.scrollFrame then self.scrollFrame:Show() end
@@ -4462,17 +4597,35 @@ function LeafVE_AchTest.UI:RefreshAchievements()
 
   -- Build filtered & sorted achievement list.
   local achievementList = {}
+  local activeCategory = self.selectedCategory or "All"
+  local companionFilter = self.selectedCompanionFilter or "All"
+  if self.currentView == "companions" then
+    activeCategory = "Companions"
+  end
   for achID, achData in pairs(ACHIEVEMENTS) do
-    local matchesCategory = self.selectedCategory == "All" or achData.category == self.selectedCategory
+    local completed = playerAchievements[achID] ~= nil
+    local matchesCategory = activeCategory == "All" or achData.category == activeCategory
     local matchesSearch = true
+    local matchesCompanionFilter = true
     if self.searchText and self.searchText ~= "" then
       local searchLower = string.lower(self.searchText)
       local nameLower = string.lower(achData.name)
       local descLower = string.lower(achData.desc)
       matchesSearch = string.find(nameLower, searchLower) or string.find(descLower, searchLower)
     end
-    if matchesCategory and matchesSearch then
-      local completed = playerAchievements[achID] ~= nil
+    if self.currentView == "companions" then
+      local companionType = achData.companionType or "individual"
+      if companionFilter == "Collected" then
+        matchesCompanionFilter = completed
+      elseif companionFilter == "Missing" then
+        matchesCompanionFilter = not completed
+      elseif companionFilter == "Milestones" then
+        matchesCompanionFilter = companionType == "milestone"
+      elseif companionFilter == "Individuals" then
+        matchesCompanionFilter = companionType ~= "milestone"
+      end
+    end
+    if matchesCategory and matchesSearch and matchesCompanionFilter then
       local timestamp = completed and playerAchievements[achID].timestamp or 0
       table.insert(achievementList, {id=achID, data=achData, completed=completed, timestamp=timestamp})
     end
