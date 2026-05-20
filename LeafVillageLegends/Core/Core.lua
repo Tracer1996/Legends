@@ -5,7 +5,7 @@ AtlasLoot_Data = AtlasLoot_Data or {}
 LeafVE = LeafVE or {}
 LeafVE.name = "LeafVillageLegends"
 LeafVE.prefix = "LeafVE"
-LeafVE.version = "16.0"
+LeafVE.version = "16.2"
 LeafVE.allianceEnabled = false
 LeafVE.isAllianceStandalone = false
 LeafVE.guildBankOwner = "Methllyy"
@@ -146,7 +146,7 @@ local BOSS_GUILDIE_BONUS_POINTS = 5   -- extra LP per guildie on boss kills
 local BOSS_KILL_DEDUP_WINDOW = 10     -- seconds to suppress duplicate boss-kill awards
 local INSTANCE_COMPLETION_POINTS = 10 -- dungeon completion (flat)
 local RAID_COMPLETION_POINTS = 25     -- raid completion (flat)
-local INSTANCE_MIN_PRESENCE_PCT = 0.5  -- must be present for ÃƒÂ¢Ã¢â‚¬Â°Ã‚Â¥50% of run time
+local INSTANCE_MIN_PRESENCE_PCT = 0.5  -- must be present for ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â°Ãƒâ€šÃ‚Â¥50% of run time
 local INSTANCE_MAX_DAILY = 20
 local QUEST_POINTS = 10
 local QUEST_MAX_DAILY = 0
@@ -169,11 +169,11 @@ WORK_ORDER_REPUTATION_BADGE_THRESHOLDS = {
   leafLegend = 6000,
 }
 WORK_ORDER_REPUTATION_TIERS = {
-  { name = "Leaf Apprentice", min = 0 },
+  { name = "Ashen Apprentice", min = 0 },
   { name = "Trusted Hand", min = WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.trustedHand },
-  { name = "Village Artisan", min = WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.villageArtisan },
+  { name = "Banner Artisan", min = WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.villageArtisan },
   { name = "Master Supplier", min = WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.masterSupplier },
-  { name = "Leaf Legend", min = WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.leafLegend },
+  { name = "Ashen Legend", min = WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.leafLegend },
 }
 LeafVE.shinobiDutyTierOrder = {"S", "A", "B", "C", "D"}
 LeafVE.shinobiDutyTemplateVersion = 3
@@ -205,20 +205,20 @@ LeafVE.shinobiDutyMetricCatalog = {
   },
   {
     key = "guildie_quests",
-    title = "Field Assignments",
+    title = "Banner Assignments",
     icon = "Interface\\Icons\\INV_Scroll_03",
     progressLabel = "Guild-group quests",
-    sourceHint = "Quest turn-ins that awarded guild-group Leaf Points this week.",
+    sourceHint = "Quest turn-ins that awarded guild-group Ashen Embers this week.",
     description = "Complete %d guild-group quest(s) this week.",
     targets = { S = 50, A = 32, B = 22, C = 14, D = 8 },
   },
   {
     key = "shoutouts_given",
-    title = "Village Recognition",
+    title = "Banner Recognition",
     icon = "Interface\\Icons\\Spell_Holy_GreaterBlessingofKings",
     progressLabel = "Shoutouts given",
     sourceHint = "Counts shoutouts you send this week.",
-    description = "Send %d shoutout(s) to fellow Shinobis this week.",
+    description = "Send %d shoutout(s) to fellow guildmates this week.",
     targets = { S = 10, A = 8, B = 6, C = 4, D = 2 },
   },
   {
@@ -253,38 +253,38 @@ local GRPAWARD_GRACE_PERIOD = 60      -- seconds non-broadcasters wait for the g
 local WEEKEND_POINT_MULTIPLIER = 2    -- LP multiplier applied on Saturday/Sunday
 LeafVE.allianceRosterBroadcasterTTL = 90
 
-local SEASON_REWARD_1 = 10
-local SEASON_REWARD_2 = 5
-local SEASON_REWARD_3 = 3
-local SEASON_REWARD_4 = 2
-local SEASON_REWARD_5 = 1
+local SEASON_REWARD_1 = 3
+local SEASON_REWARD_2 = 2
+local SEASON_REWARD_3 = 1
+local SEASON_REWARD_4 = 0
+local SEASON_REWARD_5 = 0
 
-LeafVE.weeklyRecapNoteText = "These are the Leaf Legends. You could be a Grand Shinobi too. Carve your path to greatness with your peers!"
+LeafVE.weeklyRecapNoteText = "These are the champions of the Ashen Banner. Stand with your guildmates, carve your legacy, and rise with the Banner."
 LeafVE.weeklyRecapRankMessageTemplates = {
   [1] = {
-    "%s, you led the village this week. %d bonus Leaf Points are yours, Grand Shinobi.",
-    "%s, the summit is yours this week. Claim your %d bonus Leaf Points and wear the crown proudly.",
-    "%s, you stood above the rest this week. Your %d bonus Leaf Points are waiting for you.",
+    "%s, you led the Banner this week. %dg is yours.",
+    "%s, the summit is yours this week. Claim your %dg purse and wear the crown proudly.",
+    "%s, you stood above the rest this week. Your %dg reward is waiting for you.",
   },
   [2] = {
-    "%s, an elite climb. Second place earns you %d bonus Leaf Points this week.",
-    "%s, you were right on the leader's heels. Enjoy your %d bonus Leaf Points for 2nd place.",
-    "%s, the village noticed your grind. Second place and %d bonus Leaf Points are yours.",
+    "%s, an elite climb. Second place earns you %dg this week.",
+    "%s, you were right on the leader's heels. Enjoy your %dg reward for 2nd place.",
+    "%s, the Banner noticed your grind. Second place and %dg are yours.",
   },
   [3] = {
-    "%s, a strong finish. Third place brings you %d bonus Leaf Points this week.",
-    "%s, your path was sharp this week. Third place and %d bonus Leaf Points are well earned.",
-    "%s, you carved out a podium finish. Claim your %d bonus Leaf Points for 3rd place.",
+    "%s, a strong finish. Third place brings you %dg this week.",
+    "%s, your path was sharp this week. Third place and %dg are well earned.",
+    "%s, you carved out a podium finish. Claim your %dg for 3rd place.",
   },
   [4] = {
-    "%s, you broke into the legends board. Fourth place earns you %d bonus Leaf Points.",
-    "%s, the top five is no small feat. Enjoy your %d bonus Leaf Points for 4th place.",
-    "%s, you stayed in the hunt all week. Fourth place and %d bonus Leaf Points are yours.",
+    "%s, you broke into the champions board. Fourth place earns you %dg.",
+    "%s, the top five is no small feat. Enjoy your %dg reward for 4th place.",
+    "%s, you stayed in the hunt all week. Fourth place and %dg are yours.",
   },
   [5] = {
-    "%s, you claimed the final legends spot this week. %d bonus Leaf Points are yours.",
-    "%s, top five secured. Enjoy your %d bonus Leaf Points for holding the line.",
-    "%s, you earned your place among the Leaf Legends. Claim your %d bonus Leaf Points.",
+    "%s, you claimed the final champions spot this week. %dg are yours.",
+    "%s, top five secured. Enjoy your %dg reward for holding the line.",
+    "%s, you earned your place among the Banner's finest. Claim your %dg.",
   },
 }
 
@@ -305,8 +305,8 @@ local RANK_NAME_ALIASES = {
   ["member born"] = "born",
 }
 
-local LEAF_EMBLEM = "Interface\\Icons\\Spell_Nature_ResistNature"
-local LEAF_FALLBACK = "Interface\\Icons\\Spell_Nature_ResistNature"
+local LEAF_EMBLEM = "Interface\\Icons\\INV_Banner_01"
+local LEAF_FALLBACK = "Interface\\Icons\\INV_Banner_01"
 local QUEST_ICON = "Interface\\Icons\\INV_Misc_Book_09"
 
 local PVP_RANK_ICONS = {
@@ -855,15 +855,15 @@ BADGES = {
   {id = "guildie_hours_10000", name = "Guildie Group Hours IX", desc = "Obtain 10000 guildie group hours",  icon = "Interface\\Icons\\INV_Crown_02",    category = "Social", quality = BADGE_QUALITY.LEGENDARY},
 
   -- PvP with Guildies (AUTO-TRACKED)
-  {id = "shinobi_combatant_100",    name = "Shinobi Combatant I",    desc = "Gain 100 honorable kills fighting alongside another Shinobi",    icon = "Interface\\Icons\\Ability_Warrior_Challange", category = "Shinobi Combatant", quality = BADGE_QUALITY.COMMON},
-  {id = "shinobi_combatant_500",    name = "Shinobi Combatant II",   desc = "Gain 500 honorable kills fighting alongside another Shinobi",    icon = "Interface\\Icons\\Ability_DualWield",         category = "Shinobi Combatant", quality = BADGE_QUALITY.UNCOMMON},
-  {id = "shinobi_combatant_1000",   name = "Shinobi Combatant III",  desc = "Gain 1000 honorable kills fighting alongside another Shinobi",   icon = "Interface\\Icons\\Ability_Rogue_Ambush",      category = "Shinobi Combatant", quality = BADGE_QUALITY.UNCOMMON},
-  {id = "shinobi_combatant_2500",   name = "Shinobi Combatant IV",   desc = "Gain 2500 honorable kills fighting alongside another Shinobi",   icon = "Interface\\Icons\\INV_Sword_27",              category = "Shinobi Combatant", quality = BADGE_QUALITY.RARE},
-  {id = "shinobi_combatant_5000",   name = "Shinobi Combatant V",    desc = "Gain 5000 honorable kills fighting alongside another Shinobi",   icon = "Interface\\Icons\\INV_Banner_01",             category = "Shinobi Combatant", quality = BADGE_QUALITY.RARE},
-  {id = "shinobi_combatant_7500",   name = "Shinobi Combatant VI",   desc = "Gain 7500 honorable kills fighting alongside another Shinobi",   icon = "Interface\\Icons\\INV_Banner_03",             category = "Shinobi Combatant", quality = BADGE_QUALITY.EPIC},
-  {id = "shinobi_combatant_10000",  name = "Shinobi Combatant VII",  desc = "Gain 10000 honorable kills fighting alongside another Shinobi",  icon = "Interface\\Icons\\INV_Misc_Head_Dragon_Red",  category = "Shinobi Combatant", quality = BADGE_QUALITY.EPIC},
-  {id = "shinobi_combatant_25000",  name = "Shinobi Combatant VIII", desc = "Gain 25000 honorable kills fighting alongside another Shinobi",  icon = "Interface\\Icons\\INV_Crown_01",              category = "Shinobi Combatant", quality = BADGE_QUALITY.EPIC},
-  {id = "shinobi_combatant_50000",  name = "Shinobi Combatant IX",   desc = "Gain 50000 honorable kills fighting alongside another Shinobi",  icon = "Interface\\Icons\\INV_Crown_02",              category = "Shinobi Combatant", quality = BADGE_QUALITY.LEGENDARY},
+  {id = "shinobi_combatant_100",    name = "Banner Vanguard I",    desc = "Gain 100 honorable kills fighting alongside guildmates",    icon = "Interface\\Icons\\Ability_Warrior_Challange", category = "Banner Vanguard", quality = BADGE_QUALITY.COMMON},
+  {id = "shinobi_combatant_500",    name = "Banner Vanguard II",   desc = "Gain 500 honorable kills fighting alongside guildmates",    icon = "Interface\\Icons\\Ability_DualWield",         category = "Banner Vanguard", quality = BADGE_QUALITY.UNCOMMON},
+  {id = "shinobi_combatant_1000",   name = "Banner Vanguard III",  desc = "Gain 1000 honorable kills fighting alongside guildmates",   icon = "Interface\\Icons\\Ability_Rogue_Ambush",      category = "Banner Vanguard", quality = BADGE_QUALITY.UNCOMMON},
+  {id = "shinobi_combatant_2500",   name = "Banner Vanguard IV",   desc = "Gain 2500 honorable kills fighting alongside guildmates",   icon = "Interface\\Icons\\INV_Sword_27",              category = "Banner Vanguard", quality = BADGE_QUALITY.RARE},
+  {id = "shinobi_combatant_5000",   name = "Banner Vanguard V",    desc = "Gain 5000 honorable kills fighting alongside guildmates",   icon = "Interface\\Icons\\INV_Banner_01",             category = "Banner Vanguard", quality = BADGE_QUALITY.RARE},
+  {id = "shinobi_combatant_7500",   name = "Banner Vanguard VI",   desc = "Gain 7500 honorable kills fighting alongside guildmates",   icon = "Interface\\Icons\\INV_Banner_03",             category = "Banner Vanguard", quality = BADGE_QUALITY.EPIC},
+  {id = "shinobi_combatant_10000",  name = "Banner Vanguard VII",  desc = "Gain 10000 honorable kills fighting alongside guildmates",  icon = "Interface\\Icons\\INV_Misc_Head_Dragon_Red",  category = "Banner Vanguard", quality = BADGE_QUALITY.EPIC},
+  {id = "shinobi_combatant_25000",  name = "Banner Vanguard VIII", desc = "Gain 25000 honorable kills fighting alongside guildmates",  icon = "Interface\\Icons\\INV_Crown_01",              category = "Banner Vanguard", quality = BADGE_QUALITY.EPIC},
+  {id = "shinobi_combatant_50000",  name = "Banner Vanguard IX",   desc = "Gain 50000 honorable kills fighting alongside guildmates",  icon = "Interface\\Icons\\INV_Crown_02",              category = "Banner Vanguard", quality = BADGE_QUALITY.LEGENDARY},
   
   -- Shoutouts (AUTO-TRACKED)
   {id = "first_shoutout_given",    name = "Generous Soul",   desc = "Give your first shoutout",    icon = "Interface\\Icons\\INV_Letter_15",                    category = "Recognition", quality = BADGE_QUALITY.COMMON},
@@ -875,11 +875,11 @@ BADGES = {
   -- NOTE: Badge IDs are intentionally kept unchanged to preserve existing earned badge data.
   -- Thresholds and descriptions reflect the new increased requirements.
   {id = "total_500",   name = "Core Member",    desc = "Earn 2,500 total points",   icon = "Interface\\Icons\\INV_Jewelry_Talisman_07",  category = "Milestones", quality = BADGE_QUALITY.RARE},
-  {id = "total_1000",  name = "Shinobi",        desc = "Earn 5,000 total points",  icon = "Interface\\Icons\\INV_Misc_Head_Dragon_Red",  category = "Milestones", quality = BADGE_QUALITY.EPIC},
-  {id = "total_2000",  name = "Elite Shinobi",  desc = "Earn 10,000 total points",  icon = "Interface\\Icons\\INV_Jewelry_Talisman_09",  category = "Milestones", quality = BADGE_QUALITY.EPIC},
-  {id = "total_5000",  name = "Kage Candidate", desc = "Earn 25,000 total points",  icon = "Interface\\Icons\\INV_Misc_Head_Dragon_Black", category = "Milestones", quality = BADGE_QUALITY.EPIC},
-  {id = "total_10000", name = "Hokage Legend",  desc = "Earn 50,000 total points", icon = "Interface\\Icons\\INV_Crown_02",        category = "Milestones", quality = BADGE_QUALITY.LEGENDARY},
-  {id = "total_20000", name = "Leaf Immortal",  desc = "Earn 100,000 total points", icon = "Interface\\Icons\\INV_Crown_02",        category = "Milestones", quality = BADGE_QUALITY.LEGENDARY},
+  {id = "total_1000",  name = "Bannerforged",    desc = "Earn 5,000 total points",   icon = "Interface\\Icons\\INV_Misc_Head_Dragon_Red",  category = "Milestones", quality = BADGE_QUALITY.EPIC},
+  {id = "total_2000",  name = "Ashen Elite",     desc = "Earn 10,000 total points",  icon = "Interface\\Icons\\INV_Jewelry_Talisman_09",   category = "Milestones", quality = BADGE_QUALITY.EPIC},
+  {id = "total_5000",  name = "Standard Bearer", desc = "Earn 25,000 total points",  icon = "Interface\\Icons\\INV_Misc_Head_Dragon_Black", category = "Milestones", quality = BADGE_QUALITY.EPIC},
+  {id = "total_10000", name = "Banner Legend",   desc = "Earn 50,000 total points",  icon = "Interface\\Icons\\INV_Crown_02",               category = "Milestones", quality = BADGE_QUALITY.LEGENDARY},
+  {id = "total_20000", name = "Ashen Immortal",  desc = "Earn 100,000 total points", icon = "Interface\\Icons\\INV_Crown_02",               category = "Milestones", quality = BADGE_QUALITY.LEGENDARY},
   
   -- Attendance (AUTO-TRACKED if in raids)
   {id = "attendance_10", name = "Raider",       desc = "Attend 10 raids", icon = "Interface\\Icons\\Spell_Fire_Immolation",      category = "Raids", quality = BADGE_QUALITY.UNCOMMON},
@@ -894,16 +894,16 @@ BADGES = {
   -- Work Orders (AUTO-TRACKED)
   {id = "work_order_rep_50",   name = "First Contract",   desc = "Reach " .. tostring(WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.firstContract) .. " Work Order Reputation",   icon = "Interface\\Icons\\INV_Letter_15",       category = "Work Orders", quality = BADGE_QUALITY.COMMON},
   {id = "work_order_rep_150",  name = "Trusted Hand",     desc = "Reach " .. tostring(WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.trustedHand) .. " Work Order Reputation",    icon = "Interface\\Icons\\Trade_Alchemy",       category = "Work Orders", quality = BADGE_QUALITY.UNCOMMON},
-  {id = "work_order_rep_400",  name = "Village Artisan",  desc = "Reach " .. tostring(WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.villageArtisan) .. " Work Order Reputation",  icon = "Interface\\Icons\\Trade_BlackSmithing", category = "Work Orders", quality = BADGE_QUALITY.RARE},
+  {id = "work_order_rep_400",  name = "Banner Artisan",   desc = "Reach " .. tostring(WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.villageArtisan) .. " Work Order Reputation",  icon = "Interface\\Icons\\Trade_BlackSmithing", category = "Work Orders", quality = BADGE_QUALITY.RARE},
   {id = "work_order_rep_800",  name = "Master Supplier",  desc = "Reach " .. tostring(WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.masterSupplier) .. " Work Order Reputation",  icon = "Interface\\Icons\\INV_Crate_01",        category = "Work Orders", quality = BADGE_QUALITY.EPIC},
-  {id = "work_order_rep_1500", name = "Leaf Legend",      desc = "Reach " .. tostring(WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.leafLegend) .. " Work Order Reputation",      icon = "Interface\\Icons\\INV_Crown_02",        category = "Work Orders", quality = BADGE_QUALITY.LEGENDARY},
+  {id = "work_order_rep_1500", name = "Ashen Legend",     desc = "Reach " .. tostring(WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.leafLegend) .. " Work Order Reputation",      icon = "Interface\\Icons\\INV_Crown_02",        category = "Work Orders", quality = BADGE_QUALITY.LEGENDARY},
 }
 
 LeafVE.titleDefinitions = {
   {id = "total_500", title = "Operative", badgeId = "total_500"},
   {id = "total_1000", title = "Adept", badgeId = "total_1000"},
   {id = "total_2000", title = "Champion", badgeId = "total_2000"},
-  {id = "total_5000", title = "Kagehand", badgeId = "total_5000"},
+  {id = "total_5000", title = "Bannerhand", badgeId = "total_5000"},
   {id = "total_10000", title = "Paragon", badgeId = "total_10000"},
   {id = "total_20000", title = "Immortal", badgeId = "total_20000"},
   {id = "shoutout_received_50", title = "Icon", badgeId = "shoutout_received_50"},
@@ -918,7 +918,7 @@ LeafVE.titleDefinitions = {
   {id = "shinobi_combatant_7500", title = "Commander", badgeId = "shinobi_combatant_7500"},
   {id = "shinobi_combatant_10000", title = "Crimson", badgeId = "shinobi_combatant_10000"},
   {id = "shinobi_combatant_25000", title = "War Hero", badgeId = "shinobi_combatant_25000"},
-  {id = "shinobi_combatant_50000", title = "Hokage Blade", badgeId = "shinobi_combatant_50000"},
+  {id = "shinobi_combatant_50000", title = "Ashen Blade", badgeId = "shinobi_combatant_50000"},
   {id = "work_order_rep_800", title = "Quartermaster", badgeId = "work_order_rep_800"},
   {id = "work_order_rep_1500", title = "Supply Legend", badgeId = "work_order_rep_1500"},
 }
@@ -934,13 +934,13 @@ BADGE_COLLECTION_CATEGORY_ORDER = {
 }
 
 BADGE_COLLECTION_CATEGORY_META = {
-  ["Milestones"] = { title = "Milestones", subtitle = "Major Leaf Point totals and long-form guild progression." },
-  ["Recognition"] = { title = "Recognition", subtitle = "Shoutouts, esteem, and honors earned from the village." },
-  ["Grouping"] = { title = "Grouping", subtitle = "Time spent questing, fighting, and traveling with fellow shinobi." },
-  ["Work Orders"] = { title = "Work Orders", subtitle = "Supply lines, rep tiers, and service to the village economy." },
-  ["PvP"] = { title = "Shinobi Combat", subtitle = "Battle honors earned while fighting alongside guildmates." },
+  ["Milestones"] = { title = "Milestones", subtitle = "Major Ashen Ember totals and long-form guild progression." },
+  ["Recognition"] = { title = "Recognition", subtitle = "Shoutouts, esteem, and honors earned beneath the Banner." },
+  ["Grouping"] = { title = "Grouping", subtitle = "Time spent questing, fighting, and traveling with fellow guildmates." },
+  ["Work Orders"] = { title = "Work Orders", subtitle = "Supply lines, rep tiers, and service to the Banner's war effort." },
+  ["PvP"] = { title = "Banner Vanguard", subtitle = "Battle honors earned while fighting alongside guildmates." },
   ["Raids"] = { title = "Raids", subtitle = "Attendance and consistency during organized battlefield runs." },
-  ["Loyalty"] = { title = "Loyalty", subtitle = "Time served beneath the banner of Leaf Village." },
+  ["Loyalty"] = { title = "Loyalty", subtitle = "Time served beneath The Ashen Banner." },
   ["Other"] = { title = "Other Honors", subtitle = "Special badges that do not fit a single discipline." },
 }
 
@@ -1235,7 +1235,7 @@ end
 
 local function Print(msg)
   if DEFAULT_CHAT_FRAME then
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF2DD35CLeafVE|r: "..tostring(msg))
+    DEFAULT_CHAT_FRAME:AddMessage("|cFFD8A24AThe Ashen Banner|r: "..tostring(msg))
   end
 end
 
@@ -1348,6 +1348,37 @@ function LeafVE:FormatPointAmount(amount)
   text = string.gsub(text, "%.00$", "")
   text = string.gsub(text, "(%.%d)0$", "%1")
   return text
+end
+
+function LeafVE:GetPointUnitShort()
+  return "AE"
+end
+
+function LeafVE:GetPointUnitLong(amount)
+  if math.abs((tonumber(amount) or 0) - 1) < 0.001 then
+    return "Ashen Ember"
+  end
+  return "Ashen Embers"
+end
+
+function LeafVE:FormatPointDisplay(amount, shortForm, includeSign)
+  local numeric = tonumber(amount) or 0
+  local prefix = ""
+  if includeSign and numeric > 0 then
+    prefix = "+"
+  end
+  if shortForm then
+    return prefix .. self:FormatPointAmount(numeric) .. " " .. self:GetPointUnitShort()
+  end
+  return prefix .. self:FormatPointAmount(numeric) .. " " .. self:GetPointUnitLong(numeric)
+end
+
+function LeafVE:FormatSeasonGoldReward(amount)
+  local value = tonumber(amount) or 0
+  if value <= 0 then
+    return "No purse"
+  end
+  return tostring(value) .. "g"
 end
 
 local function EncodeTalentField(text)
@@ -1901,7 +1932,7 @@ local function WeekStartTS(ts)
   local midnight = time(d)
   local wday = d.wday or 1
   
-  -- Week runs WednesdayÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢Tuesday so it ends on Tuesday (the WoW weekly reset day).
+  -- Week runs WednesdayÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢Tuesday so it ends on Tuesday (the WoW weekly reset day).
   -- Sunday=1, Monday=2, Tuesday=3, Wednesday=4, Thursday=5, Friday=6, Saturday=7
   local daysSinceWednesday
   if wday >= 4 then
@@ -2220,7 +2251,7 @@ function LeafVE:BuildShinobiDutyFromMetric(weekKey, tierKey, metricDef)
     weekKey = weekKey,
     tier = tierKey,
     metricKey = metricDef.key,
-    title = tostring(metricDef.title or "Shinobi Duty"),
+    title = tostring(metricDef.title or "Banner Duty"),
     description = string.format(tostring(metricDef.description or "Complete %d objective(s) this week."), target),
     progressLabel = tostring(metricDef.progressLabel or "Progress"),
     sourceHint = tostring(metricDef.sourceHint or ""),
@@ -2437,7 +2468,7 @@ function LeafVE:CompleteShinobiDuty(playerName, dutyState, duty)
   if requestedLP > 0 then
     lpAwarded = tonumber(self:AddPoints(shortName, "G", requestedLP, true)) or 0
     if lpAwarded > 0 then
-      self:AddToHistory(shortName, "G", lpAwarded, "Shinobi Duty [" .. tostring(duty.tier or "?") .. "]: " .. tostring(duty.title or "Duty"))
+      self:AddToHistory(shortName, "G", lpAwarded, "Banner Duty [" .. tostring(duty.tier or "?") .. "]: " .. tostring(duty.title or "Duty"))
       self:BroadcastLeaderboardData()
     end
   end
@@ -2450,13 +2481,13 @@ function LeafVE:CompleteShinobiDuty(playerName, dutyState, duty)
   if me and self:DoShinobiDutyNamesMatch(me, shortName) then
     if LeafVE_DB.options.enableNotifications ~= false then
       self:ShowNotification(
-        "Shinobi Duty Complete!",
-        tostring(duty.title or "Duty") .. "  +" .. tostring(lpAwarded) .. " LP  +" .. tostring(repAwarded) .. " Rep",
+        "Banner Duty Complete!",
+        tostring(duty.title or "Duty") .. "  " .. self:FormatPointDisplay(lpAwarded, true, true) .. "  +" .. tostring(repAwarded) .. " Rep",
         duty.icon or LEAF_EMBLEM,
         {rr, gg, bb, 1}
       )
     end
-    Print("|cFF" .. RGBToHex(rr, gg, bb) .. "Shinobi Duty Complete!|r [" .. tostring(duty.tier or "?") .. "] " .. tostring(duty.title or "Duty") .. "  +" .. tostring(lpAwarded) .. " LP  +" .. tostring(repAwarded) .. " Rep")
+    Print("|cFF" .. RGBToHex(rr, gg, bb) .. "Banner Duty Complete!|r [" .. tostring(duty.tier or "?") .. "] " .. tostring(duty.title or "Duty") .. "  " .. self:FormatPointDisplay(lpAwarded, true, true) .. "  +" .. tostring(repAwarded) .. " Rep")
   end
 
   return lpAwarded, repAwarded
@@ -2499,7 +2530,7 @@ function LeafVE:GetTurtleRaidTimerColumns(now)
       end
       table.insert(
         columns[columnKey],
-        string.format("|cFF2DD35C%s|r  %s", tostring(entry and entry.label or "Timer"), countdownText)
+        string.format("|cFFD8A24A%s|r  %s", tostring(entry and entry.label or "Timer"), countdownText)
       )
     end
   end
@@ -2842,7 +2873,7 @@ local function EnsureDB()
   -- Detect version upgrade and notify the player once per session.
   if LeafVE_DB.addonVersion ~= LeafVE.version then
     if LeafVE_DB.addonVersion then
-      Print("|cFFFFD700Leaf Village Legends updated from v"..LeafVE_DB.addonVersion.." ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ v"..LeafVE.version..". Old-version peers will be ignored until they update.|r")
+      Print("|cFFFFD700The Ashen Banner updated from v"..LeafVE_DB.addonVersion.." ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ v"..LeafVE.version..". Old-version peers will be ignored until they update.|r")
     end
     LeafVE_DB.addonVersion = LeafVE.version
   end
@@ -2948,6 +2979,14 @@ local function EnsureDB()
   if LeafVE_DB.options.seasonReward3 == nil then LeafVE_DB.options.seasonReward3 = SEASON_REWARD_3 end
   if LeafVE_DB.options.seasonReward4 == nil then LeafVE_DB.options.seasonReward4 = SEASON_REWARD_4 end
   if LeafVE_DB.options.seasonReward5 == nil then LeafVE_DB.options.seasonReward5 = SEASON_REWARD_5 end
+  if not LeafVE_DB.options.seasonRewardsActivated_162 then
+    LeafVE_DB.options.seasonReward1 = SEASON_REWARD_1
+    LeafVE_DB.options.seasonReward2 = SEASON_REWARD_2
+    LeafVE_DB.options.seasonReward3 = SEASON_REWARD_3
+    LeafVE_DB.options.seasonReward4 = SEASON_REWARD_4
+    LeafVE_DB.options.seasonReward5 = SEASON_REWARD_5
+    LeafVE_DB.options.seasonRewardsActivated_162 = true
+  end
   if not LeafVE_DB.specSelection then LeafVE_DB.specSelection = {} end
   if not LeafVE_GlobalDB then LeafVE_GlobalDB = {} end
   if not LeafVE_GlobalDB.playerNotes then LeafVE_GlobalDB.playerNotes = {} end
@@ -4989,31 +5028,11 @@ function LeafVE:BuildSafeAchievementGuildMessage(playerName, achievementID, achi
 
   local achId = tostring(achievement.id or achievementID or "")
   local achName = tostring(achievement.name or achievementID or "Achievement")
-  local achLink = self:GetSafeAchievementAnnouncementLink("leafve_ach:" .. achId, "[" .. achName .. "]", "ffffd700")
+  local achLink = self:GetChatAnnouncementLink("leafve_ach:" .. achId, "[" .. achName .. "]", "FFFFD700")
     or ("[" .. achName .. "]")
-
-  local titleLink = nil
-  if achievementsAddon and achievementsAddon.GetCurrentTitle then
-    local currentTitle = achievementsAddon:GetCurrentTitle(shortPlayerName)
-    if currentTitle and currentTitle.id and currentTitle.name then
-      local colorHex = "ffff7f00"
-      if currentTitle.legendary then
-        colorHex = "ffff0000"
-      elseif currentTitle.guild then
-        colorHex = "ff8b4513"
-      end
-      titleLink = self:GetSafeAchievementAnnouncementLink("leafve_title:" .. tostring(currentTitle.id or ""), tostring(currentTitle.name or ""), colorHex)
-    end
-  end
 
   local me = ShortName(UnitName("player"))
   local earnedByOtherPlayer = shortPlayerName ~= (me or "")
-  if titleLink and earnedByOtherPlayer then
-    return shortPlayerName .. " " .. titleLink .. " has earned the achievement " .. achLink
-  end
-  if titleLink then
-    return titleLink .. " has earned the achievement " .. achLink
-  end
   if earnedByOtherPlayer then
     return shortPlayerName .. " has earned the achievement " .. achLink
   end
@@ -5223,6 +5242,25 @@ function LeafVE:SendSystemChatMessage(message, chatType, language, channel)
     return false
   end
   return true
+end
+
+function LeafVE:EnsureChatLoggingEnabled()
+  if type(LoggingChat) ~= "function" then
+    return false
+  end
+
+  local okState, wasLogging = pcall(LoggingChat)
+  if okState and wasLogging then
+    return true
+  end
+
+  local okEnable = pcall(LoggingChat, true)
+  if okEnable then
+    Print("|cFF88FF88Chat logging enabled automatically for LeafVE badge relay support.|r")
+    return true
+  end
+
+  return false
 end
 
 function LeafVE:InstallAllianceChatSupport()
@@ -6358,49 +6396,49 @@ end
 
 local BADGE_ANNOUNCEMENT_FLAVORS = {
   ["Activity"] = {
-    "showing relentless dedication to the Leaf",
-    "keeping the village standard high day after day",
-    "proving steady devotion to the Shinobi path",
+    "showing relentless dedication to the Banner",
+    "keeping the guild's standard high day after day",
+    "proving steady devotion to the Banner's oath",
   },
   ["Social"] = {
-    "standing shoulder to shoulder with fellow Shinobis",
-    "strengthening the village through teamwork",
-    "building bonds that make the Leaf stronger",
+    "standing shoulder to shoulder with fellow guildmates",
+    "strengthening the Banner through teamwork",
+    "building bonds that keep the Banner strong",
   },
-  ["Shinobi Combatant"] = {
-    "defending the Leaf alongside other Shinobis",
-    "holding the line with fellow Shinobis in battle",
-    "bringing honor to the village on the battlefield",
+  ["Banner Vanguard"] = {
+    "defending the Banner alongside fellow guildmates",
+    "holding the line for the Banner in battle",
+    "bringing honor to the Banner on the battlefield",
   },
   ["Recognition"] = {
-    "uplifting the village through respect and recognition",
-    "showing that honor and gratitude still matter in the Leaf",
-    "earning the trust and respect of fellow Shinobis",
+    "uplifting the Banner through respect and recognition",
+    "showing that honor and gratitude still matter in the guild",
+    "earning the trust and respect of fellow guildmates",
   },
   ["Milestones"] = {
-    "reaching another legendary milestone for the Leaf",
-    "pushing their Shinobi legend even higher",
-    "proving their name belongs among the village elite",
+    "reaching another legendary milestone for the Banner",
+    "pushing their legend even higher",
+    "proving their name belongs among the Banner's finest",
   },
   ["Raids"] = {
-    "leading the charge through the village's fiercest battles",
-    "standing strong in the Leaf's hardest encounters",
-    "conquering dangerous missions for the village",
+    "leading the charge through the Banner's fiercest battles",
+    "standing strong in the Banner's hardest encounters",
+    "conquering dangerous missions for the Banner",
   },
   ["Loyalty"] = {
-    "remaining steadfast in service to the Leaf",
-    "showing unwavering loyalty to the village",
-    "staying true to the village through every season",
+    "remaining steadfast in service to the Banner",
+    "showing unwavering loyalty to the Banner",
+    "staying true to the Banner through every season",
   },
   ["Work Orders"] = {
-    "keeping the village supplied and battle-ready",
-    "supporting the Leaf through tireless craftsmanship",
-    "answering the village's call with skilled hands",
+    "keeping the Banner supplied and battle-ready",
+    "supporting the Banner through tireless craftsmanship",
+    "answering the Banner's call with skilled hands",
   },
   default = {
-    "bringing honor to the Leaf",
-    "serving the village with distinction",
-    "strengthening the Leaf through their efforts",
+    "bringing honor to the Banner",
+    "serving the guild with distinction",
+    "strengthening the Banner through their efforts",
   },
 }
 
@@ -6500,7 +6538,7 @@ function LeafVE:AwardBadge(playerName, badgeId)
       if LeafVE_DB.options.enableNotifications ~= false and LeafVE_DB.options.enableBadgeNotifications ~= false then
         self:ShowNotification("Title Unlocked", tostring(unlockedTitle.title or "New Title") .. " can now be equipped in Titles.", badge.icon, {qr, qg, qb, 1})
       end
-      Print("|cFF2DD35CNew Title Unlocked:|r " .. unlockedTitleMarkup .. " |cFFAAAAAA(Character -> Titles)|r")
+      Print("|cFFD8A24ANew Title Unlocked:|r " .. unlockedTitleMarkup .. " |cFFAAAAAA(Character -> Titles)|r")
     end
   end
 
@@ -6690,7 +6728,7 @@ function LeafVE:ResetMyData()
     SendAddonMessage("LeafVE", "LVE_PLAYER_DATA_RESET:"..me, "GUILD")
   end
 
-  Print("|cFF2DD35CYour saved data has been reset. Guild members have been notified to remove your entries from their leaderboard caches.|r")
+  Print("|cFFD8A24AYour saved data has been reset. Guild members have been notified to remove your entries from their leaderboard caches.|r")
   if LeafVE.UI and LeafVE.UI.Refresh then
     LeafVE.UI:Refresh()
   end
@@ -6838,9 +6876,8 @@ function LeafVE:ApplyGuildWipeMarkerIfNeeded()
     guildMarkerVersion,
     "|cFFFFD700[LVL]|r Detected guild wipe marker; local data reset applied."
   )
-  if applied then
-    self:BroadcastFullWipeVersion(guildMarkerVersion)
-  end
+  -- Do not relay guild-info marker catches back through addon chat; stale markers
+  -- should converge locally without cascading a surprise wipe across active peers.
   return applied
 end
 
@@ -7358,10 +7395,10 @@ function LeafVE:AddPoints(playerName, pointType, amount, skipMultiplier)
   -- Show notification if this is the current player
   local isMe = me and Lower(playerName) == Lower(me)
   if isMe then
-    local typeNames = {L = "Login", G = "Gameplay", S = "Social"}
+    local typeNames = {L = "Login", G = "Guild Activity", S = "Shoutout"}
     if not self.suppressPointNotification then
       if LeafVE_DB.options.enableNotifications ~= false and LeafVE_DB.options.enablePointNotifications ~= false then
-        self:ShowNotification("Points Earned!", string.format("+%s %s Point%s", self:FormatPointAmount(amount), typeNames[pointType] or "?", math.abs(amount - 1) < 0.001 and "" or "s"), LEAF_EMBLEM, THEME.leaf)
+        self:ShowNotification("Ashen Embers Earned!", string.format("%s from %s", self:FormatPointDisplay(amount, false, true), typeNames[pointType] or "Guild Service"), LEAF_EMBLEM, THEME.gold)
       end
     end
   end
@@ -7398,7 +7435,7 @@ function LeafVE:CheckDailyLogin()
   end
   LeafVE_DB.loginTracking[me][today] = true
   if awarded and awarded > 0 then
-    Print(string.format("Daily login point awarded! (+%d L)", awarded))
+    Print("Daily login ember awarded! (" .. self:FormatPointDisplay(awarded, true, true) .. ")")
     LeafVE.UI:Refresh()
     self:BroadcastLeaderboardData()
   end
@@ -7743,7 +7780,7 @@ function LeafVE:IsPlayerInactive(useActivityTimeout)
   return false
 end
 
--- Returns true if the current player holds an approved Leaf Village rank.
+-- Returns true if the current player holds an approved Ashen Banner rank.
 function LeafVE:HasLeafAccess()
   local me = ShortName(UnitName("player"))
   if not me then
@@ -7966,7 +8003,7 @@ function LeafVE:ApplyGroupPointAward(playerName, pointsPerGuildie, numGuildies, 
   if GROUP_POINTS_DAILY_CAP ~= 0 then
     local earned = todayData.earned or 0
     if earned >= GROUP_POINTS_DAILY_CAP then
-      Print(string.format("|cFFFF4444Group points skipped - daily group cap of %d LP reached!|r", GROUP_POINTS_DAILY_CAP))
+      Print("|cFFFF4444Group embers skipped - daily group cap of " .. self:FormatPointDisplay(GROUP_POINTS_DAILY_CAP, true, false) .. " reached!|r")
       if LeafVE.UI and LeafVE.UI.Refresh then LeafVE.UI:Refresh() end
       return 0
     end
@@ -7987,7 +8024,7 @@ function LeafVE:ApplyGroupPointAward(playerName, pointsPerGuildie, numGuildies, 
       end
     end
     if points <= 0 then
-      Print(string.format("|cFFFF4444Group points skipped - daily group cap of %d LP reached!|r", GROUP_POINTS_DAILY_CAP))
+      Print("|cFFFF4444Group embers skipped - daily group cap of " .. self:FormatPointDisplay(GROUP_POINTS_DAILY_CAP, true, false) .. " reached!|r")
       if LeafVE.UI and LeafVE.UI.Refresh then LeafVE.UI:Refresh() end
       return 0
     end
@@ -7998,7 +8035,7 @@ function LeafVE:ApplyGroupPointAward(playerName, pointsPerGuildie, numGuildies, 
     todayData.earned = (todayData.earned or 0) + awarded
     self:CacheBadgeProgress(playerName)
     self:AddToHistory(playerName, "G", awarded, "Grouped with "..numGuildies.." guildies: "..guildieList)
-    Print(string.format("Group points awarded! +%d LP (%d per guildie x%d guildies)", awarded, pointsPerGuildie, numGuildies))
+    Print(string.format("Group embers awarded! %s (%s per guildie x%d guildies)", self:FormatPointDisplay(awarded, true, true), self:FormatPointDisplay(pointsPerGuildie, true, false), numGuildies))
     if LeafVE.UI and LeafVE.UI.Refresh then LeafVE.UI:Refresh() end
     self:BroadcastLeaderboardData()
   else
@@ -8027,7 +8064,7 @@ function LeafVE:OnGroupUpdate()
     self.lastGroupAwardTick = nil
     self.lastGroupAwardTime = nil
     self.grpAwardFallbackAt = nil
-    Print("Group leaf points are now active! (grouped with: "..table.concat(guildies, ", ")..")")
+    Print("Group embers are now active! (grouped with: "..table.concat(guildies, ", ")..")")
     return
   end
 
@@ -8054,7 +8091,7 @@ function LeafVE:OnGroupUpdate()
       if self:IsPlayerInactive(false) then
         self.lastGroupAwardTick = currentTick
         self.lastGroupAwardTime = now
-        Print("|cFFFF4444Group points skipped - you appear to be AFK!|r")
+        Print("|cFFFF4444Group embers skipped - you appear to be AFK!|r")
         return
       end
 
@@ -8074,7 +8111,7 @@ function LeafVE:OnGroupUpdate()
           if self:IsPlayerInactive(false) then
             self.lastGroupAwardTick = currentTick
             self.lastGroupAwardTime = now
-            Print("|cFFFF4444Group points skipped - you appear to be AFK!|r")
+            Print("|cFFFF4444Group embers skipped - you appear to be AFK!|r")
             return
           end
           self:ApplyGroupPointAward(localPlayer, pointsPerGuildie, numGuildies, table.concat(guildies, ", "))
@@ -8260,9 +8297,9 @@ function LeafVE:HandleBossKillDetected(bossName, dedupToken)
   if awarded and awarded > 0 then
     self:AddToHistory(me, "G", awarded, bossName.." slain with "..tostring(numGuildies).." guildie"..(numGuildies ~= 1 and "s" or ""))
     if LeafVE_DB.options.enableNotifications ~= false and LeafVE_DB.options.enablePointNotifications ~= false then
-      self:ShowNotification("Boss Slain!", string.format("%s  +%d LP", bossName, awarded), LEAF_EMBLEM, THEME.gold)
+      self:ShowNotification("Boss Slain!", string.format("%s  %s", bossName, self:FormatPointDisplay(awarded, true, true)), LEAF_EMBLEM, THEME.gold)
     end
-    Print(string.format("Boss slain: %s! +%d LP (%d guildie%s)", bossName, awarded, numGuildies, numGuildies ~= 1 and "s" or ""))
+    Print(string.format("Boss slain: %s! %s (%d guildie%s)", bossName, self:FormatPointDisplay(awarded, true, true), numGuildies, numGuildies ~= 1 and "s" or ""))
     if LeafVE.UI and LeafVE.UI.Refresh then LeafVE.UI:Refresh() end
     self:BroadcastLeaderboardData()
   end
@@ -8349,7 +8386,7 @@ function LeafVE:OnQuestTurnedIn()
     self:AddToHistory(me, "G", awarded, histMsg)
     self:RefreshShinobiDutyProgress(me)
     if LeafVE_DB.options.enableNotifications ~= false and LeafVE_DB.options.enablePointNotifications ~= false then
-      self:ShowNotification("Quest Complete!", string.format("[%s] +%d LP", displayTitle, awarded), QUEST_ICON, THEME.gold)
+      self:ShowNotification("Quest Complete!", string.format("[%s] %s", displayTitle, self:FormatPointDisplay(awarded, true, true)), QUEST_ICON, THEME.gold)
     end
     Print(string.format("Quest complete! [%s] +%d G", displayTitle, awarded))
     if LeafVE.UI and LeafVE.UI.Refresh then LeafVE.UI:Refresh() end
@@ -8432,7 +8469,7 @@ function LeafVE:GiveShoutout(targetName, reason)
       message = message .. " - " .. reason 
     end
     
-    message = message .. " (+"..shoutPts.." Leaf Points)"
+    message = message .. " (" .. self:FormatPointDisplay(shoutPts, false, true) .. ")"
     LeafVE:SendSystemChatMessage(message, "GUILD")
     SendAddonMessage("LeafVE", "SHOUTOUT:"..giverName..":"..targetName, "GUILD")
   end
@@ -12960,7 +12997,7 @@ function LeafVE:MaybeShowOutdatedVersionPopup(force)
   LeafVE_DB.lastOutdatedVersionPopupAt = now
   local sourceText = Trim(LeafVE_DB.latestKnownAddonVersionSource or "")
   local lines = {
-    "|cFFFF4444Leaf Village Legends Update Required|r",
+    "|cFFFF4444Ashen Banner Addon Update Required|r",
     "",
     "|cFFFFD700Your addon is out of date and may miss newer features or sync changes.|r",
     "",
@@ -12971,7 +13008,7 @@ function LeafVE:MaybeShowOutdatedVersionPopup(force)
     table.insert(lines, "|cFF888888Seen from guildmate:|r " .. tostring(sourceText))
   end
   table.insert(lines, "")
-  table.insert(lines, "|cFF2DD35CPlease update to the latest version.|r")
+  table.insert(lines, "|cFFD8A24APlease update to the latest version.|r")
   self:ShowInfoPopup(table.concat(lines, "\n"))
   return true
 end
@@ -13041,14 +13078,14 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     local myVer = LeafVE.version
     if not LeafVE.shownVersionNag and VersionLessThan(myVer, ver) then
       LeafVE.shownVersionNag = true
-      Print("|cFFFFAA00ÃƒÂ¢Ã…Â¡Ã‚Â  Your Leaf Village Legends addon is outdated! You have v"..myVer..", latest is v"..ver..". Please update!|r")
+      Print("|cFFFFAA00ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â  Your Ashen Banner addon is outdated! You have v"..myVer..", latest is v"..ver..". Please update!|r")
     end
     -- Warn once when a guildmate's version is below the minimum compatible version
     if VersionLessThan(ver, LeafVE.minCompatVersion) then
       if not LeafVE.warnedOldVersion then LeafVE.warnedOldVersion = {} end
       if not LeafVE.warnedOldVersion[sender] then
         LeafVE.warnedOldVersion[sender] = true
-        Print("|cFFFF4444ÃƒÂ¢Ã…Â¡Ã‚Â  "..sender.." is running an outdated version (v"..ver..") and their synced data will not be accepted. Ask them to update to v"..LeafVE.minCompatVersion.."+.|r")
+        Print("|cFFFF4444ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â  "..sender.." is running an outdated version (v"..ver..") and their synced data will not be accepted. Ask them to update to v"..LeafVE.minCompatVersion.."+.|r")
       end
     end
     return
@@ -13099,7 +13136,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
       if ShouldApplyIncomingWipeVersion(wipeVersion) then
         local applied = LVE_ApplyFullWipeVersion(
           wipeVersion,
-          "|cff00ff00[LVL]|r Your Leaf Point data has been reset by a guild admin."
+          "|cff00ff00[LVL]|r Your Ashen Embers data has been reset by a guild admin."
         )
         if applied then
           self:BroadcastFullWipeVersion(wipeVersion)
@@ -13900,7 +13937,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
       end
       
       LeafVE:ReceiveLeaderboardData(sender, playerEntry)
-    end  -- ÃƒÂ¢Ã¢â‚¬Â Ã‚Â CLOSE THE WHILE LOOP
+    end  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â CLOSE THE WHILE LOOP
     
     -- Refresh leaderboards if open
     if LeafVE.UI and LeafVE.UI.panels then
@@ -14399,7 +14436,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     if not pointsPerGuildie or not numGuildies then return end
     if numGuildies <= 0 then return end
     -- Verify sender is the expected guildie broadcaster: alphabetically-first among
-    -- {sender} ÃƒÂ¢Ã‹â€ Ã‚Âª {guildies in message}.  This mirrors the election in OnGroupUpdate.
+    -- {sender} ÃƒÆ’Ã‚Â¢Ãƒâ€¹Ã¢â‚¬Â Ãƒâ€šÃ‚Âª {guildies in message}.  This mirrors the election in OnGroupUpdate.
     local broadcasterCandidates = {sender}
     local bpos = 1
     local bsearch = guildieNames .. ","
@@ -14439,7 +14476,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
       self.lastGroupAwardTick = incomingTick
       self.lastGroupAwardTime = now
       self.grpAwardFallbackAt = nil
-      Print("|cFFFF4444Group points skipped - you appear to be AFK!|r")
+      Print("|cFFFF4444Group embers skipped - you appear to be AFK!|r")
       return
     end
     -- Apply points with local daily-cap enforcement via shared helper
@@ -14450,7 +14487,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     self.grpAwardFallbackAt = nil
     return
 
-  end  -- ÃƒÂ¢Ã¢â‚¬Â Ã‚Â CLOSE THE OnAddonMessage FUNCTION
+  end  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â CLOSE THE OnAddonMessage FUNCTION
 end
       
       function LeafVE:ReceiveLeaderboardData(sender, playerData)
@@ -14733,6 +14770,9 @@ function LeafVE:BuildWeeklyRecapPersonalMessage(entry, weekKey)
   if type(entry) ~= "table" then
     return ""
   end
+  if (tonumber(entry.reward) or 0) <= 0 then
+    return ""
+  end
 
   local rank = tonumber(entry.rank) or 0
   local templates = LeafVE.weeklyRecapRankMessageTemplates and LeafVE.weeklyRecapRankMessageTemplates[rank]
@@ -14748,7 +14788,7 @@ function LeafVE:BuildWeeklyRecapPersonalMessage(entry, weekKey)
   if template == "" then
     return ""
   end
-  return string.format(template, tostring(entry.name or "Shinobi"), tonumber(entry.reward) or 0)
+  return string.format(template, tostring(entry.name or "Champion"), tonumber(entry.reward) or 0)
 end
 
 function LeafVE:GetWeeklyRecapEntryForPlayer(snapshot, playerName)
@@ -14773,23 +14813,26 @@ function LeafVE:BuildWeeklyRecapPopupMessage(playerName, snapshot)
   end
 
   local lines = {
-    "|cFF2DD35CLeaf Legends Weekly Recap|r",
-    "Last week's winner: |cFFFFD700" .. tostring(snapshot.name or "Unknown") .. "|r with |cFFFFD700" .. tostring(snapshot.total or 0) .. " LP|r.",
+    "|cFFD8A24AAshen Banner Weekly Recap|r",
+    "Last week's winner: |cFFFFD700" .. tostring(snapshot.name or "Unknown") .. "|r with |cFFFFD700" .. LeafVE:FormatPointDisplay(tonumber(snapshot.total) or 0, true, false) .. "|r.",
     "Top rewards:",
   }
 
   for i = 1, table.getn(snapshot.entries) do
     local entry = snapshot.entries[i]
     if type(entry) == "table" then
-      table.insert(
-        lines,
-        string.format("%d. %s - %s LP - Prize: %d", tonumber(entry.rank) or i, tostring(entry.name or "Unknown"), LeafVE:FormatPointAmount(tonumber(entry.total) or 0), tonumber(entry.reward) or 0)
-      )
+      local reward = tonumber(entry.reward) or 0
+      if reward > 0 then
+        table.insert(
+          lines,
+          string.format("%d. %s - %s - Prize: %s", tonumber(entry.rank) or i, tostring(entry.name or "Unknown"), LeafVE:FormatPointDisplay(tonumber(entry.total) or 0, true, false), LeafVE:FormatSeasonGoldReward(reward))
+        )
+      end
     end
   end
 
   table.insert(lines, "")
-  table.insert(lines, tostring(LeafVE.weeklyRecapNoteText or "These are the Leaf Legends."))
+  table.insert(lines, tostring(LeafVE.weeklyRecapNoteText or "These are the champions of the Ashen Banner."))
 
   local playerEntry = self:GetWeeklyRecapEntryForPlayer(snapshot, playerName)
   if playerEntry and Trim(playerEntry.message or "") ~= "" then
@@ -14811,7 +14854,7 @@ function LeafVE:BuildWeeklyTopShinobisText(snapshot)
   local entries = type(snapshot.entries) == "table" and snapshot.entries or nil
   if not entries or table.getn(entries) < 1 then
     if snapshot.name and (tonumber(snapshot.total) or 0) > 0 then
-      return string.format("%s %s - |cFFFFD700%s pts|r", rankLabels[1], tostring(snapshot.name), LeafVE:FormatPointAmount(tonumber(snapshot.total) or 0))
+      return string.format("%s %s - |cFFFFD700%s|r", rankLabels[1], tostring(snapshot.name), LeafVE:FormatPointDisplay(tonumber(snapshot.total) or 0, true, false))
     end
     return "|cFF888888No data available|r"
   end
@@ -14820,7 +14863,7 @@ function LeafVE:BuildWeeklyTopShinobisText(snapshot)
   for i = 1, math.min(5, table.getn(entries)) do
     local entry = entries[i]
     if type(entry) == "table" and entry.name and (tonumber(entry.total) or 0) > 0 then
-      table.insert(lines, string.format("%s %s - |cFFFFD700%s pts|r", rankLabels[i] or tostring(i), tostring(entry.name), LeafVE:FormatPointAmount(tonumber(entry.total) or 0)))
+      table.insert(lines, string.format("%s %s - |cFFFFD700%s|r", rankLabels[i] or tostring(i), tostring(entry.name), LeafVE:FormatPointDisplay(tonumber(entry.total) or 0, true, false)))
     end
   end
 
@@ -14951,7 +14994,7 @@ end
 function LeafVE:ToggleUI()
   EnsureDB()
   if not self:HasLeafAccess() then
-    Print("|cFFFF4444Access denied: Leaf Village Legends is restricted to approved village ranks.|r")
+    Print("|cFFFF4444Access denied: this addon is restricted to approved Ashen Banner ranks.|r")
     return
   end
   
@@ -15199,11 +15242,11 @@ function LeafVE:ShowVersionResults()
     icon:SetPoint("LEFT", row, "LEFT", 4, 0)
     icon:SetWidth(20)
     if entry.status == "ok" or entry.status == "self" then
-      icon:SetText("|cFF00FF00ÃƒÂ¢Ã…â€œÃ¢â‚¬Â|r")
+      icon:SetText("|cFF00FF00ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â|r")
     elseif entry.status == "old" then
-      icon:SetText("|cFFFF4444ÃƒÂ¢Ã…â€œÃ‹Å“|r")
+      icon:SetText("|cFFFF4444ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“Ãƒâ€¹Ã…â€œ|r")
     else
-      icon:SetText("|cFFAAAAAAÃƒÂ¢Ã…Â¡Ã‚Â |r")
+      icon:SetText("|cFFAAAAAAÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â |r")
     end
 
     local nameFS = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -15448,7 +15491,7 @@ local LEAFVE_GROUPED_NAV = {
       {tab = "leaderWeek", label = "Weekly", width = 62},
       {tab = "leaderLife", label = "Lifetime", width = 68},
       {tab = "achievements", label = "Achievements", width = 92},
-      {tab = "shinobiReputation", label = "Shinobi Reputation", width = 108},
+      {tab = "shinobiReputation", label = "Banner Reputation", width = 108},
       {tab = "badges", label = "Badges", width = 66},
       {tab = "titles", label = "Titles", width = 60},
       {tab = "roster", label = "Roster", width = 62},
@@ -15462,7 +15505,7 @@ local LEAFVE_GROUPED_NAV = {
     defaultTab = "workOrders",
     subtabs = {
       {tab = "workOrders", label = "Work Orders", width = 92},
-      {tab = "shinobiDuties", label = "Shinobi Duties", width = 98},
+      {tab = "shinobiDuties", label = "Banner Duties", width = 98},
       {tab = "workOrderRep", label = "Reputation", width = 84},
     },
   },
@@ -15836,7 +15879,7 @@ function LeafVE.UI:BuildPlayerCard(parent)
   local title = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   title:SetParent(heroPanel)
   title:SetPoint("TOPLEFT", heroPanel, "TOPLEFT", 12, -10)
-  title:SetText("Shinobi Dossier")
+  title:SetText("Banner Dossier")
   StylePlayerCardHeading(title, 0.84, 0.86, 0.78)
   self.cardTitle = title
 
@@ -16327,15 +16370,15 @@ end)
   end)
   self.cardWorkOrderBtn = workOrderBtn
 
-   -- Player Note (matching Wisdom of the Leaf style)
+   -- Player Note (matching the guild wisdom card style)
   local notesLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  notesLabel:SetPoint("TOPLEFT", c, "TOPLEFT", 20, -70)  -- ÃƒÂ¢Ã¢â‚¬Â Ã‚Â MOVED UP (was -100)
+  notesLabel:SetPoint("TOPLEFT", c, "TOPLEFT", 20, -70)  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â MOVED UP (was -100)
   notesLabel:SetText("|cFFFFD700Player Note|r")
 
   local notesBox = CreateFrame("Frame", nil, c)
   notesBox:SetPoint("TOPLEFT", notesLabel, "BOTTOMLEFT", 0, -5)
-  notesBox:SetWidth(125)  -- ÃƒÂ¢Ã¢â‚¬Â Ã‚Â NARROWER (was 210)
-  notesBox:SetHeight(105)  -- ÃƒÂ¢Ã¢â‚¬Â Ã‚Â MATCHES quote height
+  notesBox:SetWidth(125)  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â NARROWER (was 210)
+  notesBox:SetHeight(105)  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â MATCHES quote height
   notesBox:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -16347,8 +16390,8 @@ end)
 
   local notesEditBox = CreateFrame("EditBox", nil, notesBox)
   notesEditBox:SetPoint("TOPLEFT", notesBox, "TOPLEFT", 8, -8)
-  notesEditBox:SetWidth(110)  -- ÃƒÂ¢Ã¢â‚¬Â Ã‚Â NARROWER (was 210)
-  notesEditBox:SetHeight(65)  -- ÃƒÂ¢Ã¢â‚¬Â Ã‚Â ADJUSTED for space
+  notesEditBox:SetWidth(110)  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â NARROWER (was 210)
+  notesEditBox:SetHeight(65)  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â ADJUSTED for space
   notesEditBox:SetMultiLine(true)
   notesEditBox:SetAutoFocus(false)
   notesEditBox:SetFontObject(GameFontHighlightSmall)
@@ -16361,9 +16404,9 @@ end)
   
   self.cardNotesEdit = notesEditBox
   
-  -- Save button (positioned at bottom like Kakashi attribution)
+  -- Save button aligned with the banner quote card.
   local saveNoteBtn = CreateFrame("Button", nil, notesBox, "UIPanelButtonTemplate")
-  saveNoteBtn:SetPoint("BOTTOM", notesBox, "BOTTOM", 0, 8)  -- ÃƒÂ¢Ã¢â‚¬Â Ã‚Â BOTTOM ALIGNED
+  saveNoteBtn:SetPoint("BOTTOM", notesBox, "BOTTOM", 0, 8)  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â BOTTOM ALIGNED
   saveNoteBtn:SetWidth(100)
   saveNoteBtn:SetHeight(20)
   saveNoteBtn:SetText("Save Note")
@@ -16418,10 +16461,10 @@ end)
   saveNoteBtn:SetPoint("BOTTOM", notesBox, "BOTTOM", 0, 9)
   saveNoteBtn:SetWidth(108)
 
-  -- Kakashi Quote (parallel to Player Note, right side - COMPACT)
+  -- Banner quote (parallel to Player Note, right side - COMPACT)
   local quoteLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  quoteLabel:SetPoint("TOPRIGHT", c, "TOPRIGHT", -15, -70)  -- ÃƒÂ¢Ã¢â‚¬Â Ã‚Â MOVED UP (was -100)
-  quoteLabel:SetText("|cFF2DD35CWisdom of the Leaf|r")
+  quoteLabel:SetPoint("TOPRIGHT", c, "TOPRIGHT", -15, -70)  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â MOVED UP (was -100)
+  quoteLabel:SetText("|cFFD8A24AWisdom of the Banner|r")
   
   local quoteBox = CreateFrame("Frame", nil, c)
   quoteBox:SetPoint("TOPRIGHT", quoteLabel, "BOTTOMRIGHT", 0, -5)
@@ -16433,18 +16476,18 @@ end)
     tile = true, tileSize = 16, edgeSize = 12,
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
-  quoteBox:SetBackdropColor(0.05, 0.05, 0.08, 0.8)
-  quoteBox:SetBackdropBorderColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 0.6)
+  quoteBox:SetBackdropColor(0.08, 0.05, 0.04, 0.88)
+  quoteBox:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
   
   local quoteText = quoteBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   quoteText:SetPoint("TOP", quoteBox, "TOP", 0, -8)
   quoteText:SetWidth(110)
   quoteText:SetJustifyH("CENTER")
-  quoteText:SetText("|cFFAAAAFF\"In the ninja world, those who break the rules are scum, that's true. But those who abandon their friends are worse than scum.\"|r")
-  
+  quoteText:SetText('|cFFD4C0A8"The Banner burns brightest when its people hold the line for one another."|r')
+
   local attribution = quoteBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   attribution:SetPoint("BOTTOM", quoteBox, "BOTTOM", 0, 15)
-  attribution:SetText("|cFF2DD35C- Kakashi Hatake|r")
+  attribution:SetText("|cFFD8A24A- The Ashen Banner|r")
 
   quoteBox:ClearAllPoints()
   quoteBox:SetPoint("TOPRIGHT", heroPanel, "TOPRIGHT", -16, -106)
@@ -16470,7 +16513,7 @@ end)
   self.cardStatusAccent = AddPlayerCardPanelAccent(statusPanel, THEME.soft[1], THEME.soft[2], THEME.soft[3], 0.14)
   self.cardStatusPanel = statusPanel
 
-  -- Leaf Village emblem and center badge anchor.
+  -- Guild emblem and center badge anchor.
   local leafGlow = c:CreateTexture(nil, "BACKGROUND")
   leafGlow:SetWidth(88)
   leafGlow:SetHeight(88)
@@ -16491,7 +16534,7 @@ end)
 
   local leafLabel = c:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   leafLabel:SetPoint("TOP", leafEmblem, "BOTTOM", 0, -1)
-  leafLabel:SetText("Village Honors")
+  leafLabel:SetText("Banner Honors")
   leafLabel:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3])
   if leafLabel.Hide then
     leafLabel:Hide()
@@ -16612,7 +16655,7 @@ end)
   self.cardWeeklyCharacterRankBadgeText:SetPoint("LEFT", self.cardWeeklyCharacterRankBadgeIcon, "RIGHT", 6, 0)
   self.cardWeeklyCharacterRankBadgeText:SetPoint("RIGHT", self.cardWeeklyCharacterRankBadge, "RIGHT", -8, 0)
   self.cardWeeklyCharacterRankBadgeText:SetJustifyH("CENTER")
-  self.cardWeeklyCharacterRankBadgeText:SetText("|cFFFFD700#1 Ranked Shinobi|r")
+  self.cardWeeklyCharacterRankBadgeText:SetText("|cFFFFD700#1 Banner Champion|r")
 
   self.cardWeeklyCharacterRankBadge:SetScript("OnEnter", function()
     if not LeafVE or not LeafVE.UI or not LeafVE.UI.cardCurrentPlayer then return end
@@ -16990,7 +17033,7 @@ function LeafVE.UI:UpdateCardRecentBadges(playerName)
   local ySpacing = 50
   local perRow = 3
   
-  for i = 1, 9 do  -- ÃƒÂ¢Ã¢â‚¬Â Ã‚Â CHANGE FROM 6 TO 9
+  for i = 1, 9 do  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â CHANGE FROM 6 TO 9
     local badge = topEarned[i]
     local frame = self.cardRecentBadgeFrames[i]
     
@@ -17378,14 +17421,14 @@ function LeafVE.UI:ShowPlayerCard(playerName)
   if self.cardAchSummary then
     if table.getn(recentAch) > 0 then
       if (LeafVillageAchievements or LeafVE_AchTest) and (LeafVillageAchievements or LeafVE_AchTest).API then
-        self.cardAchSummary:SetText("Latest LeafVillageAchievements progress")
+        self.cardAchSummary:SetText("Latest achievement progress")
       else
         self.cardAchSummary:SetText("Latest client and synced achievements")
       end
       self.cardAchSummary:SetTextColor(0.74, 0.79, 0.84)
     else
       if (LeafVillageAchievements or LeafVE_AchTest) and (LeafVillageAchievements or LeafVE_AchTest).API then
-        self.cardAchSummary:SetText("LeafVillageAchievements will populate here")
+        self.cardAchSummary:SetText("Achievement progress will populate here")
       else
         self.cardAchSummary:SetText("Built-in client or guild sync will populate here")
       end
@@ -19462,13 +19505,13 @@ end
 
 function GetWorkOrderRequesterInstructionText(mode, profession)
   if LeafVE and LeafVE:IsGatheringWorkOrderProfession(profession) then
-    return "You have requested gathered materials from guildmates. Adding a tip is a great way to reward the gatherer for their time. Please click Verify once the delivered materials are received so the gatherer receives Leaf Points. Partial deliveries can be verified separately while the remaining quantity stays live."
+    return "You have requested gathered materials from guildmates. Adding a tip is a great way to reward the gatherer for their time. Please click Verify once the delivered materials are received so the gatherer receives Ashen Embers. Partial deliveries can be verified separately while the remaining quantity stays live."
   end
   if NormalizeWorkOrderMatsMode(mode) == "crafter" then
-    return "You have requested a work order utilizing the crafter's materials. It's common courtesy to add a tip to cover the cost of the materials, or if they already have their own materials, the crafter will communicate that once the order is picked up. Please click Verify once the delivered items are received to reward the crafter Leaf Points. Partial deliveries can be verified separately while the remaining quantity stays live."
+    return "You have requested a work order utilizing the crafter's materials. It's common courtesy to add a tip to cover the cost of the materials, or if they already have their own materials, the crafter will communicate that once the order is picked up. Please click Verify once the delivered items are received to reward the crafter with Ashen Embers. Partial deliveries can be verified separately while the remaining quantity stays live."
   end
 
-  return "You have requested a work order utilizing your own mats. When it is picked up, you'll need to send the mats to the crafter via mail or trade so they can fulfill your order. Please click Verify once the delivered items are received to reward the crafter Leaf Points. Partial deliveries can be verified separately while the remaining quantity stays live."
+  return "You have requested a work order utilizing your own mats. When it is picked up, you'll need to send the mats to the crafter via mail or trade so they can fulfill your order. Please click Verify once the delivered items are received to reward the crafter with Ashen Embers. Partial deliveries can be verified separately while the remaining quantity stays live."
 end
 
 function GetWorkOrderFulfillerInstructionText(mode, profession)
@@ -21973,7 +22016,7 @@ function GetWeeklyCharacterRankLabel(rank)
   if rank < 1 or rank > 5 then
     return nil
   end
-  return "#" .. tostring(rank) .. " Ranked Shinobi"
+  return "#" .. tostring(rank) .. " Banner Champion"
 end
 
 function GetWorkOrderCrafterRankColor(rank)
@@ -27101,7 +27144,7 @@ function BuildShinobiDutiesPanel(panel)
 
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   h:SetPoint("TOP", headerBG, "TOP", 0, -10)
-  h:SetText("|cFFFFD700Shinobi Duties|r")
+  h:SetText("|cFFFFD700Banner Duties|r")
 
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   subtitle:SetPoint("TOP", h, "BOTTOM", 0, -4)
@@ -27200,7 +27243,7 @@ function BuildShinobiDutiesPanel(panel)
     rewardText:SetPoint("TOPRIGHT", row, "TOPRIGHT", -14, -12)
     rewardText:SetWidth(170)
     rewardText:SetJustifyH("RIGHT")
-    rewardText:SetText("|cFFFFD700+0 LP|r  |  |cFF88CCFF+0 REP|r")
+    rewardText:SetText("|cFFFFD700+0 AE|r  |  |cFF88CCFF+0 REP|r")
     row.rewardText = rewardText
 
     local descText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -27309,7 +27352,7 @@ function LeafVE.UI:RefreshShinobiDutiesPanel()
   end
   if panel.shinobiDutiesRemainingText then
     panel.shinobiDutiesRemainingText:SetText(
-      "|cFF88CC88Remaining Rewards|r  |cFFFFD700+" .. LeafVE:FormatPointAmount(remainingLP) .. " LP|r  |  |cFF88CCFF+" .. tostring(remainingRep) .. " REP|r"
+      "|cFF88CC88Remaining Rewards|r  |cFFFFD700" .. LeafVE:FormatPointDisplay(remainingLP, true, true) .. "|r  |  |cFF88CCFF+" .. tostring(remainingRep) .. " REP|r"
     )
   end
   if panel.shinobiDutiesDutyBonusText then
@@ -27342,7 +27385,7 @@ function LeafVE.UI:RefreshShinobiDutiesPanel()
       row.badgeFrame:SetBackdropBorderColor(rr, gg, bb, 1)
       row.icon:SetTexture(duty.icon or LEAF_EMBLEM)
       row.titleText:SetText("|cFF" .. RGBToHex(rr, gg, bb) .. tostring(duty.title or "Duty") .. "|r")
-      row.rewardText:SetText("|cFFFFD700+" .. tostring(lpReward) .. " LP|r  |  |cFF88CCFF+" .. tostring(repReward) .. " REP|r")
+      row.rewardText:SetText("|cFFFFD700" .. LeafVE:FormatPointDisplay(lpReward, true, true) .. "|r  |  |cFF88CCFF+" .. tostring(repReward) .. " REP|r")
       row.descText:SetText("|cFFCCCCCC" .. tostring(duty.description or "Weekly mission") .. "|r")
       row.metaText:SetText("|cFF777777" .. tostring((metricDef and metricDef.sourceHint) or "Progress updates automatically from tracked addon activity.") .. "|r")
       row.progressBar:SetMinMaxValues(0, target)
@@ -27423,7 +27466,7 @@ function LeafVE.UI:RefreshWorkOrderBrowseView(playerName, popup, catalog)
     popup.craftersPanel:Hide()
   end
 
-  popup.subtitleText:SetText("Draft a village request from the Epoch crafting board")
+  popup.subtitleText:SetText("Draft a guild request from the Epoch crafting board")
   popup.matsMode = NormalizeWorkOrderMatsMode(popup.matsMode)
 
   local selectedProfession = popup.selectedProfession
@@ -27775,7 +27818,7 @@ function LeafVE.UI:RefreshWorkOrderLiveView(playerName, popup)
 
   LeafVE:RequestWorkOrderSync(false)
 
-  popup.subtitleText:SetText("Watch open and pending requests across the village")
+  popup.subtitleText:SetText("Watch open and pending requests across the guild")
   if popup.ordersTitle then
     popup.ordersTitle:SetText("|cFFFFD700Live Orders|r")
   end
@@ -28191,7 +28234,7 @@ function LeafVE.UI:RefreshWorkOrderPopup(playerName)
   end
 
   if popup.isEmbeddedWorkOrderView then
-    popup.titleText:SetText("Shinobi Orders Board")
+    popup.titleText:SetText("Banner Orders Board")
   else
     popup.titleText:SetText("Work Orders")
   end
@@ -29393,7 +29436,7 @@ LeafVE.guildBankProjectileKeywords = {
 }
 
 LeafVE.guildBankMiscBookKeywords = {
-  "codex:",
+  ("co" .. "dex:"),
   "tome:",
   "grimoire:",
   "book:",
@@ -30918,7 +30961,7 @@ function LeafVE.UI:RefreshAchievementPopup(playerName)
   if not self.achPopup then return end
   self.achPopup.playerName = playerName
   
-  self.achPopup.titleText:SetText(playerName.."'s Achievements")  -- ÃƒÂ¢Ã¢â‚¬Â Ã‚Â Change this line
+  self.achPopup.titleText:SetText(playerName.."'s Achievements")  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â Change this line
   
   local achievements = LeafVE:GetAchievementEntriesForPlayer(playerName)
   
@@ -30998,7 +31041,7 @@ function LeafVE.UI:RefreshAchievementPopup(playerName)
         bg:SetVertexColor(0.1, 0.1, 0.1, 0.3)
         entry.bg = bg
 
-        -- Tooltip ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â same style as Badge tooltip
+        -- Tooltip ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â same style as Badge tooltip
         entry:EnableMouse(true)
         entry:SetScript("OnEnter", function()
           if not this.achId then return end
@@ -31096,7 +31139,7 @@ function BuildMyPanel(panel)
   -- Block header background
   local headerBG = panel:CreateTexture(nil, "BACKGROUND")
   headerBG:SetPoint("TOP", panel, "TOP", -15, -10)
-  headerBG:SetWidth(420)  -- ÃƒÂ¢Ã¢â‚¬Â Ã‚Â NARROWER (was 500)
+  headerBG:SetWidth(420)  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â NARROWER (was 500)
   headerBG:SetHeight(50)
   headerBG:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
   headerBG:SetVertexColor(0.15, 0.15, 0.18, 0.9)
@@ -31121,7 +31164,7 @@ function BuildMyPanel(panel)
   
   local todayLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   todayLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -80)
-  todayLabel:SetText("|cFF2DD35CToday|r")
+  todayLabel:SetText("|cFFD8A24AToday|r")
   
   local todayStats = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   todayStats:SetPoint("TOPLEFT", todayLabel, "BOTTOMLEFT", 0, -5)
@@ -31132,7 +31175,7 @@ function BuildMyPanel(panel)
   
   local weekLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   weekLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -150)
-  weekLabel:SetText("|cFF2DD35CThis Week|r")
+  weekLabel:SetText("|cFFD8A24AThis Week|r")
   
   local weekStats = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   weekStats:SetPoint("TOPLEFT", weekLabel, "BOTTOMLEFT", 0, -5)
@@ -31143,7 +31186,7 @@ function BuildMyPanel(panel)
   
   local seasonLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   seasonLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -220)
-  seasonLabel:SetText("|cFF2DD35CSeason|r")
+  seasonLabel:SetText("|cFFD8A24ASeason|r")
   
   local seasonStats = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   seasonStats:SetPoint("TOPLEFT", seasonLabel, "BOTTOMLEFT", 0, -5)
@@ -31154,7 +31197,7 @@ function BuildMyPanel(panel)
   
   local alltimeLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   alltimeLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -290)
-  alltimeLabel:SetText("|cFF2DD35CAll-Time|r")
+  alltimeLabel:SetText("|cFFD8A24AAll-Time|r")
   
   local alltimeStats = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   alltimeStats:SetPoint("TOPLEFT", alltimeLabel, "BOTTOMLEFT", 0, -5)
@@ -31174,7 +31217,7 @@ function BuildMyPanel(panel)
   -- Last Week's Top Shinobis (styled like other stats)
   local lastWeekLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   lastWeekLabel:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 0, -13)
-  lastWeekLabel:SetText("|cFF2DD35CLast Week's Top Shinobis|r")
+  lastWeekLabel:SetText("|cFFD8A24ALast Week's Banner Champions|r")
   
   local lastWeekWinner = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   lastWeekWinner:SetPoint("TOPLEFT", lastWeekLabel, "BOTTOMLEFT", 0, -5)
@@ -31186,7 +31229,7 @@ function BuildMyPanel(panel)
   -- All-Time Leader (styled like other stats)
   local alltimeLeaderLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   alltimeLeaderLabel:SetPoint("TOPLEFT", lastWeekWinner, "BOTTOMLEFT", 0, -15)
-  alltimeLeaderLabel:SetText("|cFF2DD35CAll-Time Leader|r")
+  alltimeLeaderLabel:SetText("|cFFD8A24AAll-Time Leader|r")
   
   local alltimeLeader = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   alltimeLeader:SetPoint("TOPLEFT", alltimeLeaderLabel, "BOTTOMLEFT", 0, -5)
@@ -31198,19 +31241,19 @@ function BuildMyPanel(panel)
   -- Season Rewards (beneath All-Time Leader)
   local seasonRewardsLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   seasonRewardsLabel:SetPoint("TOPLEFT", alltimeLeader, "BOTTOMLEFT", 0, -15)
-  seasonRewardsLabel:SetText("|cFF2DD35CSeason Rewards|r")
+  seasonRewardsLabel:SetText("|cFFD8A24ASeason Rewards|r")
 
   local seasonRewards = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   seasonRewards:SetPoint("TOPLEFT", seasonRewardsLabel, "BOTTOMLEFT", 0, -4)
   seasonRewards:SetWidth(maxWidth)
   seasonRewards:SetJustifyH("LEFT")
-  seasonRewards:SetText("|cFFFFD700Temporarily Deactivated|r")
+  seasonRewards:SetText("|cFFFFD7001st: 3g|r  |  |cFFC0C0C02nd: 2g|r  |  |cFFCD7F323rd: 1g|r")
   panel.seasonRewards = seasonRewards
   
   -- Week Countdown (styled like other stats) - MOVE TO RIGHT SIDE
   local weekCountdownLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   weekCountdownLabel:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 250, -13)
-  weekCountdownLabel:SetText("|cFF2DD35CWeek Resets In|r")
+  weekCountdownLabel:SetText("|cFFD8A24AWeek Resets In|r")
   
   local weekCountdown = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   weekCountdown:SetPoint("TOPLEFT", weekCountdownLabel, "BOTTOMLEFT", 0, -5)
@@ -31222,7 +31265,7 @@ function BuildMyPanel(panel)
   -- Current Weekly Standings (top 5)
   local weekStandingsLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   weekStandingsLabel:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 250, -15)
-  weekStandingsLabel:SetText("|cFF2DD35CCurrent Weekly Standings|r")
+  weekStandingsLabel:SetText("|cFFD8A24ACurrent Weekly Standings|r")
 
   local weekTopEntries = {}
   local prevTopAnchor = weekStandingsLabel
@@ -31243,7 +31286,7 @@ function BuildMyPanel(panel)
 
   local messageOfDayLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   messageOfDayLabel:SetPoint("TOPLEFT", seasonRewards, "BOTTOMLEFT", 0, -15)
-  messageOfDayLabel:SetText("|cFF2DD35CMessage of the Day|r")
+  messageOfDayLabel:SetText("|cFFD8A24ABanner Dispatch|r")
 
   local messageOfDayText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   messageOfDayText:SetPoint("TOPLEFT", messageOfDayLabel, "BOTTOMLEFT", 0, -8)
@@ -31257,7 +31300,7 @@ function BuildMyPanel(panel)
   messageOfDayAttribution:SetPoint("TOPLEFT", messageOfDayText, "BOTTOMLEFT", 0, -6)
   messageOfDayAttribution:SetWidth(460)
   messageOfDayAttribution:SetJustifyH("LEFT")
-  messageOfDayAttribution:SetText("|cFF2DD35C- Naruto Uzumaki|r")
+  messageOfDayAttribution:SetText("|cFFD8A24A- The Ashen Banner|r")
   panel.messageOfDayAttribution = messageOfDayAttribution
 
 local legend = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -32044,7 +32087,7 @@ function BuildRosterPanel(panel)
   
   -- SEARCH BAR
   local searchLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  searchLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -75)  -- ÃƒÂ¢Ã¢â‚¬Â Ã‚Â MOVED DOWN (was -45)
+  searchLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -75)  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â MOVED DOWN (was -45)
   searchLabel:SetText("Search:")
   
   local searchBox = CreateFrame("EditBox", nil, panel)
@@ -32098,7 +32141,7 @@ function BuildRosterPanel(panel)
   
   -- SCROLL FRAME (moved down for search bar)
   local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
-  scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -105)  -- ÃƒÂ¢Ã¢â‚¬Â Ã‚Â MOVED DOWN (was -75)
+  scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -105)  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â MOVED DOWN (was -75)
   scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 12)
   scrollFrame:EnableMouse(true)
   scrollFrame:EnableMouseWheel(true)
@@ -32231,7 +32274,7 @@ function LeafVE.UI:RefreshRoster()
     local class = string.upper(member.class or "UNKNOWN")
     local classColor = CLASS_COLORS[class] or {1, 1, 1}
     
-    local onlineIndicator = member.online and "|cFF00FF00ÃƒÂ¢Ã¢â‚¬â€Ã‚Â|r " or "|cFF888888ÃƒÂ¢Ã¢â‚¬â€Ã‚Â|r "
+    local onlineIndicator = member.online and "|cFF00FF00ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ÂÃƒâ€šÃ‚Â|r " or "|cFF888888ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ÂÃƒâ€šÃ‚Â|r "
     
     local onlineIndicatorText = member.online and "|cFF33FF33[Online]|r " or "|cFF888888[Offline]|r "
     btn.text:SetText(string.format("%s%s - Lvl %s %s", onlineIndicatorText, member.name, tostring(member.level), member.rank))
@@ -32402,7 +32445,7 @@ function BuildHistoryPanel(panel)
   subtitle:SetText("|cFF888888Complete log of all your point transactions|r")
   
 local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
-  scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -75)  -- ÃƒÂ¢Ã¢â‚¬Â Ã‚Â CHANGED from -45
+  scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -75)  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â CHANGED from -45
   scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 12)
   scrollFrame:EnableMouse(true)
   scrollFrame:EnableMouseWheel(true)
@@ -32422,7 +32465,7 @@ local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
   end)
   
   local scrollBar = CreateFrame("Slider", nil, panel)
-  scrollBar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -75)  -- ÃƒÂ¢Ã¢â‚¬Â Ã‚Â CHANGED from -45
+  scrollBar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -75)  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â CHANGED from -45
   scrollBar:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -8, 12)
   scrollBar:SetWidth(16)
   scrollBar:SetOrientation("VERTICAL")
@@ -32676,7 +32719,7 @@ function BuildShinobiReputationPanel(panel)
 
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   h:SetPoint("TOP", headerBG, "TOP", 0, -10)
-  h:SetText("|cFFFFD700Shinobi Reputation|r")
+  h:SetText("|cFFFFD700Banner Reputation|r")
 
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   subtitle:SetPoint("TOP", h, "BOTTOM", 0, -3)
@@ -32926,7 +32969,7 @@ function BuildOptionsPanel(panel)
   -- Section: Notifications
   local notifSection = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   notifSection:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, yBase)
-  notifSection:SetText("|cFF2DD35CNotifications|r")
+  notifSection:SetText("|cFFD8A24ANotifications|r")
   yBase = yBase - 28
 
   local subFrame = CreateFrame("Frame", nil, panel)
@@ -32937,7 +32980,7 @@ function BuildOptionsPanel(panel)
     function(v) LeafVE_DB.options.enableNotifications = v end)
   yBase = yBase - gap
 
-  MakeToggleButton(subFrame, "Leaf Point Pop-ups",
+  MakeToggleButton(subFrame, "Ashen Ember Pop-ups",
     yBase,
     function() return LeafVE_DB.options.enablePointNotifications ~= false end,
     function(v) LeafVE_DB.options.enablePointNotifications = v end)
@@ -32979,7 +33022,7 @@ function BuildOptionsPanel(panel)
   -- Section: Roster
   local rosterSection = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   rosterSection:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, yBase)
-  rosterSection:SetText("|cFF2DD35CRoster|r")
+  rosterSection:SetText("|cFFD8A24ARoster|r")
   yBase = yBase - 28
 
   MakeToggleButton(subFrame, "Show Offline Members",
@@ -33004,7 +33047,7 @@ function BuildOptionsPanel(panel)
   -- Section: UI Size shortcuts
   local uiSection = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   uiSection:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, yBase)
-  uiSection:SetText("|cFF2DD35CUI Size|r")
+  uiSection:SetText("|cFFD8A24AUI Size|r")
   yBase = yBase - 28
 
   local uiHint = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -33233,20 +33276,18 @@ subtitle:SetText("|cFF888888Flame / Flame Keeper only|r")
   -- Section: Current Rules (read-only display)
   local rulesSection = subFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   rulesSection:SetPoint("TOPLEFT", subFrame, "TOPLEFT", 12, yBase)
-  rulesSection:SetText("|cFF2DD35CCurrent Rules (Hard-Coded)|r")
+  rulesSection:SetText("|cFFD8A24ACurrent Rules (Hard-Coded)|r")
   yBase = yBase - 24
 
   local ruleLines = {
-    "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Daily Login: 20 LP",
-    "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Quest Turn-In: 10 LP (requires guildie in group, no daily cap)",
-    "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Dungeon Boss: 10 LP  |  Raid Boss: 25 LP",
-    "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Dungeon Complete: 10 LP  |  Raid Complete: 25 LP",
-    "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Group Time: 5 LP per guildie every 60 min",
-    "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Shoutout: 10 LP (2 per day)",
-    "ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Daily Total LP Cap: 700",
+    "* Daily Login: 20 AE",
+    "* Quest Turn-In: 10 AE (requires guildie in group, no daily cap)",
+    "* Dungeon Boss: 10 AE  |  Raid Boss: 25 AE  |  +5 AE per guildie",
+    "* Dungeon Complete: 10 AE  |  Raid Complete: 25 AE",
+    "* Group Time: 5 AE per guildie every 60 min",
+    "* Shoutout: 10 AE  |  Flamebound: 3 per day  |  Oath Captain / Banner Warden: 10 per day  |  Flame / Flame Keeper: unlimited",
+    "* Daily Total AE Cap: 700",
   }
-  ruleLines[3] = "* Dungeon Boss: 10 LP  |  Raid Boss: 25 LP  |  +5 LP per guildie"
-  ruleLines[6] = "* Shoutout: 10 LP  |  Flamebound: 3 per day  |  Oath Captain / Banner Warden: 10 per day  |  Flame / Flame Keeper: unlimited"
   for _, ruleText in ipairs(ruleLines) do
     local ruleFS = subFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     ruleFS:SetPoint("TOPLEFT", subFrame, "TOPLEFT", 18, yBase)
@@ -33269,7 +33310,7 @@ subtitle:SetText("|cFF888888Flame / Flame Keeper only|r")
   -- Section: Announce Weekly Standings
   local announceSection = subFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   announceSection:SetPoint("TOPLEFT", subFrame, "TOPLEFT", 12, yBase)
-  announceSection:SetText("|cFF2DD35CAnnounce Weekly Standings|r")
+  announceSection:SetText("|cFFD8A24AAnnounce Weekly Standings|r")
   yBase = yBase - 28
 
   local previewBox = subFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -33297,14 +33338,18 @@ subtitle:SetText("|cFF888888Flame / Flame Keeper only|r")
       end
     end
     table.sort(sorted, function(a, b) return a.total > b.total end)
-    local rewards = {SEASON_REWARD_1, SEASON_REWARD_2, SEASON_REWARD_3, SEASON_REWARD_4, SEASON_REWARD_5}
-    local lines = {"|cFF2DD35CLeaf Village Weekly Standings|r"}
+    local rewards = LeafVE:GetWeeklyRecapRewards()
+    local lines = {"|cFFD8A24AAshen Banner Weekly Standings|r"}
     local ordinals = {"1st", "2nd", "3rd", "4th", "5th"}
     for i = 1, 5 do
       local entry = sorted[i]
       if entry then
         local reward = rewards[i] or 0
-        table.insert(lines, string.format("%s: %s - %s LP (%dg reward)", ordinals[i], entry.name, LeafVE:FormatPointAmount(entry.total), reward))
+        if reward > 0 then
+          table.insert(lines, string.format("%s: %s - %s (%s reward)", ordinals[i], entry.name, LeafVE:FormatPointDisplay(entry.total, true, false), LeafVE:FormatSeasonGoldReward(reward)))
+        else
+          table.insert(lines, string.format("%s: %s - %s", ordinals[i], entry.name, LeafVE:FormatPointDisplay(entry.total, true, false)))
+        end
       else
         table.insert(lines, string.format("%s: ---", ordinals[i]))
       end
@@ -33372,7 +33417,7 @@ subtitle:SetText("|cFF888888Flame / Flame Keeper only|r")
   yBase = yBase - 18
   local testSection = subFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   testSection:SetPoint("TOPLEFT", subFrame, "TOPLEFT", 12, yBase)
-  testSection:SetText("|cFF2DD35CTesting|r")
+  testSection:SetText("|cFFD8A24ATesting|r")
   yBase = yBase - 28
 
   local randBadgeBtn = CreateFrame("Button", nil, subFrame, "UIPanelButtonTemplate")
@@ -33413,16 +33458,16 @@ subtitle:SetText("|cFF888888Flame / Flame Keeper only|r")
   dangerSection:SetText("|cFFFF4444Danger Zone|r")
   yBase = yBase - 28
 
-  -- "ÃƒÂ¢Ã…Â¡Ã‚Â  FULL DATA WIPE" button (official season reset ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â wipes ALL data)
+  -- "ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â  FULL DATA WIPE" button (official season reset ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â wipes ALL data)
   local fullWipeBtn = CreateFrame("Button", nil, subFrame, "UIPanelButtonTemplate")
   fullWipeBtn:SetWidth(240)
   fullWipeBtn:SetHeight(22)
   fullWipeBtn:SetPoint("TOPLEFT", subFrame, "TOPLEFT", 12, yBase)
-  fullWipeBtn:SetText("|cFFFF2222ÃƒÂ¢Ã…Â¡Ã‚Â  FULL DATA WIPE (Official Reset)|r")
+  fullWipeBtn:SetText("|cFFFF2222ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â  FULL DATA WIPE (Official Reset)|r")
   SkinButtonAccent(fullWipeBtn)
   fullWipeBtn:SetScript("OnEnter", function()
     GameTooltip:SetOwner(fullWipeBtn, "ANCHOR_RIGHT")
-  GameTooltip:SetText("Wipes ALL Leaf Points and history for every guild member,\nand moves badges to a new season bucket.\nOffline members are auto-wiped on next login.\nUse only for official season resets.", nil, nil, nil, nil, true)
+  GameTooltip:SetText("Wipes ALL Ashen Embers and history for every guild member,\nand moves badges to a new season bucket.\nOffline members are auto-wiped on next login.\nUse only for official season resets.", nil, nil, nil, nil, true)
     GameTooltip:Show()
   end)
   fullWipeBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -33925,7 +33970,7 @@ function BuildJoinPanel(panel)
   joinText:SetPoint("CENTER", panel, "CENTER", 0, 10)
   joinText:SetWidth(420)
   joinText:SetJustifyH("CENTER")
-  joinText:SetText("|cFFFFD700Please Join Leaf Village to gain access|r")
+  joinText:SetText("|cFFFFD700Please Join The Ashen Banner to gain access|r")
 end
 
 function BuildUpdatePanel(panel)
@@ -33986,7 +34031,7 @@ function LeafVE:ShowMyDataResetConfirm()
     warningText:SetJustifyH("CENTER")
     warningText:SetText(
       "|cFFFFD700Reset YOUR saved data?|r\n\n"..
-      "|cFFCCCCCCThis will permanently delete all your Leaf Points,\n"..
+      "|cFFCCCCCCThis will permanently delete all your Ashen Embers,\n"..
       "badges, history, and leaderboard entries from your saved\n"..
       "variables file and notify online guild members to remove\n"..
       "your entries from their caches.|r"
@@ -34520,7 +34565,7 @@ function LeafVE.UI:RefreshAllianceWelcomePanel()
       btn:SetWidth((panel.allianceGuildListFrame:GetWidth() or 120) - 4)
       btn.nameText:SetText((guildInfo.isHomeGuild and "|cFF88CCFF" or "|cFFFFD700") .. tostring(guildInfo.name) .. "|r")
       if snapshot and tonumber(snapshot.onlineCount or 0) > 0 then
-        btn.metaText:SetText("|cFFAAAAAA" .. tostring(snapshot.onlineCount or 0) .. " active shinobi|r")
+        btn.metaText:SetText("|cFFAAAAAA" .. tostring(snapshot.onlineCount or 0) .. " active members|r")
       else
         btn.metaText:SetText(guildInfo.isHomeGuild and "|cFF88CC88Home guild|r" or "|cFF777777Awaiting roster sync|r")
       end
@@ -34566,13 +34611,13 @@ function BuildWelcomePanel(panel)
 
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   h:SetPoint("TOP", headerBG, "TOP", 0, -10)
-  h:SetText("|cFF2DD35CLeaf Village Legends|r")
+  h:SetText("|cFFD8A24AThe Ashen Banner|r")
 
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   subtitle:SetPoint("TOP", h, "BOTTOM", 0, -3)
-  subtitle:SetText("|cFF888888The path of a true shinobi begins here|r")
+  subtitle:SetText("|cFF888888The Banner's oath, honors, and service are recorded here|r")
 
-  local guideModeBtn = CreateWorkOrderModeButton(panel, "Village Guide")
+  local guideModeBtn = CreateWorkOrderModeButton(panel, "Banner Guide")
   guideModeBtn:SetWidth(104)
   guideModeBtn:SetPoint("TOPLEFT", panel, "TOPLEFT", 14, -72)
   guideModeBtn:SetScript("OnClick", function()
@@ -34692,7 +34737,7 @@ function BuildWelcomePanel(panel)
     tex:SetVertexColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 1)
     local fs = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     fs:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 30, yOffset)
-    fs:SetText("|cFF2DD35C"..title.."|r")
+    fs:SetText("|cFFD8A24A"..title.."|r")
     table.insert(guideLayoutNodes, {
       kind = "section",
       icon = tex,
@@ -34794,65 +34839,65 @@ function BuildWelcomePanel(panel)
   end
 
   -- Welcome
-  AddSection("Guild Briefing", "Interface\\Icons\\Ability_Warrior_BattleShout")
-  AddLine("Welcome to |cFF2DD35CLeaf Village Legends|r, the village ledger that tracks your rise from academy hopeful to shinobi legend.")
-  AddLine("Think of this panel as the guild's mission desk: it records your Leaf Points, badges, titles, achievements, work orders, weekly duties, and events.")
-  AddLine("If it honors the village, supports a comrade, or strengthens the Will of Fire, this addon is built to notice it.")
+  AddSection("Banner Briefing", "Interface\\Icons\\Ability_Warrior_BattleShout")
+  AddLine("Welcome to |cFFD8A24AThe Ashen Banner|r, the guild ledger that tracks your rise through service, loyalty, and victory.")
+  AddLine("Think of this panel as the Banner's command desk: it records your Ashen Embers, badges, titles, achievements, work orders, weekly duties, and events.")
+  AddLine("If it strengthens the Banner, supports a guildmate, or answers the call of duty, this addon is built to notice it.")
   yOffset = yOffset - 4
   AddDivider()
 
-  AddSection("Your Ninja Dashboard", "Interface\\Icons\\INV_Misc_Map_01")
-  AddBullet("Welcome", "Read this guide and check the Daily Shinobi Briefing for the village's latest status.")
-  AddBullet("Character", "View your shinobi dossier, weekly and lifetime leaderboards, achievements, badges, titles, roster, and shoutout history.")
-  AddBullet("Orders", "Manage live work orders, sign up as a crafter, climb work order reputation, and complete weekly Shinobi Duties.")
-  AddBullet("Calendar", "Review guild events, RSVP to upcoming missions, and keep pace with the village schedule.")
+  AddSection("Your Banner Dashboard", "Interface\\Icons\\INV_Misc_Map_01")
+  AddBullet("Welcome", "Read this guide and check the Daily Banner Briefing for the guild's latest status.")
+  AddBullet("Character", "View your banner dossier, weekly and lifetime leaderboards, achievements, badges, titles, roster, and shoutout history.")
+  AddBullet("Orders", "Manage live work orders, sign up as a crafter, climb work order reputation, and complete weekly Banner Duties.")
+  AddBullet("Calendar", "Review guild events, RSVP to upcoming missions, and keep pace with the Banner's schedule.")
   AddBullet("Options", "Adjust width, height, and scale, review point history, inspect live history, and access admin tools if you are Flame or Flame Keeper.")
   yOffset = yOffset - 4
   AddDivider()
 
-  AddSection("How to Earn Leaf Points", "Interface\\Icons\\INV_Misc_Coin_01")
-  panel.welcomeWeekendLine = AddBullet("Weekend Bonus", string.format("All Leaf Point gains are multiplied by %dx on Saturday and Sunday.", WEEKEND_POINT_MULTIPLIER))
-  panel.welcomeLoginLine = AddBullet("Daily Login", "Checking in awards 20 LP and pushes your streak toward login badges like Dedicated, Truly Dedicated, and Daily Legend.")
-  panel.welcomeGroupLine = AddBullet("Group Time", string.format("Earn %d LP per online guildie every 60 minutes while grouped, up to %d LP per day. AFK and offline members do not count.", GROUP_POINTS, GROUP_POINTS_DAILY_CAP))
-  panel.welcomeQuestLine = AddBullet("Guild Quest Turn-Ins", string.format("Turning in quests while grouped with a guildmate awards %d LP each, with no daily cap.", QUEST_POINTS))
-  panel.welcomeInstanceLine = AddBullet("Dungeons and Raids", string.format("%d LP per dungeon boss, %d per raid boss, %d extra per guildie on boss kills, plus %d / %d for dungeon and raid completion.", INSTANCE_BOSS_POINTS, RAID_BOSS_POINTS, BOSS_GUILDIE_BONUS_POINTS, INSTANCE_COMPLETION_POINTS, RAID_COMPLETION_POINTS))
-  panel.welcomeHKLine = AddBullet("Shinobi Combat", "Honorable kills earned while grouped with guildies award 0.5 LP each and feed the Shinobi Combatant badge path.")
+  AddSection("How to Earn Ashen Embers", "Interface\\Icons\\INV_Misc_Coin_01")
+  panel.welcomeWeekendLine = AddBullet("Weekend Bonus", string.format("All Ashen Ember gains are multiplied by %dx on Saturday and Sunday.", WEEKEND_POINT_MULTIPLIER))
+  panel.welcomeLoginLine = AddBullet("Daily Login", "Checking in awards 20 Ashen Embers and pushes your streak toward login badges like Dedicated, Truly Dedicated, and Daily Legend.")
+  panel.welcomeGroupLine = AddBullet("Group Time", string.format("Earn %d Ashen Embers per online guildie every 60 minutes while grouped, up to %d Ashen Embers per day. AFK and offline members do not count.", GROUP_POINTS, GROUP_POINTS_DAILY_CAP))
+  panel.welcomeQuestLine = AddBullet("Guild Quest Turn-Ins", string.format("Turning in quests while grouped with a guildmate awards %d Ashen Embers each, with no daily cap.", QUEST_POINTS))
+  panel.welcomeInstanceLine = AddBullet("Dungeons and Raids", string.format("%d Ashen Embers per dungeon boss, %d per raid boss, %d extra per guildie on boss kills, plus %d / %d for dungeon and raid completion.", INSTANCE_BOSS_POINTS, RAID_BOSS_POINTS, BOSS_GUILDIE_BONUS_POINTS, INSTANCE_COMPLETION_POINTS, RAID_COMPLETION_POINTS))
+  panel.welcomeHKLine = AddBullet("Banner Vanguard", "Honorable kills earned while grouped with guildies award 0.5 Ashen Embers each and feed the Banner Vanguard badge path.")
   local soPoints = (LeafVE_DB and LeafVE_DB.options and LeafVE_DB.options.shoutoutPoints) or 10
   local soMax = LeafVE:GetShoutoutDailyLimitForPlayer(UnitName("player"))
   local soMaxLabel = LeafVE:GetShoutoutDailyLimitLabel(soMax)
-  panel.welcomeShoutoutLine = AddBullet("Shoutouts", string.format("Use |cFF00CCFF/so PlayerName [reason]|r to recognize a guildmate. Both the sender and receiver earn %d LP, and you currently have %s shoutouts per day.", soPoints, soMaxLabel))
-  panel.welcomeWorkOrderLine = AddBullet("Verified Work Orders", string.format("When a requester clicks Verify, the crafter earns %d LP and both shinobi gain work order reputation.", WORK_ORDER_FINAL_REWARD_POINTS))
-  AddLine("Every one of those systems feeds your badges, your standing, and the story your dossier tells about your ninja way.", 20)
+  panel.welcomeShoutoutLine = AddBullet("Shoutouts", string.format("Use |cFF00CCFF/so PlayerName [reason]|r to recognize a guildmate. Both the sender and receiver earn %d Ashen Embers, and you currently have %s shoutouts per day.", soPoints, soMaxLabel))
+  panel.welcomeWorkOrderLine = AddBullet("Verified Work Orders", string.format("When a requester clicks Verify, the crafter earns %d Ashen Embers and both guildmates gain work order reputation.", WORK_ORDER_FINAL_REWARD_POINTS))
+  AddLine("Every one of those systems feeds your badges, your standing, and the story your dossier tells about your service to the Banner.", 20)
   yOffset = yOffset - 6
   AddDivider()
 
   AddSection("Orders, Duties, and Supply Lines", "Interface\\Icons\\INV_Hammer_09")
   AddBullet("Work Orders", "Post exact crafting or gathering requests, browse live jobs, sign up as a crafter, and verify deliveries when the work is done.")
-  AddBullet("Reputation Ladder", "Every verified order pushes you up the supply chain from Leaf Apprentice to Trusted Hand, Village Artisan, Master Supplier, and finally Leaf Legend.")
+  AddBullet("Reputation Ladder", "Every verified order pushes you up the supply chain from Ashen Apprentice to Trusted Hand, Banner Artisan, Master Supplier, and finally Ashen Legend.")
   panel.welcomeRepThresholdLine = AddLine(string.format("Current major reputation thresholds are |cFFFFD700%d|r, |cFFFFD700%d|r, |cFFFFD700%d|r, and |cFFFFD700%d|r rep.", WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.trustedHand, WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.villageArtisan, WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.masterSupplier, WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.leafLegend), 20)
-  AddBullet("Shinobi Duties", "Every weekly reset rolls five mission tiers: S, A, B, C, and D. These duties are built from tracked systems like guild-group quests, honorable kills, shoutouts, and work orders.")
+  AddBullet("Banner Duties", "Every weekly reset rolls five mission tiers: S, A, B, C, and D. These duties are built from tracked systems like guild-group quests, honorable kills, shoutouts, and work orders.")
   local dutyMin = LeafVE.shinobiDutyTierInfo and LeafVE.shinobiDutyTierInfo.D or { lpReward = 10, repReward = 22 }
   local dutyMax = LeafVE.shinobiDutyTierInfo and LeafVE.shinobiDutyTierInfo.S or { lpReward = 40, repReward = 100 }
-  panel.welcomeDutyRewardLine = AddLine(string.format("Duty rewards currently range from |cFFFFD700%d LP / %d REP|r at D tier up to |cFFFFD700%d LP / %d REP|r at S tier.", dutyMin.lpReward or 10, dutyMin.repReward or 22, dutyMax.lpReward or 40, dutyMax.repReward or 100), 20)
+  panel.welcomeDutyRewardLine = AddLine(string.format("Duty rewards currently range from |cFFFFD700%d AE / %d REP|r at D tier up to |cFFFFD700%d AE / %d REP|r at S tier.", dutyMin.lpReward or 10, dutyMin.repReward or 22, dutyMax.lpReward or 40, dutyMax.repReward or 100), 20)
   yOffset = yOffset - 4
   AddDivider()
 
   AddSection("Recognition and Legacy", "Interface\\Icons\\INV_Misc_Book_11")
   AddBullet("Achievements", "Your own achievement history comes straight from the client, while guildmate achievement history fills in through addon sync so player cards can show recent and full progress.")
-  AddBullet("Badges", "Badges are your village honors. They unlock from streaks, grouped play, point milestones, raids, work orders, recognition, and shinobi combat.")
+  AddBullet("Badges", "Badges are your Banner honors. They unlock from streaks, grouped play, point milestones, raids, work orders, recognition, and Banner Vanguard combat.")
   AddBullet("Titles", "Some badges unlock titles. Equip them in |cFFFFD700Character -> Titles|r to place that honor beside your name and in guild chat.")
-  AddBullet("Player Cards", "Click a shinobi from the roster or leaderboards to open a dossier with notes, spec, gear, professions, recent badges, achievements, and work-order shortcuts.")
+  AddBullet("Player Cards", "Click a guildmate from the roster or leaderboards to open a dossier with notes, spec, gear, professions, recent badges, achievements, and work-order shortcuts.")
   yOffset = yOffset - 4
   AddDivider()
 
-  AddSection("Village Signals", "Interface\\Icons\\Ability_Hunter_SniperShot")
-  AddBullet("Guild Events", "Use the Calendar tab to track village events, RSVP, and see who is marching into the next mission.")
-  AddBullet("Daily Shinobi Briefing", "Once every 24 hours, the login briefing recaps weekly leaders, your standing, live work orders, and active Shinobi Duties.")
+  AddSection("Banner Signals", "Interface\\Icons\\Ability_Hunter_SniperShot")
+  AddBullet("Guild Events", "Use the Calendar tab to track Banner events, RSVP, and see who is marching into the next mission.")
+  AddBullet("Daily Banner Briefing", "Once every 24 hours, the login briefing recaps weekly leaders, your standing, live work orders, and active Banner Duties.")
   yOffset = yOffset - 4
   AddDivider()
 
   AddSection("Field Commands", "Interface\\Icons\\INV_Misc_Book_09")
-  AddLine("|cFF00CCFF/lve|r - Open Leaf Village Legends", 10)
+  AddLine("|cFF00CCFF/lve|r - Open The Ashen Banner", 10)
   AddLine("|cFF00CCFF/so PlayerName [reason]|r - Give a shoutout", 10)
   AddLine("|cFF00CCFF/badgesync|r - Re-broadcast your badges and badge progress", 10)
   AddLine("|cFF00CCFF/leafrecap|r - Reopen the weekly recap when one is available", 10)
@@ -34860,10 +34905,10 @@ function BuildWelcomePanel(panel)
   yOffset = yOffset - 4
   AddDivider()
 
-  AddSection("The Will of Fire", "Interface\\Icons\\Spell_Holy_BlessingOfStrength")
-  AddLine("\"When people are protecting something truly special to them, they truly can become as strong as they can be.\"", 10)
-  AddLine("|cFF2DD35C- Naruto Uzumaki|r", 10)
-  AddLine("Support your squad, keep the village supplied, answer the weekly mission board, and let every badge, title, and Leaf Point total tell the story of your ninja way.", 10)
+  AddSection("The Oath of the Banner", "Interface\\Icons\\Spell_Holy_BlessingOfStrength")
+  AddLine("\"A banner only endures when every hand beneath it chooses to carry the weight together.\"", 10)
+  AddLine("|cFFD8A24A- The Ashen Banner|r", 10)
+  AddLine("Support your squad, keep the Banner supplied, answer the weekly mission board, and let every badge, title, and Ashen Ember total tell the story of your service.", 10)
 
   yOffset = yOffset - 20
   scrollChild:SetHeight(math.abs(yOffset) + 20)
@@ -35313,7 +35358,7 @@ function LeafVE:CreateMinimapButton()
 
   btn:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_LEFT")
-    GameTooltip:SetText("Leaf Village Legends", THEME.leaf[1], THEME.leaf[2], THEME.leaf[3])
+    GameTooltip:SetText("The Ashen Banner", THEME.leaf[1], THEME.leaf[2], THEME.leaf[3])
     GameTooltip:AddLine("Click to toggle UI", 1, 1, 1)
     GameTooltip:Show()
   end)
@@ -36298,7 +36343,7 @@ function LeafVE.UI:RefreshShinobiReputationLeaderboard()
     if not panel.noDataText then
       local noDataText = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
       noDataText:SetPoint("TOP", scrollChild, "TOP", 0, -20)
-      noDataText:SetText("|cFF888888No shinobi reputation data available yet|r")
+      noDataText:SetText("|cFF888888No banner reputation data available yet|r")
       panel.noDataText = noDataText
     end
     panel.noDataText:Show()
@@ -36556,8 +36601,8 @@ function LeafVE.UI:Build()
   
   -- Title (CENTERED, GOLD)
   local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  title:SetPoint("TOP", f, "TOP", 0, -12)  -- ÃƒÂ¢Ã¢â‚¬Â Ã‚Â CENTERED
-  title:SetText("Leaf Village Legends")
+  title:SetPoint("TOP", f, "TOP", 0, -12)  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â CENTERED
+  title:SetText("The Ashen Banner")
   if not LeafVEApplyFont(title, "header_large", "OUTLINE") then
     title:SetTextColor(THEME.gold[1], THEME.gold[2], THEME.gold[3])
   else
@@ -36567,7 +36612,7 @@ function LeafVE.UI:Build()
   -- Subtitle description (centered below title)
   local sub = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   sub:SetPoint("TOP", title, "BOTTOM", 0, -2)
-  sub:SetText("Auto-tracking: Login + Group Points")
+  sub:SetText("Auto-tracking: Login + Group Embers")
   LeafVEApplyFont(sub, "body_small")
   sub:SetTextColor((Colors and Colors.TEXT and Colors.TEXT.muted_gray and Colors.TEXT.muted_gray.r) or 0.7, (Colors and Colors.TEXT and Colors.TEXT.muted_gray and Colors.TEXT.muted_gray.g) or 0.7, (Colors and Colors.TEXT and Colors.TEXT.muted_gray and Colors.TEXT.muted_gray.b) or 0.7)
   
@@ -36583,7 +36628,7 @@ function LeafVE.UI:Build()
   -- Created by credit (FAR RIGHT)
   local credit = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   credit:SetPoint("TOPRIGHT", f, "TOPRIGHT", -35, -12)
-  credit:SetText("|cFF2DD35CCreated by Methl|r")
+  credit:SetText("|cFFD8A24ACreated by Methl|r")
   credit:SetAlpha(0.9)
   
   local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
@@ -36630,7 +36675,7 @@ function LeafVE.UI:Build()
     return
   end
 
-  self.tabJoin = TabButton(f, "Please Join Leaf Village to gain access", "LeafVE_TabJoin")
+  self.tabJoin = TabButton(f, "Please Join The Ashen Banner to gain access", "LeafVE_TabJoin")
   self.tabJoin:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -52)
   self.tabJoin:SetWidth(300)
   self.tabJoin:Hide()
@@ -36659,7 +36704,7 @@ function LeafVE.UI:Build()
   self.tabAchievements:SetPoint("LEFT", self.tabLeaderLife, "RIGHT", 4, 0)
   self.tabAchievements:SetWidth(95)
 
-  self.tabShinobiReputation = TabButton(f, "Shinobi Reputation", "LeafVE_TabShinobiReputation")
+  self.tabShinobiReputation = TabButton(f, "Banner Reputation", "LeafVE_TabShinobiReputation")
   self.tabShinobiReputation:SetPoint("LEFT", self.tabAchievements, "RIGHT", 4, 0)
   self.tabShinobiReputation:SetWidth(110)
 
@@ -37189,7 +37234,12 @@ function LeafVE.UI:Refresh()
 
     -- Refresh Season Rewards display
     if self.panels.me.seasonRewards then
-      self.panels.me.seasonRewards:SetText("|cFFFFD700Temporarily Deactivated|r")
+      local rewards = LeafVE:GetWeeklyRecapRewards()
+      self.panels.me.seasonRewards:SetText(
+        "|cFFFFD7001st: " .. LeafVE:FormatSeasonGoldReward(rewards[1]) .. "|r  |  " ..
+        "|cFFC0C0C02nd: " .. LeafVE:FormatSeasonGoldReward(rewards[2]) .. "|r  |  " ..
+        "|cFFCD7F323rd: " .. LeafVE:FormatSeasonGoldReward(rewards[3]) .. "|r"
+      )
     end
 
     -- Calculate Week Countdown
@@ -37211,7 +37261,7 @@ function LeafVE.UI:Refresh()
 
     if self.panels.me.messageOfDayText then
       self.panels.me.messageOfDayText:SetText(
-        "|cFFBFE9C8\"" .. tostring(LeafVE:GetNarutoMessageOfTheDay(Now()) or "A true shinobi keeps moving for the people who believe in them.") .. "\"|r"
+        "|cFFBFE9C8\"" .. tostring(LeafVE:GetBannerMessageOfTheDay(Now()) or "A true champion keeps moving for the people who believe in them.") .. "\"|r"
       )
     end
 
@@ -37458,8 +37508,8 @@ function LeafVE.UI:RefreshLiveHistory()
     amtFS:SetPoint("LEFT", row, "LEFT", 182, 0)
     amtFS:SetWidth(55)
     amtFS:SetJustifyH("LEFT")
-    local amtColor = (entry.amount and entry.amount > 0) and "|cFF2DD35C" or "|cFFFF4444"
-    amtFS:SetText(amtColor.."+"..tostring(entry.amount or 0).." LP|r")
+    local amtColor = (entry.amount and entry.amount > 0) and "|cFFD8A24A" or "|cFFFF4444"
+    amtFS:SetText(amtColor .. LeafVE:FormatPointDisplay(entry.amount or 0, true, true) .. "|r")
 
     -- Reason
     local reasonFS = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -37493,34 +37543,34 @@ function LeafVE.UI:RefreshWelcome()
   local dutyMax = LeafVE.shinobiDutyTierInfo and LeafVE.shinobiDutyTierInfo.S or { lpReward = 40, repReward = 100 }
 
   if p.welcomeWeekendLine then
-    p.welcomeWeekendLine:SetText(string.format("|cFFFFD700Weekend Bonus|r - All Leaf Point gains are multiplied by %dx on Saturday and Sunday.", WEEKEND_POINT_MULTIPLIER))
+    p.welcomeWeekendLine:SetText(string.format("|cFFFFD700Weekend Bonus|r - All Ashen Ember gains are multiplied by %dx on Saturday and Sunday.", WEEKEND_POINT_MULTIPLIER))
   end
   if p.welcomeLoginLine then
-    p.welcomeLoginLine:SetText("|cFFFFD700Daily Login|r - Checking in awards 20 LP and pushes your streak toward login badges like Dedicated, Truly Dedicated, and Daily Legend.")
+    p.welcomeLoginLine:SetText("|cFFFFD700Daily Login|r - Checking in awards 20 Ashen Embers and pushes your streak toward login badges like Dedicated, Truly Dedicated, and Daily Legend.")
   end
   if p.welcomeGroupLine then
-    p.welcomeGroupLine:SetText(string.format("|cFFFFD700Group Time|r - Earn %d LP per online guildie every 60 minutes while grouped, up to %d LP per day. AFK and offline members do not count.", GROUP_POINTS, GROUP_POINTS_DAILY_CAP))
+    p.welcomeGroupLine:SetText(string.format("|cFFFFD700Group Time|r - Earn %d Ashen Embers per online guildie every 60 minutes while grouped, up to %d Ashen Embers per day. AFK and offline members do not count.", GROUP_POINTS, GROUP_POINTS_DAILY_CAP))
   end
   if p.welcomeQuestLine then
-    p.welcomeQuestLine:SetText(string.format("|cFFFFD700Guild Quest Turn-Ins|r - Turning in quests while grouped with a guildmate awards %d LP each, with no daily cap.", QUEST_POINTS))
+    p.welcomeQuestLine:SetText(string.format("|cFFFFD700Guild Quest Turn-Ins|r - Turning in quests while grouped with a guildmate awards %d Ashen Embers each, with no daily cap.", QUEST_POINTS))
   end
   if p.welcomeInstanceLine then
-    p.welcomeInstanceLine:SetText(string.format("|cFFFFD700Dungeons and Raids|r - %d LP per dungeon boss, %d per raid boss, %d extra per guildie on boss kills, plus %d / %d for dungeon and raid completion.", INSTANCE_BOSS_POINTS, RAID_BOSS_POINTS, BOSS_GUILDIE_BONUS_POINTS, INSTANCE_COMPLETION_POINTS, RAID_COMPLETION_POINTS))
+    p.welcomeInstanceLine:SetText(string.format("|cFFFFD700Dungeons and Raids|r - %d Ashen Embers per dungeon boss, %d per raid boss, %d extra per guildie on boss kills, plus %d / %d for dungeon and raid completion.", INSTANCE_BOSS_POINTS, RAID_BOSS_POINTS, BOSS_GUILDIE_BONUS_POINTS, INSTANCE_COMPLETION_POINTS, RAID_COMPLETION_POINTS))
   end
   if p.welcomeHKLine then
-    p.welcomeHKLine:SetText("|cFFFFD700Shinobi Combat|r - Honorable kills earned while grouped with guildies award 0.5 LP each and feed the Shinobi Combatant badge path.")
+    p.welcomeHKLine:SetText("|cFFFFD700Banner Vanguard|r - Honorable kills earned while grouped with guildies award 0.5 Ashen Embers each and feed the Banner Vanguard badge path.")
   end
   if p.welcomeShoutoutLine then
-    p.welcomeShoutoutLine:SetText(string.format("|cFFFFD700Shoutouts|r - Use |cFF00CCFF/so PlayerName [reason]|r to recognize a guildmate. Both the sender and receiver earn %d LP, and you currently have %s shoutouts per day.", soPts, soMaxLabel))
+    p.welcomeShoutoutLine:SetText(string.format("|cFFFFD700Shoutouts|r - Use |cFF00CCFF/so PlayerName [reason]|r to recognize a guildmate. Both the sender and receiver earn %d Ashen Embers, and you currently have %s shoutouts per day.", soPts, soMaxLabel))
   end
   if p.welcomeWorkOrderLine then
-    p.welcomeWorkOrderLine:SetText(string.format("|cFFFFD700Verified Work Orders|r - When a requester clicks Verify, the crafter earns %d LP and both shinobi gain work order reputation.", WORK_ORDER_FINAL_REWARD_POINTS))
+    p.welcomeWorkOrderLine:SetText(string.format("|cFFFFD700Verified Work Orders|r - When a requester clicks Verify, the crafter earns %d Ashen Embers and both guildmates gain work order reputation.", WORK_ORDER_FINAL_REWARD_POINTS))
   end
   if p.welcomeRepThresholdLine then
     p.welcomeRepThresholdLine:SetText(string.format("Current major reputation thresholds are |cFFFFD700%d|r, |cFFFFD700%d|r, |cFFFFD700%d|r, and |cFFFFD700%d|r rep.", WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.trustedHand, WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.villageArtisan, WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.masterSupplier, WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.leafLegend))
   end
   if p.welcomeDutyRewardLine then
-    p.welcomeDutyRewardLine:SetText(string.format("Duty rewards currently range from |cFFFFD700%d LP / %d REP|r at D tier up to |cFFFFD700%d LP / %d REP|r at S tier.", dutyMin.lpReward or 10, dutyMin.repReward or 22, dutyMax.lpReward or 40, dutyMax.repReward or 100))
+    p.welcomeDutyRewardLine:SetText(string.format("Duty rewards currently range from |cFFFFD700%d AE / %d REP|r at D tier up to |cFFFFD700%d AE / %d REP|r at S tier.", dutyMin.lpReward or 10, dutyMin.repReward or 22, dutyMax.lpReward or 40, dutyMax.repReward or 100))
   end
   if p.RefreshGuideLayout then
     p.RefreshGuideLayout(true)
@@ -37530,18 +37580,18 @@ function LeafVE.UI:RefreshWelcome()
   end
 end
 
-LeafVE.narutoDailyMessages = {
-  "A shinobi grows strongest when they keep moving for the people counting on them.",
-  "Even a quiet day in the village can become the step that sharpens tomorrow's legend.",
+LeafVE.bannerDailyMessages = {
+  "A banner burns brightest when every member keeps moving for the people counting on them.",
+  "Even a quiet day in the guild can become the step that sharpens tomorrow's legend.",
   "Real resolve is choosing the hard path again after doubt already had its turn.",
-  "No ninja carries the whole village alone; strength multiplies when the team keeps faith.",
+  "No one carries the whole Banner alone; strength multiplies when the guild keeps faith.",
   "Progress is still progress when it comes one mission, one promise, and one good deed at a time.",
-  "The will of fire burns brightest in the shinobi who lift others while chasing their own goals.",
+  "The Banner burns brightest in those who lift others while chasing their own goals.",
   "A setback is only proof that your story still has room for a stronger next chapter.",
-  "Great ninja are not remembered for comfort; they are remembered for showing up when it mattered.",
+  "Great champions are not remembered for comfort; they are remembered for showing up when it mattered.",
   "Your path does not need to be easy to be worthy of becoming legendary.",
-  "Every small act of effort plants another root in the village you are helping protect.",
-  "The bravest shinobi are the ones who stay kind while carrying difficult battles.",
+  "Every small act of effort strengthens the Banner you are helping protect.",
+  "The bravest champions are the ones who stay kind while carrying difficult battles.",
   "Belief becomes power the moment you act on it instead of waiting to feel ready.",
 }
 
@@ -37563,8 +37613,8 @@ function LeafVE.UI:ClearLoginBriefingWidgets(popup)
   popup.dynamicWidgets = {}
 end
 
-function LeafVE:GetNarutoMessageOfTheDay(ts)
-  local messages = self.narutoDailyMessages or {}
+function LeafVE:GetBannerMessageOfTheDay(ts)
+  local messages = self.bannerDailyMessages or {}
   local count = table.getn(messages)
   if count < 1 then
     return nil
@@ -37614,7 +37664,7 @@ function LeafVE.UI:CreateLoginBriefingPopup()
   local titleText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   titleText:SetPoint("TOP", popup, "TOP", 0, -28)
   titleText:SetTextColor(THEME.gold[1], THEME.gold[2], THEME.gold[3])
-  titleText:SetText("Daily Shinobi Briefing")
+  titleText:SetText("Daily Banner Briefing")
   popup.titleText = titleText
 
   local subtitleText = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -37805,7 +37855,7 @@ function LeafVE.UI:RefreshLoginBriefingPopup()
   end
 
   popup.subtitleText:SetText(date("%A, %B %d, %Y", now))
-  popup.summaryText:SetText("Weekly standing, leaders, live orders, and all five Shinobi Duties.")
+  popup.summaryText:SetText("Weekly standing, leaders, live orders, and all five Banner Duties.")
 
   self:ClearLoginBriefingWidgets(popup)
   local widgets = popup.dynamicWidgets
@@ -37888,13 +37938,13 @@ function LeafVE.UI:RefreshLoginBriefingPopup()
   local dutyCardHeight = dutyPreviewCount > 0 and (112 + (dutyPreviewCount * 56)) or 132
 
   local heroCard = CreateCard(contentLeft, yOffset, contentWidth, 176, true)
-  AddCardHeader(heroCard, "Village Snapshot", "Your weekly LP, rank, and duty progress at a glance.", "Interface\\Icons\\INV_Crown_01", THEME.gold)
+  AddCardHeader(heroCard, "Banner Snapshot", "Your weekly Ashen Embers, rank, and duty progress at a glance.", "Interface\\Icons\\INV_Crown_01", THEME.gold)
 
   local rankLabel = nil
   if myRank then
     rankLabel = GetWeeklyCharacterRankLabel(myRank)
   end
-  local rankLine = rankLabel and ("|cFF88CC88" .. tostring(rankLabel) .. "|r") or (myTotal > 0 and "|cFFAAAAAAOn the weekly board|r" or "|cFF888888No LP earned yet this week|r")
+  local rankLine = rankLabel and ("|cFF88CC88" .. tostring(rankLabel) .. "|r") or (myTotal > 0 and "|cFFAAAAAAOn the weekly board|r" or "|cFF888888No Ashen Embers earned yet this week|r")
   local standingPane = Track(CreateInset(heroCard))
   standingPane:SetPoint("TOPLEFT", heroCard, "TOPLEFT", 14, -48)
   standingPane:SetWidth(266)
@@ -37906,10 +37956,10 @@ function LeafVE.UI:RefreshLoginBriefingPopup()
   focusPane:SetHeight(92)
 
   AddText(standingPane, "|cFF88CC88Your Standing|r", "TOPLEFT", standingPane, "TOPLEFT", 12, -10, 140, "GameFontNormalSmall")
-  local totalValue = AddText(standingPane, "|cFFFFD700" .. LeafVE:FormatPointAmount(myTotal) .. " LP|r", "TOPRIGHT", standingPane, "TOPRIGHT", -12, -8, 132, "GameFontNormalLarge")
+  local totalValue = AddText(standingPane, "|cFFFFD700" .. LeafVE:FormatPointDisplay(myTotal, true, false) .. "|r", "TOPRIGHT", standingPane, "TOPRIGHT", -12, -8, 132, "GameFontNormalLarge")
   totalValue:SetJustifyH("RIGHT")
   AddText(standingPane, rankLine, "TOPLEFT", standingPane, "TOPLEFT", 12, -32, 242, "GameFontHighlightSmall")
-  AddText(standingPane, "|cFFAAAAAAWeekly Total|r  " .. tostring(LeafVE:FormatPointAmount(myTotal)) .. " LP", "TOPLEFT", standingPane, "TOPLEFT", 12, -50, 242, "GameFontHighlightSmall")
+  AddText(standingPane, "|cFFAAAAAAWeekly Embers|r  " .. tostring(LeafVE:FormatPointDisplay(myTotal, true, false)), "TOPLEFT", standingPane, "TOPLEFT", 12, -50, 242, "GameFontHighlightSmall")
   AddText(standingPane, "|cFFAAAAAAReset in|r  |cFFFFD700" .. FormatCompactCountdownText((WeekStartTS(now) + (7 * SECONDS_PER_DAY)) - now) .. "|r", "BOTTOMLEFT", standingPane, "BOTTOMLEFT", 12, 12, 242, "GameFontHighlightSmall")
 
   AddText(focusPane, "|cFFFFD700Duty Focus|r", "TOPLEFT", focusPane, "TOPLEFT", 12, -10, 120, "GameFontNormalSmall")
@@ -37979,15 +38029,15 @@ function LeafVE.UI:RefreshLoginBriefingPopup()
   else
     AddText(focusPane, "|cFF88CC88All weekly duties complete. Await next week's orders.|r", "TOPLEFT", focusPane, "TOPLEFT", 12, -34, 252, "GameFontHighlightSmall")
   end
-  AddText(heroCard, "|cFF88CC88Remaining Duty Rewards|r  |cFFFFD700+" .. LeafVE:FormatPointAmount(dutyRemainingLP) .. " LP|r  |  |cFF88CCFF+" .. tostring(dutyRemainingRep) .. " REP|r", "BOTTOMLEFT", heroCard, "BOTTOMLEFT", 18, 14, 540, "GameFontHighlightSmall")
+  AddText(heroCard, "|cFF88CC88Remaining Duty Rewards|r  |cFFFFD700" .. LeafVE:FormatPointDisplay(dutyRemainingLP, true, true) .. "|r  |  |cFF88CCFF+" .. tostring(dutyRemainingRep) .. " REP|r", "BOTTOMLEFT", heroCard, "BOTTOMLEFT", 18, 14, 540, "GameFontHighlightSmall")
 
   yOffset = yOffset - 188
 
   local messageCard = CreateCard(contentLeft, yOffset, halfWidth, 156, false)
-  AddCardHeader(messageCard, "Message of the Day", "Today's shinobi reminder.", "Interface\\Icons\\INV_Misc_Book_11", THEME.leaf)
+  AddCardHeader(messageCard, "Banner Dispatch", "Today's banner reminder.", "Interface\\Icons\\INV_Misc_Book_11", THEME.leaf)
   local messageBody = AddText(
     messageCard,
-    "|cFFBFE9C8" .. tostring(LeafVE:GetNarutoMessageOfTheDay(now) or "A true shinobi keeps moving for the people who believe in them.") .. "|r",
+    "|cFFBFE9C8" .. tostring(LeafVE:GetBannerMessageOfTheDay(now) or "A true champion keeps moving for the people who believe in them.") .. "|r",
     "TOPLEFT",
     messageCard,
     "TOPLEFT",
@@ -37999,7 +38049,7 @@ function LeafVE.UI:RefreshLoginBriefingPopup()
   messageBody:SetJustifyV("TOP")
 
   local leadersCard = CreateCard(contentLeft + halfWidth + columnGap, yOffset, halfWidth, 156, false)
-  AddCardHeader(leadersCard, "Weekly Leaders", "The strongest shinobi this week.", "Interface\\Icons\\INV_Crown_01", THEME.gold)
+  AddCardHeader(leadersCard, "Weekly Leaders", "The Banner's strongest this week.", "Interface\\Icons\\INV_Crown_01", THEME.gold)
   if table.getn(leaders) < 1 then
     AddText(leadersCard, "|cFF888888No weekly leaderboard data is available yet.|r", "TOPLEFT", leadersCard, "TOPLEFT", 14, -54, halfWidth - 28, "GameFontHighlightSmall")
   else
@@ -38012,7 +38062,7 @@ function LeafVE.UI:RefreshLoginBriefingPopup()
         leadersCard,
         "|cFF" .. RGBToHex(rr, gg, bb) .. "#" .. tostring(i) .. "|r " ..
         tostring(entry.name or "Unknown") ..
-        "  |  |cFFFFD700" .. LeafVE:FormatPointAmount(tonumber(entry.total) or 0) .. " LP|r",
+        "  |  |cFFFFD700" .. LeafVE:FormatPointDisplay(tonumber(entry.total) or 0, true, false) .. "|r",
         "TOPLEFT",
         leadersCard,
         "TOPLEFT",
@@ -38024,7 +38074,7 @@ function LeafVE.UI:RefreshLoginBriefingPopup()
       leaderY = leaderY - ((i == 1) and 24 or 20)
     end
     if myRank and myRank > 3 then
-      AddText(leadersCard, "|cFF888888You: #" .. tostring(myRank) .. "  |  " .. LeafVE:FormatPointAmount(myTotal) .. " LP|r", "BOTTOMLEFT", leadersCard, "BOTTOMLEFT", 14, 12, halfWidth - 28, "GameFontHighlightSmall")
+      AddText(leadersCard, "|cFF888888You: #" .. tostring(myRank) .. "  |  " .. LeafVE:FormatPointDisplay(myTotal, true, false) .. "|r", "BOTTOMLEFT", leadersCard, "BOTTOMLEFT", 14, 12, halfWidth - 28, "GameFontHighlightSmall")
     end
   end
 
@@ -38034,13 +38084,13 @@ function LeafVE.UI:RefreshLoginBriefingPopup()
   AddCardHeader(
     ordersCard,
     "Live Work Orders",
-    tostring(table.getn(liveOrders)) .. " active order" .. (table.getn(liveOrders) ~= 1 and "s" or "") .. " across the village.",
+    tostring(table.getn(liveOrders)) .. " active order" .. (table.getn(liveOrders) ~= 1 and "s" or "") .. " across the guild.",
     "Interface\\Icons\\Trade_BlackSmithing",
     THEME.leaf
   )
   if orderPreviewCount < 1 then
-    AddText(ordersCard, "|cFF888888No live work orders right now. The village is quiet... for now.|r", "TOPLEFT", ordersCard, "TOPLEFT", 14, -56, contentWidth - 28, "GameFontHighlightSmall")
-    AddText(ordersCard, "|cFF777777Open Orders when you want to post the next village request.|r", "TOPLEFT", ordersCard, "TOPLEFT", 14, -76, contentWidth - 28, "GameFontHighlightSmall")
+    AddText(ordersCard, "|cFF888888No live work orders right now. The board is quiet... for now.|r", "TOPLEFT", ordersCard, "TOPLEFT", 14, -56, contentWidth - 28, "GameFontHighlightSmall")
+    AddText(ordersCard, "|cFF777777Open Orders when you want to post the next guild request.|r", "TOPLEFT", ordersCard, "TOPLEFT", 14, -76, contentWidth - 28, "GameFontHighlightSmall")
   else
     local orderY = -56
     for i = 1, orderPreviewCount do
@@ -38074,12 +38124,12 @@ function LeafVE.UI:RefreshLoginBriefingPopup()
   local dutiesCard = CreateCard(contentLeft, yOffset, contentWidth, dutyCardHeight, false)
   AddCardHeader(
     dutiesCard,
-    "Shinobi Duties",
+    "Banner Duties",
     tostring(dutyCompleted) .. "/" .. tostring(math.max(5, table.getn(duties))) .. " complete  |  Duty Bonus +" .. tostring(LeafVE:GetShinobiDutyRepBonusAmount(me)) .. " REP",
     "Interface\\Icons\\INV_Scroll_03",
     THEME.gold
   )
-  AddText(dutiesCard, "|cFF88CC88Remaining|r  |cFFFFD700+" .. LeafVE:FormatPointAmount(dutyRemainingLP) .. " LP|r  |  |cFF88CCFF+" .. tostring(dutyRemainingRep) .. " REP|r", "TOPLEFT", dutiesCard, "TOPLEFT", 14, -56, contentWidth - 28, "GameFontHighlightSmall")
+  AddText(dutiesCard, "|cFF88CC88Remaining|r  |cFFFFD700" .. LeafVE:FormatPointDisplay(dutyRemainingLP, true, true) .. "|r  |  |cFF88CCFF+" .. tostring(dutyRemainingRep) .. " REP|r", "TOPLEFT", dutiesCard, "TOPLEFT", 14, -56, contentWidth - 28, "GameFontHighlightSmall")
 
   if dutyPreviewCount < 1 then
     AddText(dutiesCard, "|cFF88CC88All weekly duties complete. The next mission board arrives after reset.|r", "TOPLEFT", dutiesCard, "TOPLEFT", 14, -82, contentWidth - 28, "GameFontHighlightSmall")
@@ -38116,7 +38166,7 @@ function LeafVE.UI:RefreshLoginBriefingPopup()
       )
       local rewardText = AddText(
         dutiesCard,
-        "|cFFFFD700+" .. tostring(tonumber(duty.lpReward) or 0) .. " LP|r  |  |cFF88CCFF+" .. tostring(tonumber(duty.repReward) or 0) .. " REP|r",
+        "|cFFFFD700" .. LeafVE:FormatPointDisplay(tonumber(duty.lpReward) or 0, true, true) .. "|r  |  |cFF88CCFF+" .. tostring(tonumber(duty.repReward) or 0) .. " REP|r",
         "TOPRIGHT",
         dutiesCard,
         "TOPLEFT",
@@ -38371,7 +38421,7 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
   
   if event == "PLAYER_LOGIN" then
     Print("Loaded v"..LeafVE.version)
-    Print("Auto-tracking: Login & Group points enabled!")
+    Print("Auto-tracking: Login embers and group embers enabled!")
     EnsureDB()
     LeafVE:RefreshMinimapButtonAccess()
     LeafVE:InvalidateClientAchievementCatalog()
@@ -38399,13 +38449,14 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
     if ShouldApplyIncomingWipeVersion(LeafVE_GlobalDB.fullWipeVersion or 0) then
       LVE_ApplyFullWipeVersion(
         LeafVE_GlobalDB.fullWipeVersion or 0,
-        "|cFFFFD700[LVL]|r Your Leaf Point data was reset by a guild admin. Welcome to the new season!"
+        "|cFFFFD700[LVL]|r Your Ashen Embers data was reset by a guild admin. Welcome to the new season!"
       )
     end
     LeafVE:CheckDailyLogin()
     LeafVE:PurgeStaleWeeklyData()
     LeafVE:PurgeInvalidWorkOrders()
     LeafVE:PrimeHonorableKillTracker()
+    LeafVE:EnsureChatLoggingEnabled()
     if LeafVE.allianceEnabled == true then
       LeafVE:CacheLocalAllianceRoster()
     end
@@ -39529,7 +39580,7 @@ function LeafVE:RegisterBadgeHyperlinkHandler()
       return
     end
 
-    -- Handle achievement hyperlinks ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â same panel, populated with achievement data
+    -- Handle achievement hyperlinks ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â same panel, populated with achievement data
     local originalSetItemRef = LeafVE.badgeHyperlinkOriginalSetItemRef
     if type(originalSetItemRef) ~= "function" or originalSetItemRef == LeafVE.badgeHyperlinkWrappedRef then
       return
@@ -39553,7 +39604,7 @@ end
 -------------------------------------------------
 -- STARTUP MESSAGE
 -------------------------------------------------
-Print("|cFF2DD35CLeaf Village Legends|r v"..LeafVE.version.." loaded!")
+Print("|cFFD8A24AThe Ashen Banner|r v"..LeafVE.version.." loaded!")
   Print("Type |cFFFFD700/lve|r to open the UI")
 Print("Type |cFFFFD700/lvedebug|r for debug commands")
 
@@ -42614,6 +42665,7 @@ if LeafVE.guildBankEnabled ~= true then
     return nil
   end
 end
+
 
 
 

@@ -1,8 +1,12 @@
 -- LeafVillageLegends: Frame skins
 
-local BORDER = {0.18, 0.30, 0.20, 1.0}
-local BG_MAIN = {0.03, 0.05, 0.08, 0.97}
-local BG_INSET = {0.06, 0.09, 0.13, 0.92}
+local styleColors = (_G.LEAFVE_STYLE and _G.LEAFVE_STYLE.colors) or {}
+local BORDER = styleColors.border or {0.46, 0.29, 0.18, 1.0}
+local BG_MAIN = styleColors.bgDark or {0.05, 0.04, 0.04, 0.97}
+local BG_INSET = styleColors.bgPanel or {0.09, 0.07, 0.07, 0.94}
+local EMBER = styleColors.uncommon or {0.80, 0.38, 0.16, 1.0}
+local CRIMSON = styleColors.rare or {0.53, 0.18, 0.12, 1.0}
+local SOFT = styleColors.soft or {0.34, 0.26, 0.23, 1.0}
 
 local function EnsureBackdrop(frame)
   if not frame or type(frame.SetBackdrop) ~= "function" then
@@ -69,11 +73,11 @@ function LeafVE_FrameSkins.ApplyButton(btn, variant)
     return
   end
 
-  local normal = {0.08, 0.12, 0.09, 1.0}
+  local normal = {0.12, 0.09, 0.08, 1.0}
   if variant == "accent" then
-    normal = {0.10, 0.35, 0.15, 1.0}
+    normal = {0.38, 0.18, 0.10, 1.0}
   elseif variant == "danger" then
-    normal = {0.30, 0.06, 0.06, 1.0}
+    normal = {0.33, 0.08, 0.08, 1.0}
   end
 
   btn:SetBackdrop({
@@ -104,10 +108,12 @@ function LeafVE_FrameSkins.ApplyButton(btn, variant)
   end
 
   HookOrSetScript(btn, "OnEnter", function(self)
-    self:SetBackdropColor(0.15, 0.40, 0.20, 0.8)
+    self:SetBackdropColor(normal[1] + 0.10, normal[2] + 0.06, normal[3] + 0.04, 0.92)
+    self:SetBackdropBorderColor(EMBER[1], EMBER[2], EMBER[3], 1.0)
   end)
   HookOrSetScript(btn, "OnLeave", function(self)
     self:SetBackdropColor(normal[1], normal[2], normal[3], normal[4])
+    self:SetBackdropBorderColor(BORDER[1], BORDER[2], BORDER[3], BORDER[4])
   end)
   HookOrSetScript(btn, "OnMouseDown", function(self)
     self:SetBackdropColor(normal[1] * 0.8, normal[2] * 0.8, normal[3] * 0.8, normal[4])
@@ -132,11 +138,11 @@ function LeafVE_FrameSkins.ApplyTab(tab, isActive)
   })
 
   if isActive then
-    tab:SetBackdropColor(0.10, 0.18, 0.12, 0.95)
-    tab:SetBackdropBorderColor(BORDER[1], BORDER[2], BORDER[3], 1.0)
+    tab:SetBackdropColor(0.18, 0.12, 0.09, 0.95)
+    tab:SetBackdropBorderColor(EMBER[1], EMBER[2], EMBER[3], 1.0)
   else
-    tab:SetBackdropColor(0.04, 0.06, 0.05, 0.7)
-    tab:SetBackdropBorderColor(BORDER[1], BORDER[2], BORDER[3], 0.6)
+    tab:SetBackdropColor(0.06, 0.05, 0.05, 0.78)
+    tab:SetBackdropBorderColor(SOFT[1], SOFT[2], SOFT[3], 0.75)
   end
 
   local text = tab.GetFontString and tab:GetFontString()
@@ -158,7 +164,7 @@ function LeafVE_FrameSkins.ApplyTab(tab, isActive)
   end
 
   if isActive then
-    tab._leafVEUnderline:SetVertexColor(0.15, 0.65, 0.25, 1.0)
+    tab._leafVEUnderline:SetVertexColor(EMBER[1], EMBER[2], EMBER[3], 1.0)
     tab._leafVEUnderline:Show()
   else
     tab._leafVEUnderline:Hide()
@@ -193,6 +199,6 @@ function LeafVE_FrameSkins.ApplyDivider(frame)
     line:SetHeight(1)
     frame._leafVEDivider = line
   end
-  frame._leafVEDivider:SetVertexColor(0.18, 0.30, 0.20, 0.6)
+  frame._leafVEDivider:SetVertexColor(BORDER[1], BORDER[2], BORDER[3], 0.6)
   frame._leafVEDivider:Show()
 end

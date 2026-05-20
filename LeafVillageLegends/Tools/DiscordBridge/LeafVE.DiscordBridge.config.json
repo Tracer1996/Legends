@@ -1,0 +1,8 @@
+{
+  "webhookUrl": "https://discord.com/api/webhooks/1505081670888460469/D7yDNUm1TsPMiXZuldIH7BmbEfi3MGPGFXaLbqsaACULix5B6BbH5BbhDAEU20xYLwU0",
+  "wowLogPath": "C:\\Games\\TurtleWoW\\Logs\\WoWChatLog.txt",
+  "bridgeName": "LeafVE Badges",
+  "pollIntervalSeconds": 2,
+  "guildOnly": true,
+  "debug": false
+}
