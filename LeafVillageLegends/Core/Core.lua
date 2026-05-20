@@ -31472,6 +31472,9 @@ function BuildShoutoutsPanel(panel)
   end
 
   targetInput:SetScript("OnTextChanged", function() ShowTargetSuggestions() end)
+  targetInput:SetScript("OnEditFocusLost", function()
+    suggestFrame:Hide()
+  end)
   targetInput:SetScript("OnEscapePressed", function()
     targetInput:ClearFocus()
     suggestFrame:Hide()
@@ -31521,6 +31524,10 @@ function BuildShoutoutsPanel(panel)
   sendBtn:SetHeight(25)
   sendBtn:SetText("Send Shoutout")
   SkinButtonAccent(sendBtn)
+  sendBtn:EnableMouse(true)
+  if sendBtn.RegisterForClicks then
+    sendBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+  end
   
   sendBtn:SetScript("OnClick", function()
     local target = panel.targetInput:GetText()

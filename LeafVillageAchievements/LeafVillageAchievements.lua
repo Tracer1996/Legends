@@ -5763,6 +5763,14 @@ SlashCmdList["ACHGRANTGUILD"] = function(msg)
   Print("|cFFFF7F00[Admin Guild Grant]|r "..targetOrError.." awarded: |cFF2DD35C"..achOrNil.name.."|r (+"..achOrNil.points.." pts)")
 end
 
+SLASH_ACHPROBE1 = "/achprobe"
+SlashCmdList["ACHPROBE"] = function(msg)
+  if LeafVE_AchTest and type(LeafVE_AchTest.RunProbeCommand) == "function" then
+    return LeafVE_AchTest.RunProbeCommand(msg)
+  end
+  Print("Probe module is not ready yet. Try /reload once. If it still fails, the probe file did not finish loading.")
+end
+
 -- Chat Title Integration with Orange Color (Vanilla WoW Compatible)
 local chatHooked = false
 

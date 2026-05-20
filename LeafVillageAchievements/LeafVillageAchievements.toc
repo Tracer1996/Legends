@@ -13,3 +13,4 @@ data\LeafVE_Ach_Reputation.lua
 data\LeafVE_Ach_Quests.lua
 data\LeafVE_Ach_QuestRewards.lua
 data\LeafVE_Ach_Companions.lua
+data\LeafVE_Ach_Probe.lua
