@@ -95,6 +95,7 @@ Lovely Pink Fox
 Lulu
 Mechanical Auctioneer
 Mechanical Chicken
+Mechanical Squirrel Box
 Mini Krampus
 Moonkin Hatchling
 Murky
@@ -144,6 +145,7 @@ Whiskers the Rat
 White Kitten
 White Tiger Cub
 Worg Pup
+Mr Wiggles
 Zergling Leash
 ]]
 
@@ -250,17 +252,23 @@ local COMPANION_BY_ACH_ID = {}
 local COMPANION_IDS = {}
 local COMPANION_LOOKUP = {}
 
+local COMPANION_NAME_OVERRIDES = {
+  westfall_chicken = "Farm Chicken",
+}
+
 local MANUAL_COMPANION_ALIASES = {
   ["a_jublings_tiny_home"] = {"jubling", "summon_jubling"},
   ["diablo_stone"] = {"diablo"},
   ["egg_of_turtlhu"] = {"turtlhu"},
   ["green_helper_box"] = {"green_helper"},
   ["high_elf_orphan_whistle"] = {"high_elf_orphan"},
+  ["mechanical_squirrel_box"] = {"mechanical_squirrel"},
   ["panda_collar"] = {"panda"},
   ["piglets_collar"] = {"piglet"},
   ["prairie_dog_whistle"] = {"prairie_dog"},
   ["red_dragon_orb"] = {"red_dragon"},
   ["red_helper_box"] = {"red_helper"},
+  ["westfall_chicken"] = {"farm_chicken"},
   ["zergling_leash"] = {"zergling"},
 }
 
@@ -275,19 +283,21 @@ end
 for rawName in string.gfind(COMPANION_SOURCE_DATA, "[^\r\n]+") do
   local name = Trim(rawName)
   if name ~= "" then
-    local achievementId = "companion_"..Slugify(name)
+    local key = Slugify(name)
+    local achievementId = "companion_"..key
+    local displayName = COMPANION_NAME_OVERRIDES[key] or name
     table.insert(COMPANION_IDS, achievementId)
     COMPANION_BY_ACH_ID[achievementId] = {
       id = achievementId,
-      name = name,
-      desc = "Collect the companion "..name..".",
+      name = displayName,
+      desc = "Collect the companion "..displayName..".",
       category = COMPANION_CATEGORY,
       points = 1,
       icon = COMPANION_ICON,
     }
     RegisterCompanionLookup(name, achievementId)
+    RegisterCompanionLookup(displayName, achievementId)
 
-    local key = Slugify(name)
     local aliases = MANUAL_COMPANION_ALIASES[key]
     if aliases then
       for _, alias in ipairs(aliases) do

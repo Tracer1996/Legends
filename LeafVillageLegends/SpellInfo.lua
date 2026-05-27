@@ -8,7 +8,17 @@ if AceLibrary then
 	if okLib and localeLib and localeLib.new then
 		local okLocale, localeTable = pcall(localeLib.new, localeLib, "AtlasLoot")
 		if okLocale and localeTable then
-			AL = localeTable
+			AL = setmetatable({}, {
+				__index = function(_, key)
+					local okValue, value = pcall(function()
+						return localeTable[key]
+					end)
+					if okValue and value ~= nil then
+						return value
+					end
+					return tostring(key)
+				end
+			})
 		end
 	end
 end

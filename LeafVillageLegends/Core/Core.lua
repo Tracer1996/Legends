@@ -5,7 +5,7 @@ AtlasLoot_Data = AtlasLoot_Data or {}
 LeafVE = LeafVE or {}
 LeafVE.name = "LeafVillageLegends"
 LeafVE.prefix = "LeafVE"
-LeafVE.version = "16.2"
+LeafVE.version = "16.3"
 LeafVE.allianceEnabled = false
 LeafVE.isAllianceStandalone = false
 LeafVE.guildBankOwner = "Methllyy"
@@ -253,11 +253,11 @@ local GRPAWARD_GRACE_PERIOD = 60      -- seconds non-broadcasters wait for the g
 local WEEKEND_POINT_MULTIPLIER = 2    -- LP multiplier applied on Saturday/Sunday
 LeafVE.allianceRosterBroadcasterTTL = 90
 
-local SEASON_REWARD_1 = 3
-local SEASON_REWARD_2 = 2
-local SEASON_REWARD_3 = 1
-local SEASON_REWARD_4 = 0
-local SEASON_REWARD_5 = 0
+local SEASON_REWARD_1 = 5
+local SEASON_REWARD_2 = 4
+local SEASON_REWARD_3 = 3
+local SEASON_REWARD_4 = 2
+local SEASON_REWARD_5 = 1
 
 LeafVE.weeklyRecapNoteText = "These are the champions of the Ashen Banner. Stand with your guildmates, carve your legacy, and rise with the Banner."
 LeafVE.weeklyRecapRankMessageTemplates = {
@@ -2974,18 +2974,23 @@ local function EnsureDB()
   if LeafVE_DB.options.questMaxDaily == nil then LeafVE_DB.options.questMaxDaily = QUEST_MAX_DAILY end
   if LeafVE_DB.options.instanceMaxDaily == nil then LeafVE_DB.options.instanceMaxDaily = INSTANCE_MAX_DAILY end
   if LeafVE_DB.options.groupPointInterval == nil then LeafVE_DB.options.groupPointInterval = GROUP_POINT_INTERVAL end
+  if LeafVE_DB.options.shoutoutPoints == nil then LeafVE_DB.options.shoutoutPoints = 100 end
   if LeafVE_DB.options.seasonReward1 == nil then LeafVE_DB.options.seasonReward1 = SEASON_REWARD_1 end
   if LeafVE_DB.options.seasonReward2 == nil then LeafVE_DB.options.seasonReward2 = SEASON_REWARD_2 end
   if LeafVE_DB.options.seasonReward3 == nil then LeafVE_DB.options.seasonReward3 = SEASON_REWARD_3 end
   if LeafVE_DB.options.seasonReward4 == nil then LeafVE_DB.options.seasonReward4 = SEASON_REWARD_4 end
   if LeafVE_DB.options.seasonReward5 == nil then LeafVE_DB.options.seasonReward5 = SEASON_REWARD_5 end
-  if not LeafVE_DB.options.seasonRewardsActivated_162 then
+  if not LeafVE_DB.options.seasonRewardsActivated_163 then
     LeafVE_DB.options.seasonReward1 = SEASON_REWARD_1
     LeafVE_DB.options.seasonReward2 = SEASON_REWARD_2
     LeafVE_DB.options.seasonReward3 = SEASON_REWARD_3
     LeafVE_DB.options.seasonReward4 = SEASON_REWARD_4
     LeafVE_DB.options.seasonReward5 = SEASON_REWARD_5
-    LeafVE_DB.options.seasonRewardsActivated_162 = true
+    LeafVE_DB.options.seasonRewardsActivated_163 = true
+  end
+  if not LeafVE_DB.options.shoutoutPointsActivated_163 then
+    LeafVE_DB.options.shoutoutPoints = 100
+    LeafVE_DB.options.shoutoutPointsActivated_163 = true
   end
   if not LeafVE_DB.specSelection then LeafVE_DB.specSelection = {} end
   if not LeafVE_GlobalDB then LeafVE_GlobalDB = {} end
@@ -8442,7 +8447,7 @@ function LeafVE:GiveShoutout(targetName, reason)
     return false 
   end
 
-  local shoutPts = (LeafVE_DB.options and LeafVE_DB.options.shoutoutPoints) or 10
+  local shoutPts = (LeafVE_DB.options and LeafVE_DB.options.shoutoutPoints) or 100
   LeafVE_DB.shoutouts[giverName][targetName] = Now()
   local awardedTarget = self:AddPoints(targetName, "S", shoutPts)
   if awardedTarget and awardedTarget > 0 then
@@ -13826,7 +13831,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
                 LeafVE_DB.shoutouts[msgGiver] = {}
               end
               LeafVE_DB.shoutouts[msgGiver][targetName] = Now()
-              local shoutPtsIncoming = (LeafVE_DB.options and LeafVE_DB.options.shoutoutPoints) or 10
+              local shoutPtsIncoming = (LeafVE_DB.options and LeafVE_DB.options.shoutoutPoints) or 100
               self:AddPoints(targetName, "S", shoutPtsIncoming)
               LeafVE.UI:Refresh()
               self:BroadcastLeaderboardData()
@@ -31247,7 +31252,7 @@ function BuildMyPanel(panel)
   seasonRewards:SetPoint("TOPLEFT", seasonRewardsLabel, "BOTTOMLEFT", 0, -4)
   seasonRewards:SetWidth(maxWidth)
   seasonRewards:SetJustifyH("LEFT")
-  seasonRewards:SetText("|cFFFFD7001st: 3g|r  |  |cFFC0C0C02nd: 2g|r  |  |cFFCD7F323rd: 1g|r")
+  seasonRewards:SetText("|cFFFFD7001st: 5g|r  |  |cFFC0C0C02nd: 4g|r  |  |cFFCD7F323rd: 3g|r\n|cFFB8B8B84th: 2g|r  |  |cFF9C9C9C5th: 1g|r")
   panel.seasonRewards = seasonRewards
   
   -- Week Countdown (styled like other stats) - MOVE TO RIGHT SIDE
@@ -33346,16 +33351,18 @@ subtitle:SetText("|cFF888888Flame / Flame Keeper only|r")
     end
     table.sort(sorted, function(a, b) return a.total > b.total end)
     local rewards = LeafVE:GetWeeklyRecapRewards()
-    local lines = {"|cFFD8A24AAshen Banner Weekly Standings|r"}
+    local headerLink = LeafVE:GetChatAnnouncementLink("leafve_title:weekly_champions", "Ashen Banner Weekly Champions", "FFD8A24A")
+      or "|cFFD8A24AAshen Banner Weekly Champions|r"
+    local lines = {headerLink}
     local ordinals = {"1st", "2nd", "3rd", "4th", "5th"}
     for i = 1, 5 do
       local entry = sorted[i]
       if entry then
         local reward = rewards[i] or 0
         if reward > 0 then
-          table.insert(lines, string.format("%s: %s - %s (%s reward)", ordinals[i], entry.name, LeafVE:FormatPointDisplay(entry.total, true, false), LeafVE:FormatSeasonGoldReward(reward)))
+          table.insert(lines, string.format("%s: %s - %s (%s reward)", ordinals[i], entry.name, LeafVE:FormatPointDisplay(entry.total, true, true), LeafVE:FormatSeasonGoldReward(reward)))
         else
-          table.insert(lines, string.format("%s: %s - %s", ordinals[i], entry.name, LeafVE:FormatPointDisplay(entry.total, true, false)))
+          table.insert(lines, string.format("%s: %s - %s", ordinals[i], entry.name, LeafVE:FormatPointDisplay(entry.total, true, true)))
         end
       else
         table.insert(lines, string.format("%s: ---", ordinals[i]))
@@ -34869,7 +34876,7 @@ function BuildWelcomePanel(panel)
   panel.welcomeQuestLine = AddBullet("Guild Quest Turn-Ins", string.format("Turning in quests while grouped with a guildmate awards %d Ashen Embers each, with no daily cap.", QUEST_POINTS))
   panel.welcomeInstanceLine = AddBullet("Dungeons and Raids", string.format("%d Ashen Embers per dungeon boss, %d per raid boss, %d extra per guildie on boss kills, plus %d / %d for dungeon and raid completion.", INSTANCE_BOSS_POINTS, RAID_BOSS_POINTS, BOSS_GUILDIE_BONUS_POINTS, INSTANCE_COMPLETION_POINTS, RAID_COMPLETION_POINTS))
   panel.welcomeHKLine = AddBullet("Banner Vanguard", "Honorable kills earned while grouped with guildies award 0.5 Ashen Embers each and feed the Banner Vanguard badge path.")
-  local soPoints = (LeafVE_DB and LeafVE_DB.options and LeafVE_DB.options.shoutoutPoints) or 10
+  local soPoints = (LeafVE_DB and LeafVE_DB.options and LeafVE_DB.options.shoutoutPoints) or 100
   local soMax = LeafVE:GetShoutoutDailyLimitForPlayer(UnitName("player"))
   local soMaxLabel = LeafVE:GetShoutoutDailyLimitLabel(soMax)
   panel.welcomeShoutoutLine = AddBullet("Shoutouts", string.format("Use |cFF00CCFF/so PlayerName [reason]|r to recognize a guildmate. Both the sender and receiver earn %d Ashen Embers, and you currently have %s shoutouts per day.", soPoints, soMaxLabel))
@@ -37245,7 +37252,9 @@ function LeafVE.UI:Refresh()
       self.panels.me.seasonRewards:SetText(
         "|cFFFFD7001st: " .. LeafVE:FormatSeasonGoldReward(rewards[1]) .. "|r  |  " ..
         "|cFFC0C0C02nd: " .. LeafVE:FormatSeasonGoldReward(rewards[2]) .. "|r  |  " ..
-        "|cFFCD7F323rd: " .. LeafVE:FormatSeasonGoldReward(rewards[3]) .. "|r"
+        "|cFFCD7F323rd: " .. LeafVE:FormatSeasonGoldReward(rewards[3]) .. "|r\n" ..
+        "|cFFB8B8B84th: " .. LeafVE:FormatSeasonGoldReward(rewards[4]) .. "|r  |  " ..
+        "|cFF9C9C9C5th: " .. LeafVE:FormatSeasonGoldReward(rewards[5]) .. "|r"
       )
     end
 
@@ -37543,7 +37552,7 @@ function LeafVE.UI:RefreshWelcome()
     self:SetWelcomeSection((LeafVE_DB.ui and LeafVE_DB.ui.welcomeSection) or p.activeWelcomeSection or "guide")
   end
   local opts = LeafVE_DB.options
-  local soPts = (opts and opts.shoutoutPoints) or 10
+  local soPts = (opts and opts.shoutoutPoints) or 100
   local soMax = LeafVE:GetShoutoutDailyLimitForPlayer(UnitName("player"))
   local soMaxLabel = LeafVE:GetShoutoutDailyLimitLabel(soMax)
   local dutyMin = LeafVE.shinobiDutyTierInfo and LeafVE.shinobiDutyTierInfo.D or { lpReward = 10, repReward = 22 }
@@ -38925,7 +38934,7 @@ SlashCmdList["LEAFVE"] = function(msg)
       end
     end
     local soMax = (LeafVE_DB.options and LeafVE_DB.options.shoutoutMaxDaily) or SHOUTOUT_MAX_PER_DAY
-    local shoutPts = (LeafVE_DB.options and LeafVE_DB.options.shoutoutPoints) or 10
+    local shoutPts = (LeafVE_DB.options and LeafVE_DB.options.shoutoutPoints) or 100
     local maxSExpected = shoutoutsRcvToday * shoutPts
     DP(string.format("S-Point Check: %d S points recorded", sPoints))
     DP(string.format("  Shoutouts received today: %d (max %d, so max %d S pts expected)", shoutoutsRcvToday, soMax, maxSExpected))
@@ -39601,7 +39610,19 @@ function LeafVE:RegisterBadgeHyperlinkHandler()
     local ok, err = pcall(originalSetItemRef, link, text, button, chatFrame)
     LeafVE.badgeHyperlinkSetItemRefGuard = false
     if not ok then
-      Print("|cFFFF6666LeafVE SetItemRef fallback failed:|r " .. tostring(err))
+      local errText = tostring(err or "")
+      local lowerErr = string.lower(errText)
+      local safeText = tostring(text or "")
+      local safeLinkText = tostring(link or "")
+      local unknownLinkType = string.find(lowerErr, "unknown link type", 1, true) ~= nil
+      local looksLikeExternalUrl = string.find(string.lower(safeText), "http://", 1, true) ~= nil
+        or string.find(string.lower(safeText), "https://", 1, true) ~= nil
+        or string.find(string.lower(safeLinkText), "http://", 1, true) ~= nil
+        or string.find(string.lower(safeLinkText), "https://", 1, true) ~= nil
+
+      if not (unknownLinkType or looksLikeExternalUrl) then
+        Print("|cFFFF6666LeafVE SetItemRef fallback failed:|r " .. errText)
+      end
     end
   end
   SetItemRef = self.badgeHyperlinkWrappedRef

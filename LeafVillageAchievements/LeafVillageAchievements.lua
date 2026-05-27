@@ -795,6 +795,20 @@ local ACHIEVEMENTS = {
   guild_rank_banner_warden={id="guild_rank_banner_warden",name="Banner Warden",desc="Attain the guild rank of Banner Warden in The Ashen Banner.",category="Guild",points=35,icon="Interface\\Icons\\INV_BannerPVP_02"},
   guild_rank_flame_keeper={id="guild_rank_flame_keeper",name="Flame Keeper",desc="Attain the guild rank of Flame Keeper in The Ashen Banner.",category="Guild",points=50,icon="Interface\\Icons\\Spell_Fire_FireArmor"},
   guild_rank_flame={id="guild_rank_flame",name="Flame",desc="Attain the guild rank of Flame in The Ashen Banner.",category="Guild",points=75,icon="Interface\\Icons\\Spell_Fire_Fire"},
+  guild_methl_salute={id="guild_methl_salute",name="Hail the Flame",desc="Use /salute on Methl the Flame.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_Fire"},
+  guild_methl_bow={id="guild_methl_bow",name="Before the Flame",desc="Use /bow on Methl the Flame.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_Fire"},
+  guild_methl_kiss={id="guild_methl_kiss",name="The Flame's Favor",desc="Use /kiss on Methl the Flame.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_Fire"},
+  guild_eakers_salute={id="guild_eakers_salute",name="Hail the Keeper",desc="Use /salute on Eakers the Flame Keeper.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_FireArmor"},
+  guild_eakers_bow={id="guild_eakers_bow",name="Before the Keeper",desc="Use /bow on Eakers the Flame Keeper.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_FireArmor"},
+  guild_eakers_kiss={id="guild_eakers_kiss",name="The Keeper's Favor",desc="Use /kiss on Eakers the Flame Keeper.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_FireArmor"},
+  guild_eakers_pat={id="guild_eakers_pat",name="Eakers Pattery",desc="Use /pat on Eakers the Flame Keeper.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_FireArmor"},
+  guild_danari_salute={id="guild_danari_salute",name="Hail the Second Keeper",desc="Use /salute on Danari the Flame Keeper.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_FireArmor"},
+  guild_danari_bow={id="guild_danari_bow",name="Before the Second Keeper",desc="Use /bow on Danari the Flame Keeper.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_FireArmor"},
+  guild_danari_kiss={id="guild_danari_kiss",name="The Second Keeper's Favor",desc="Use /kiss on Danari the Flame Keeper.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_FireArmor"},
+  guild_methl_honor={id="guild_methl_honor",name="Honor the Flame",desc="Complete all Methl the Flame emote achievements.",category="Guild",points=10,icon="Interface\\Icons\\Spell_Fire_Fire",criteria_type="ach_meta",criteria_ids={"guild_methl_salute","guild_methl_bow","guild_methl_kiss"}},
+  guild_eakers_honor={id="guild_eakers_honor",name="Honor the Flame Keeper (Part 1)",desc="Complete all Eakers the Flame Keeper emote achievements.",category="Guild",points=15,icon="Interface\\Icons\\Spell_Fire_FireArmor",criteria_type="ach_meta",criteria_ids={"guild_eakers_salute","guild_eakers_bow","guild_eakers_kiss","guild_eakers_pat"}},
+  guild_danari_honor={id="guild_danari_honor",name="Honor the Flame Keeper's Part 2",desc="Complete all Danari the Flame Keeper emote achievements.",category="Guild",points=10,icon="Interface\\Icons\\Spell_Fire_FireArmor",criteria_type="ach_meta",criteria_ids={"guild_danari_salute","guild_danari_bow","guild_danari_kiss"}},
+  guild_pay_respects_banner={id="guild_pay_respects_banner",name="Pay Respects to the Banner",desc="Complete the full courtesy ritual for Methl, Eakers, and Danari.",category="Guild",points=25,icon="Interface\\Icons\\INV_Shirt_GuildTabard_01",criteria_type="ach_meta",criteria_ids={"guild_methl_honor","guild_eakers_honor","guild_danari_honor"}},
   casual_hearthstone_1={id="casual_hearthstone_1",name="Home Is Where the Hearth Is",desc="Use your hearthstone for the first time",category="Casual",points=5,icon="Interface\\Icons\\INV_Misc_Rune_01"},
   casual_drown={id="casual_drown",name="Landlubber",desc="Drown 10 times",category="Casual",points=5,icon="Interface\\Icons\\Spell_Frost_FrostShock"},
   casual_quest_1000={id="casual_quest_1000",name="Loremaster",desc="Complete 1000 quests",category="Casual",points=50,icon="Interface\\Icons\\INV_Misc_Book_09"},
@@ -1015,6 +1029,65 @@ local TRACKED_GUILD_RANK_TITLE_IDS = {}
 for i, rankData in ipairs(TRACKED_GUILD_RANKS) do
   TRACKED_GUILD_RANK_INDEX[NormalizeGuildRankName(rankData.rankName)] = i
   TRACKED_GUILD_RANK_TITLE_IDS[rankData.title] = true
+end
+
+local DIRECTED_GUILD_EMOTE_ACHIEVEMENTS = {
+  methl = {
+    salute = "guild_methl_salute",
+    bow = "guild_methl_bow",
+    kiss = "guild_methl_kiss",
+  },
+  eakers = {
+    salute = "guild_eakers_salute",
+    bow = "guild_eakers_bow",
+    kiss = "guild_eakers_kiss",
+    pat = "guild_eakers_pat",
+  },
+  danari = {
+    salute = "guild_danari_salute",
+    bow = "guild_danari_bow",
+    kiss = "guild_danari_kiss",
+  },
+}
+
+local function DetectDirectedEmoteTarget(message)
+  local action, target
+
+  target = smatch(message, "^You salute (.+)%.$")
+  if target then
+    action = "salute"
+  else
+    target = smatch(message, "^You bow before (.+)%.$") or smatch(message, "^You bow to (.+)%.$")
+    if target then
+      action = "bow"
+    else
+      target = smatch(message, "^You blow a kiss to (.+)%.$") or smatch(message, "^You blow a kiss at (.+)%.$")
+      if target then
+        action = "kiss"
+      else
+        target = smatch(message, "^You pat (.+)%.$")
+        if target then
+          action = "pat"
+        end
+      end
+    end
+  end
+
+  if not action or not target then
+    return nil
+  end
+
+  target = string.lower(ShortName(Trim(target)) or "")
+  if target == "" then
+    return nil
+  end
+
+  local actionMap = DIRECTED_GUILD_EMOTE_ACHIEVEMENTS[target]
+  if not actionMap then
+    return nil
+  end
+
+  return actionMap[action]
 end
 
 local function GetTitleDefinition(titleID)
@@ -5693,6 +5766,11 @@ emoteFrame:SetScript("OnEvent", function()
       local total = IncrCounter(me, "emotes")
       if total >= 25  then LeafVE_AchTest:AwardAchievement("casual_emote_25")  end
       if total >= 100 then LeafVE_AchTest:AwardAchievement("casual_emote_100") end
+
+      local directedAchievement = DetectDirectedEmoteTarget(arg1)
+      if directedAchievement then
+        LeafVE_AchTest:AwardAchievement(directedAchievement)
+      end
     end
   end
 end)

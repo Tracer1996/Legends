@@ -1,7 +1,7 @@
 ## Interface: 11200
 ## Title: The Ashen Banner
 ## Notes: The Ashen Banner guild utility addon for WoW 1.12.
-## Version: 16.2
+## Version: 16.3
 ## SavedVariables: LeafVE_GlobalDB
 ## SavedVariablesPerCharacter: LeafVE_DB
 
