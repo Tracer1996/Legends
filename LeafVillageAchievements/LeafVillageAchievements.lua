@@ -34,6 +34,18 @@ local TEX = {
   iconFrame = TEX_ROOT.."ui-achievement-iconframe.blp",
   shadow = TEX_ROOT.."ui-shadow-backdrop.blp",
   bankBg = "Interface\\ContainerFrame\\UI-Bag-Background",
+
+  -- Ashen Banner custom TGA assets.
+  -- Files live in: Interface\AddOns\LeafVillageAchievements\tga\
+  -- Do not include .tga in SetTexture paths.
+  ashenBg = "Interface\\AddOns\\LeafVillageAchievements\\tga\\achievement_bg",
+  ashenRow = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_row_rect_fixed",
+  ashenSidebar = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_sidebar_panel",
+  ashenBanner = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_points_banner",
+  ashenHeaderPanel = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_header_panel",
+  ashenPointsPlaque = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_points_plaque",
+  ashenSearchBox = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_search_box",
+  ashenTabButton = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_tab_button",
 }
 
 local function Print(msg)
@@ -3377,69 +3389,191 @@ function LeafVE_AchTest:CheckBossKill(bossName)
   end
 end
 
+
+-- Ashen Banner UI helpers -----------------------------------------------------
+-- Vanilla/1.12 clients can be picky about large TGA textures. These helpers
+-- repeat a safe 512x128 background instead of stretching one image over the UI.
+local function LeafVE_ClearTextureTiles(owner)
+  if not owner or not owner.leafveAshenTiles then return end
+  local i = 1
+  while owner.leafveAshenTiles[i] do
+    owner.leafveAshenTiles[i]:Hide()
+    i = i + 1
+  end
+end
+
+local function LeafVE_AddTiledTexture(owner, layer, texturePath, left, top, right, bottom, tileW, tileH, alpha)
+  if not owner then return end
+  if not owner.leafveAshenTiles then owner.leafveAshenTiles = {} end
+  left = left or 0
+  top = top or 0
+  right = right or 0
+  bottom = bottom or 0
+  tileW = tileW or 512
+  tileH = tileH or 128
+  alpha = alpha or 1
+
+  local width = owner:GetWidth() or 0
+  local height = owner:GetHeight() or 0
+  local areaW = width - left + right
+  local areaH = height + top - bottom
+  if areaW < tileW then areaW = tileW end
+  if areaH < tileH then areaH = tileH end
+
+  local cols = math.ceil(areaW / tileW)
+  local rows = math.ceil(areaH / tileH)
+  local idx = 1
+
+  for y = 0, rows - 1 do
+    for x = 0, cols - 1 do
+      local t = owner.leafveAshenTiles[idx]
+      if not t then
+        t = owner:CreateTexture(nil, layer or "BACKGROUND")
+        owner.leafveAshenTiles[idx] = t
+      end
+
+      local thisW = tileW
+      local thisH = tileH
+      if x == cols - 1 then thisW = areaW - (x * tileW) end
+      if y == rows - 1 then thisH = areaH - (y * tileH) end
+      if thisW < 1 then thisW = tileW end
+      if thisH < 1 then thisH = tileH end
+
+      t:ClearAllPoints()
+      t:SetPoint("TOPLEFT", owner, "TOPLEFT", left + (x * tileW), top - (y * tileH))
+      t:SetWidth(thisW)
+      t:SetHeight(thisH)
+      t:SetTexture(texturePath)
+      t:SetTexCoord(0, thisW / tileW, 0, thisH / tileH)
+      t:SetVertexColor(1, 1, 1, alpha)
+      t:Show()
+      idx = idx + 1
+    end
+  end
+
+  while owner.leafveAshenTiles[idx] do
+    owner.leafveAshenTiles[idx]:Hide()
+    idx = idx + 1
+  end
+end
+
+local function LeafVE_SetStretchTexture(frame, storageKey, texturePath, layer, left, top, right, bottom, alpha)
+  if not frame then return nil end
+  local tex = frame[storageKey]
+  if not tex then
+    tex = frame:CreateTexture(nil, layer or "BACKGROUND")
+    frame[storageKey] = tex
+  end
+  tex:ClearAllPoints()
+  tex:SetPoint("TOPLEFT", frame, "TOPLEFT", left or 0, top or 0)
+  tex:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", right or 0, bottom or 0)
+  tex:SetTexture(texturePath)
+  tex:SetVertexColor(1, 1, 1, alpha or 1)
+  tex:Show()
+  return tex
+end
+
+local function LeafVE_HideButtonTexture(tex)
+  if tex then
+    tex:SetTexture(nil)
+    tex:SetAlpha(0)
+    tex:Hide()
+  end
+end
+
+local function LeafVE_SkinAshenButton(btn)
+  if not btn then return end
+  if btn.GetNormalTexture then LeafVE_HideButtonTexture(btn:GetNormalTexture()) end
+  if btn.GetPushedTexture then LeafVE_HideButtonTexture(btn:GetPushedTexture()) end
+  if btn.GetHighlightTexture then LeafVE_HideButtonTexture(btn:GetHighlightTexture()) end
+  if btn.GetDisabledTexture then LeafVE_HideButtonTexture(btn:GetDisabledTexture()) end
+  btn:SetBackdrop(nil)
+  local bg = LeafVE_SetStretchTexture(btn, "leafveSkin", TEX.ashenTabButton, "BACKGROUND", 0, 0, 0, 0, 1)
+  if bg then bg:SetTexCoord(0, 1, 0, 1) end
+  local fs = btn:GetFontString()
+  if fs then
+    fs:SetTextColor(0.96, 0.78, 0.18)
+    fs:SetShadowColor(0, 0, 0, 1)
+    fs:SetShadowOffset(1, -1)
+  end
+end
+
+local function LeafVE_SkinAshenEditBox(box)
+  if not box then return end
+  box:SetBackdrop(nil)
+  LeafVE_SetStretchTexture(box, "leafveSkin", TEX.ashenSearchBox, "BACKGROUND", 0, 0, 0, 0, 1)
+  box:SetTextColor(1, 0.95, 0.85)
+end
+
 -- Virtual-scroll constants for the achievement list.
 -- ACH_ROW_H: pixel height of each achievement row.
 -- ACH_POOL:  number of recycled frame slots (covers visible area + buffer).
-local ACH_ROW_H = 85
+local ACH_ROW_H = 105
 local ACH_POOL  = 14
 
 -- Create one unstyled achievement row frame attached to `parent`.
 local function CreateAchievementRow(parent)
   local frame = CreateFrame("Frame", nil, parent)
   frame:SetWidth(690)
-  frame:SetHeight(80)
-  frame:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 8,
-    insets = {left = 2, right = 2, top = 2, bottom = 2}
-  })
-  frame:SetBackdropColor(0.08, 0.07, 0.06, 0.96)
-  frame:SetBackdropBorderColor(0.34, 0.28, 0.20, 0.92)
+  frame:SetHeight(92)
+
+  -- No WoW backdrop. The rectangular row TGA is the individual row panel.
+  frame:SetBackdrop(nil)
+
   local rowBg = frame:CreateTexture(nil, "BACKGROUND")
-  rowBg:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, -2)
-  rowBg:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 2)
-  rowBg:SetTexture(TEX.parchmentH)
-  rowBg:SetVertexColor(0.92, 0.90, 0.86, 0.94)
+  rowBg:SetAllPoints(frame)
+  rowBg:SetTexture(TEX.ashenRow)
+  rowBg:SetTexCoord(0, 1, 0, 1)
+  rowBg:SetVertexColor(1, 1, 1, 1)
+  rowBg:Show()
   frame.rowBg = rowBg
-  local icon = frame:CreateTexture(nil, "ARTWORK")
-  icon:SetWidth(48)
-  icon:SetHeight(48)
-  icon:SetPoint("LEFT", frame, "LEFT", 8, 0)
+
+  local icon = frame:CreateTexture(nil, "OVERLAY")
+  icon:SetWidth(44)
+  icon:SetHeight(44)
+  icon:SetPoint("LEFT", frame, "LEFT", 22, 0)
   icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
   frame.icon = icon
+
   local iconFrame = frame:CreateTexture(nil, "OVERLAY")
-  iconFrame:SetWidth(56)
-  iconFrame:SetHeight(56)
+  iconFrame:SetWidth(52)
+  iconFrame:SetHeight(52)
   iconFrame:SetPoint("CENTER", icon, "CENTER", 0, 0)
   iconFrame:SetTexture(TEX.iconFrame)
-  iconFrame:SetVertexColor(1, 1, 1, 0.95)
+  iconFrame:SetVertexColor(1, 1, 1, 0.92)
   frame.iconFrame = iconFrame
+
   local checkmark = frame:CreateTexture(nil, "OVERLAY")
-  checkmark:SetWidth(20)
-  checkmark:SetHeight(20)
-  checkmark:SetPoint("CENTER", icon, "TOPRIGHT", -2, -2)
+  checkmark:SetWidth(18)
+  checkmark:SetHeight(18)
+  checkmark:SetPoint("TOPRIGHT", icon, "TOPRIGHT", 3, 3)
   checkmark:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
   frame.checkmark = checkmark
+
   local name = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  name:SetPoint("TOPLEFT", icon, "TOPRIGHT", 8, -5)
-  name:SetWidth(490)
+  name:SetPoint("TOPLEFT", frame, "TOPLEFT", 78, -20)
+  name:SetWidth(445)
   name:SetJustifyH("LEFT")
   frame.name = name
+
   local desc = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  desc:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -3)
-  desc:SetWidth(490)
+  desc:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -5)
+  desc:SetWidth(445)
   desc:SetJustifyH("LEFT")
   frame.desc = desc
+
   local emblem = frame:CreateTexture(nil, "ARTWORK")
-  emblem:SetWidth(56)
-  emblem:SetHeight(56)
-  emblem:SetPoint("RIGHT", frame, "RIGHT", -8, 0)
-  emblem:SetTexture("Interface\\Icons\\Spell_Nature_ResistNature")
-  emblem:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+  emblem:SetWidth(50)
+  emblem:SetHeight(74)
+  emblem:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
+  emblem:SetTexture(TEX.ashenBanner)
+  emblem:SetTexCoord(0, 1, 0, 1)
+  emblem:SetVertexColor(1, 1, 1, 1)
   frame.emblem = emblem
+
   local points = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  points:SetPoint("CENTER", emblem, "CENTER", 0, 0)
+  points:SetPoint("CENTER", emblem, "CENTER", 0, -1)
+  points:SetTextColor(1, 0.83, 0.22, 1)
   frame.points = points
   frame:EnableMouse(true)
   frame:SetScript("OnEnter", function()
@@ -3629,6 +3763,8 @@ end
 
 function LeafVE_AchTest.UI:Build()
   if self.frame then
+    self.frame:SetFrameStrata("DIALOG")
+    self.frame:SetFrameLevel(100)
     self.frame:Show()
     self:Refresh()
     return
@@ -3636,6 +3772,9 @@ function LeafVE_AchTest.UI:Build()
   
   local f = CreateFrame("Frame", "LeafVE_AchTestFrame", UIParent)
   self.frame = f
+  -- Keep this UI above custom action bars and other normal UI frames.
+  f:SetFrameStrata("DIALOG")
+  f:SetFrameLevel(100)
   f:SetPoint("CENTER", 0, 0)
   f:SetWidth(930)
   f:SetHeight(640)
@@ -3644,69 +3783,56 @@ function LeafVE_AchTest.UI:Build()
   f:RegisterForDrag("LeftButton")
   f:SetScript("OnDragStart", function() f:StartMoving() end)
   f:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
+  -- Border only. The full background is the Ashen Banner tiled TGA.
   f:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 16,
     insets = {left = 4, right = 4, top = 4, bottom = 4}
   })
-  f:SetBackdropColor(0.06, 0.06, 0.06, 0.98)
-  f:SetBackdropBorderColor(0.45, 0.45, 0.45, 1)
+  f:SetBackdropColor(0, 0, 0, 0)
+  f:SetBackdropBorderColor(0.55, 0.42, 0.18, 1)
 
-  -- Warm wood-toned backdrop.
-  local grad = f:CreateTexture(nil, "BACKGROUND")
-  grad:SetAllPoints(f)
-  grad:SetTexture(TEX.bankBg)
-  grad:SetVertexColor(1, 1, 1, 0.72)
+  LeafVE_AddTiledTexture(f, "BACKGROUND", TEX.ashenBg, 4, -4, -4, 4, 512, 128, 1)
   
   local header = CreateFrame("Frame", nil, f)
   header:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -4)
   header:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, -4)
-  header:SetHeight(46)
-  header:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 8,
-    insets = {left = 2, right = 2, top = 2, bottom = 2}
-  })
-  header:SetBackdropColor(0.10, 0.10, 0.10, 0.96)
-  header:SetBackdropBorderColor(0.42, 0.42, 0.42, 0.95)
+  header:SetHeight(52)
+  header:SetBackdrop(nil)
   local headerArt = header:CreateTexture(nil, "BACKGROUND")
   headerArt:SetAllPoints(header)
-  headerArt:SetTexture(TEX.bankBg)
-  headerArt:SetVertexColor(1, 1, 1, 0.35)
+  headerArt:SetTexture(TEX.ashenHeaderPanel)
+  headerArt:SetVertexColor(1, 1, 1, 1)
 
   local title = header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("CENTER", header, "CENTER", 0, 0)
-  title:SetText("LeafVillageAchievements")
+  title:SetText("Ashen Banner Achievements")
   title:SetTextColor(THEME.gold[1], THEME.gold[2], THEME.gold[3])
   
   local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
   close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, -6)
   
   self.pointsLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  self.pointsLabel:SetPoint("TOP", f, "TOP", 0, -52)
+  self.pointsLabel:SetPoint("TOP", f, "TOP", 0, -54)
   local pointsFrame = CreateFrame("Frame", nil, f)
-  pointsFrame:SetPoint("TOP", f, "TOP", 0, -52)
-  pointsFrame:SetWidth(230)
-  pointsFrame:SetHeight(24)
-  pointsFrame:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 8,
-    insets = {left = 2, right = 2, top = 2, bottom = 2}
-  })
-  pointsFrame:SetBackdropColor(0.12, 0.12, 0.12, 0.95)
-  pointsFrame:SetBackdropBorderColor(0.40, 0.40, 0.40, 0.95)
+  pointsFrame:SetPoint("TOP", f, "TOP", 0, -54)
+  pointsFrame:SetWidth(260)
+  pointsFrame:SetHeight(32)
+  pointsFrame:SetBackdrop(nil)
   pointsFrame:SetFrameLevel(f:GetFrameLevel() + 2)
+  local pointsArt = pointsFrame:CreateTexture(nil, "BACKGROUND")
+  pointsArt:SetAllPoints(pointsFrame)
+  pointsArt:SetTexture(TEX.ashenPointsPlaque)
+  pointsArt:SetVertexColor(1, 1, 1, 1)
+  pointsFrame.bg = pointsArt
   self.pointsLabel:SetParent(pointsFrame)
   self.pointsLabel:ClearAllPoints()
   self.pointsLabel:SetPoint("CENTER", pointsFrame, "CENTER", 0, 0)
   
   local achTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  achTab:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -82)
+  achTab:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -86)
   achTab:SetWidth(100)
-  achTab:SetHeight(25)
+  achTab:SetHeight(28)
   achTab:SetText("Achievements")
   achTab:SetScript("OnClick", function()
     LeafVE_AchTest.UI.currentView = "achievements"
@@ -3717,7 +3843,7 @@ function LeafVE_AchTest.UI:Build()
   local companionTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   companionTab:SetPoint("LEFT", achTab, "RIGHT", 5, 0)
   companionTab:SetWidth(95)
-  companionTab:SetHeight(25)
+  companionTab:SetHeight(28)
   companionTab:SetText("Companions")
   companionTab:SetScript("OnClick", function()
     LeafVE_AchTest.UI.currentView = "companions"
@@ -3728,7 +3854,7 @@ function LeafVE_AchTest.UI:Build()
   local titlesTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   titlesTab:SetPoint("LEFT", companionTab, "RIGHT", 5, 0)
   titlesTab:SetWidth(80)
-  titlesTab:SetHeight(25)
+  titlesTab:SetHeight(28)
   titlesTab:SetText("Titles")
   titlesTab:SetScript("OnClick", function()
     LeafVE_AchTest.UI.currentView = "titles"
@@ -3739,7 +3865,7 @@ function LeafVE_AchTest.UI:Build()
   local adminTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   adminTab:SetPoint("LEFT", titlesTab, "RIGHT", 5, 0)
   adminTab:SetWidth(60)
-  adminTab:SetHeight(25)
+  adminTab:SetHeight(28)
   adminTab:SetText("Admin")
   adminTab:SetScript("OnClick", function()
     local _, rankName = GetGuildInfo("player")
@@ -3756,7 +3882,7 @@ function LeafVE_AchTest.UI:Build()
   local awardBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   awardBtn:SetPoint("LEFT", adminTab, "RIGHT", 15, 0)
   awardBtn:SetWidth(60)
-  awardBtn:SetHeight(25)
+  awardBtn:SetHeight(28)
   awardBtn:SetText("Award")
   awardBtn:SetScript("OnClick", function()
     local _, rankName = GetGuildInfo("player")
@@ -3785,7 +3911,7 @@ function LeafVE_AchTest.UI:Build()
   local resetBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   resetBtn:SetPoint("LEFT", awardBtn, "RIGHT", 5, 0)
   resetBtn:SetWidth(60)
-  resetBtn:SetHeight(25)
+  resetBtn:SetHeight(28)
   resetBtn:SetText("Reset")
   resetBtn:SetScript("OnClick", function()
     local _, rankName = GetGuildInfo("player")
@@ -4097,13 +4223,20 @@ function LeafVE_AchTest.UI:Build()
   sidebarFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 10)
   sidebarFrame:SetWidth(140)
   sidebarFrame:SetBackdrop({
-    bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 8,
     insets = {left=2, right=2, top=2, bottom=2},
   })
-  sidebarFrame:SetBackdropColor(0.10, 0.10, 0.10, 0.95)
-  sidebarFrame:SetBackdropBorderColor(0.40, 0.40, 0.40, 0.90)
+  sidebarFrame:SetBackdropColor(0, 0, 0, 0)
+  sidebarFrame:SetBackdropBorderColor(0.55, 0.42, 0.18, 1)
+
+  local sidebarBg = sidebarFrame:CreateTexture(nil, "BACKGROUND")
+  sidebarBg:SetPoint("TOPLEFT", sidebarFrame, "TOPLEFT", 2, -2)
+  sidebarBg:SetPoint("BOTTOMRIGHT", sidebarFrame, "BOTTOMRIGHT", -2, 2)
+  sidebarBg:SetTexture(TEX.ashenSidebar)
+  sidebarBg:SetTexCoord(0, 1, 0, 1)
+  sidebarBg:SetVertexColor(1, 1, 1, 1)
+  sidebarFrame.bg = sidebarBg
   self.sidebarFrame = sidebarFrame
 
   -- Ordered list of categories shown in the sidebar
@@ -4155,20 +4288,27 @@ function LeafVE_AchTest.UI:Build()
     hi:Hide()
     btn.highlight = hi
     btn:SetScript("OnMouseDown", function()
+      PlaySound("igMainMenuOptionCheckBoxOn")
       LeafVE_AchTest.UI.selectedCategory = this.filterValue
       LeafVE_AchTest.UI:Refresh()
     end)
     btn:SetScript("OnEnter", function()
-      if this.filterValue ~= LeafVE_AchTest.UI.selectedCategory then
-        if this.highlight then
-          this.highlight:SetVertexColor(1, 1, 1, 0.55)
-          this.highlight:Show()
-        end
+      if this.highlight then
+        this.highlight:SetVertexColor(1, 1, 1, 0.82)
+        this.highlight:Show()
       end
+      if this.label then this.label:SetTextColor(1, 1, 1) end
     end)
     btn:SetScript("OnLeave", function()
       if this.filterValue ~= LeafVE_AchTest.UI.selectedCategory then
         if this.highlight then this.highlight:Hide() end
+        if this.label then this.label:SetTextColor(0.92, 0.78, 0.26) end
+      else
+        if this.highlight then
+          this.highlight:SetVertexColor(1, 1, 1, 0.88)
+          this.highlight:Show()
+        end
+        if this.label then this.label:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3]) end
       end
     end)
     table.insert(self.categoryButtons, btn)
@@ -4179,13 +4319,19 @@ function LeafVE_AchTest.UI:Build()
   companionSidebarFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 10)
   companionSidebarFrame:SetWidth(140)
   companionSidebarFrame:SetBackdrop({
-    bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 8,
     insets = {left=2, right=2, top=2, bottom=2},
   })
-  companionSidebarFrame:SetBackdropColor(0.10, 0.10, 0.10, 0.95)
-  companionSidebarFrame:SetBackdropBorderColor(0.40, 0.40, 0.40, 0.90)
+  companionSidebarFrame:SetBackdropColor(0, 0, 0, 0)
+  companionSidebarFrame:SetBackdropBorderColor(0.55, 0.42, 0.18, 1)
+  local companionSidebarBg = companionSidebarFrame:CreateTexture(nil, "BACKGROUND")
+  companionSidebarBg:SetPoint("TOPLEFT", companionSidebarFrame, "TOPLEFT", 2, -2)
+  companionSidebarBg:SetPoint("BOTTOMRIGHT", companionSidebarFrame, "BOTTOMRIGHT", -2, 2)
+  companionSidebarBg:SetTexture(TEX.ashenSidebar)
+  companionSidebarBg:SetTexCoord(0, 1, 0, 1)
+  companionSidebarBg:SetVertexColor(1, 1, 1, 1)
+  companionSidebarFrame.bg = companionSidebarBg
   companionSidebarFrame:Hide()
   self.companionSidebarFrame = companionSidebarFrame
 
@@ -4224,20 +4370,27 @@ function LeafVE_AchTest.UI:Build()
     hi:Hide()
     btn.highlight = hi
     btn:SetScript("OnMouseDown", function()
+      PlaySound("igMainMenuOptionCheckBoxOn")
       LeafVE_AchTest.UI.selectedCompanionFilter = this.filterValue
       LeafVE_AchTest.UI:Refresh()
     end)
     btn:SetScript("OnEnter", function()
-      if this.filterValue ~= LeafVE_AchTest.UI.selectedCompanionFilter then
-        if this.highlight then
-          this.highlight:SetVertexColor(1, 1, 1, 0.55)
-          this.highlight:Show()
-        end
+      if this.highlight then
+        this.highlight:SetVertexColor(1, 1, 1, 0.82)
+        this.highlight:Show()
       end
+      if this.label then this.label:SetTextColor(1, 1, 1) end
     end)
     btn:SetScript("OnLeave", function()
       if this.filterValue ~= LeafVE_AchTest.UI.selectedCompanionFilter then
         if this.highlight then this.highlight:Hide() end
+        if this.label then this.label:SetTextColor(0.92, 0.78, 0.26) end
+      else
+        if this.highlight then
+          this.highlight:SetVertexColor(1, 1, 1, 0.88)
+          this.highlight:Show()
+        end
+        if this.label then this.label:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3]) end
       end
     end)
     table.insert(self.companionCategoryButtons, btn)
@@ -4245,37 +4398,30 @@ function LeafVE_AchTest.UI:Build()
   
   -- Achievement Search Bar
   local searchLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  searchLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 155, -110)
+  searchLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 155, -128)
   searchLabel:SetText("Search:")
   self.searchLabel = searchLabel
   
   local searchBox = CreateFrame("EditBox", nil, f)
   searchBox:SetPoint("LEFT", searchLabel, "RIGHT", 5, 0)
-  searchBox:SetWidth(230)
-  searchBox:SetHeight(25)
+  searchBox:SetWidth(240)
+  searchBox:SetHeight(26)
   searchBox:SetAutoFocus(false)
   searchBox:SetFontObject("GameFontHighlight")
-  searchBox:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 16,
-    insets = {left = 4, right = 4, top = 4, bottom = 4}
-  })
-  searchBox:SetBackdropColor(0.10, 0.10, 0.10, 0.92)
-  searchBox:SetBackdropBorderColor(0.38, 0.38, 0.38, 1)
-  searchBox:SetTextInsets(8, 8, 0, 0)
+  searchBox:SetTextInsets(12, 12, 0, 0)
   searchBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
   searchBox:SetScript("OnEnterPressed", function() this:ClearFocus() end)
   searchBox:SetScript("OnTextChanged", function()
     LeafVE_AchTest.UI.searchText = this:GetText()
     LeafVE_AchTest.UI:Refresh()
   end)
+  LeafVE_SkinAshenEditBox(searchBox)
   self.searchBox = searchBox
   
   local clearBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   clearBtn:SetPoint("LEFT", searchBox, "RIGHT", 5, 0)
-  clearBtn:SetWidth(50)
-  clearBtn:SetHeight(25)
+  clearBtn:SetWidth(58)
+  clearBtn:SetHeight(28)
   clearBtn:SetText("Clear")
   clearBtn:SetScript("OnClick", function()
     searchBox:SetText("")
@@ -4286,39 +4432,32 @@ function LeafVE_AchTest.UI:Build()
   
   -- Title Search Bar (hidden by default)
   local titleSearchLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  titleSearchLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 155, -110)
+  titleSearchLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 155, -128)
   titleSearchLabel:SetText("Search:")
   titleSearchLabel:Hide()
   self.titleSearchLabel = titleSearchLabel
   
   local titleSearchBox = CreateFrame("EditBox", nil, f)
   titleSearchBox:SetPoint("LEFT", titleSearchLabel, "RIGHT", 5, 0)
-  titleSearchBox:SetWidth(230)
-  titleSearchBox:SetHeight(25)
+  titleSearchBox:SetWidth(240)
+  titleSearchBox:SetHeight(26)
   titleSearchBox:SetAutoFocus(false)
   titleSearchBox:SetFontObject("GameFontHighlight")
-  titleSearchBox:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 16,
-    insets = {left = 4, right = 4, top = 4, bottom = 4}
-  })
-  titleSearchBox:SetBackdropColor(0.10, 0.10, 0.10, 0.92)
-  titleSearchBox:SetBackdropBorderColor(0.38, 0.38, 0.38, 1)
-  titleSearchBox:SetTextInsets(8, 8, 0, 0)
+  titleSearchBox:SetTextInsets(12, 12, 0, 0)
   titleSearchBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
   titleSearchBox:SetScript("OnEnterPressed", function() this:ClearFocus() end)
   titleSearchBox:SetScript("OnTextChanged", function()
     LeafVE_AchTest.UI.titleSearchText = this:GetText()
     LeafVE_AchTest.UI:Refresh()
   end)
+  LeafVE_SkinAshenEditBox(titleSearchBox)
   titleSearchBox:Hide()
   self.titleSearchBox = titleSearchBox
   
   local titleClearBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   titleClearBtn:SetPoint("LEFT", titleSearchBox, "RIGHT", 5, 0)
-  titleClearBtn:SetWidth(50)
-  titleClearBtn:SetHeight(25)
+  titleClearBtn:SetWidth(58)
+  titleClearBtn:SetHeight(28)
   titleClearBtn:SetText("Clear")
   titleClearBtn:SetScript("OnClick", function()
     titleSearchBox:SetText("")
@@ -4328,19 +4467,34 @@ function LeafVE_AchTest.UI:Build()
   titleClearBtn:Hide()
   self.titleClearBtn = titleClearBtn
 
+  LeafVE_SkinAshenButton(achTab)
+  LeafVE_SkinAshenButton(companionTab)
+  LeafVE_SkinAshenButton(titlesTab)
+  LeafVE_SkinAshenButton(adminTab)
+  LeafVE_SkinAshenButton(awardBtn)
+  LeafVE_SkinAshenButton(resetBtn)
+  LeafVE_SkinAshenButton(clearBtn)
+  LeafVE_SkinAshenButton(titleClearBtn)
+
   -- â”€â”€ Left sidebar for title category navigation (same layout as achievement sidebar) â”€â”€
   local titleSidebarFrame = CreateFrame("Frame", nil, f)
   titleSidebarFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -110)
   titleSidebarFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 10)
   titleSidebarFrame:SetWidth(140)
   titleSidebarFrame:SetBackdrop({
-    bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 8,
     insets = {left=2, right=2, top=2, bottom=2},
   })
-  titleSidebarFrame:SetBackdropColor(0.10, 0.10, 0.10, 0.95)
-  titleSidebarFrame:SetBackdropBorderColor(0.40, 0.40, 0.40, 0.90)
+  titleSidebarFrame:SetBackdropColor(0, 0, 0, 0)
+  titleSidebarFrame:SetBackdropBorderColor(0.55, 0.42, 0.18, 1)
+  local titleSidebarBg = titleSidebarFrame:CreateTexture(nil, "BACKGROUND")
+  titleSidebarBg:SetPoint("TOPLEFT", titleSidebarFrame, "TOPLEFT", 2, -2)
+  titleSidebarBg:SetPoint("BOTTOMRIGHT", titleSidebarFrame, "BOTTOMRIGHT", -2, 2)
+  titleSidebarBg:SetTexture(TEX.ashenSidebar)
+  titleSidebarBg:SetTexCoord(0, 1, 0, 1)
+  titleSidebarBg:SetVertexColor(1, 1, 1, 1)
+  titleSidebarFrame.bg = titleSidebarBg
   titleSidebarFrame:Hide()
   self.titleSidebarFrame = titleSidebarFrame
 
@@ -4389,38 +4543,47 @@ function LeafVE_AchTest.UI:Build()
     hi:Hide()
     btn.highlight = hi
     btn:SetScript("OnMouseDown", function()
+      PlaySound("igMainMenuOptionCheckBoxOn")
       LeafVE_AchTest.UI.titleCategoryFilter = this.filterValue
       LeafVE_AchTest.UI:Refresh()
     end)
     btn:SetScript("OnEnter", function()
-      if this.filterValue ~= LeafVE_AchTest.UI.titleCategoryFilter then
-        if this.highlight then
-          this.highlight:SetVertexColor(1, 1, 1, 0.55)
-          this.highlight:Show()
-        end
+      if this.highlight then
+        this.highlight:SetVertexColor(1, 1, 1, 0.82)
+        this.highlight:Show()
       end
+      if this.label then this.label:SetTextColor(1, 1, 1) end
     end)
     btn:SetScript("OnLeave", function()
       if this.filterValue ~= LeafVE_AchTest.UI.titleCategoryFilter then
         if this.highlight then this.highlight:Hide() end
+        if this.label then this.label:SetTextColor(0.92, 0.78, 0.26) end
+      else
+        if this.highlight then
+          this.highlight:SetVertexColor(1, 1, 1, 0.88)
+          this.highlight:Show()
+        end
+        if this.label then this.label:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3]) end
       end
     end)
     table.insert(self.titleCategoryButtons, btn)
   end
   
   local scrollFrame = CreateFrame("ScrollFrame", nil, f)
-  scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -152)
+  scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -158)
   scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, 12)
   scrollFrame:EnableMouseWheel(true)
   self.scrollFrame = scrollFrame
 
+  -- Solid/textured panel behind the list so action bars/world do not show through.
   local contentArt = f:CreateTexture(nil, "BACKGROUND")
-  contentArt:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -152)
+  contentArt:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -158)
   contentArt:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, 12)
-  contentArt:SetTexture(TEX.bankBg)
-  contentArt:SetVertexColor(1, 1, 1, 0.55)
+  contentArt:SetTexture(TEX.ashenBg)
+  contentArt:SetVertexColor(1, 1, 1, 1)
+  contentArt:Show()
   self.contentArt = contentArt
-  
+
   local scrollChild = CreateFrame("Frame", nil, scrollFrame)
   scrollChild:SetWidth(710)
   scrollChild:SetHeight(1)
@@ -4428,14 +4591,14 @@ function LeafVE_AchTest.UI:Build()
   self.scrollChild = scrollChild
   
   local scrollbar = CreateFrame("Slider", nil, f)
-  scrollbar:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -152)
-  scrollbar:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -15, 15)
+  scrollbar:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -176)
+  scrollbar:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 34)
   scrollbar:SetWidth(16)
   scrollbar:SetOrientation("VERTICAL")
-  scrollbar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+  scrollbar:SetThumbTexture([[Interface\Buttons\UI-ScrollBar-Knob]])
   scrollbar:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    bgFile = [[Interface\Tooltips\UI-Tooltip-Background]],
+    edgeFile = [[Interface\Tooltips\UI-Tooltip-Border]],
     tile = true, tileSize = 16, edgeSize = 8,
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
@@ -4444,7 +4607,27 @@ function LeafVE_AchTest.UI:Build()
   scrollbar:SetValue(0)
   scrollbar:SetValueStep(20)
   self.scrollbar = scrollbar
-  
+
+  local scrollUp = CreateFrame("Button", nil, f)
+  scrollUp:SetWidth(18)
+  scrollUp:SetHeight(18)
+  scrollUp:SetPoint("BOTTOM", scrollbar, "TOP", 0, 4)
+  scrollUp:SetNormalTexture([[Interface\Buttons\UI-ScrollBar-ScrollUpButton-Up]])
+  scrollUp:SetPushedTexture([[Interface\Buttons\UI-ScrollBar-ScrollUpButton-Down]])
+  scrollUp:SetHighlightTexture([[Interface\Buttons\UI-ScrollBar-ScrollUpButton-Highlight]])
+  scrollUp:SetDisabledTexture([[Interface\Buttons\UI-ScrollBar-ScrollUpButton-Disabled]])
+  self.scrollUp = scrollUp
+
+  local scrollDown = CreateFrame("Button", nil, f)
+  scrollDown:SetWidth(18)
+  scrollDown:SetHeight(18)
+  scrollDown:SetPoint("TOP", scrollbar, "BOTTOM", 0, -4)
+  scrollDown:SetNormalTexture([[Interface\Buttons\UI-ScrollBar-ScrollDownButton-Up]])
+  scrollDown:SetPushedTexture([[Interface\Buttons\UI-ScrollBar-ScrollDownButton-Down]])
+  scrollDown:SetHighlightTexture([[Interface\Buttons\UI-ScrollBar-ScrollDownButton-Highlight]])
+  scrollDown:SetDisabledTexture([[Interface\Buttons\UI-ScrollBar-ScrollDownButton-Disabled]])
+  self.scrollDown = scrollDown
+
   scrollbar:SetScript("OnValueChanged", function()
     if LeafVE_AchTest.UI and LeafVE_AchTest.UI.scrollFrame then
       LeafVE_AchTest.UI.scrollFrame:SetVerticalScroll(this:GetValue())
@@ -4452,6 +4635,40 @@ function LeafVE_AchTest.UI:Build()
         LeafVE_AchTest.UI:UpdateVisibleAchievements()
       end
     end
+  end)
+
+  scrollUp:SetScript("OnClick", function()
+    local current = scrollbar:GetValue() or 0
+    local newValue = current - 40
+    if newValue < 0 then newValue = 0 end
+    scrollbar:SetValue(newValue)
+    if PlaySound then PlaySound("UChatScrollButton") end
+  end)
+
+  scrollDown:SetScript("OnClick", function()
+    local current = scrollbar:GetValue() or 0
+    local _, maxValue = scrollbar:GetMinMaxValues()
+    local newValue = current + 40
+    if newValue > maxValue then newValue = maxValue end
+    scrollbar:SetValue(newValue)
+    if PlaySound then PlaySound("UChatScrollButton") end
+  end)
+
+scrollUp:SetScript("OnClick", function()
+    local current = scrollbar:GetValue() or 0
+    local newValue = current - 40
+    if newValue < 0 then newValue = 0 end
+    scrollbar:SetValue(newValue)
+    if PlaySound then PlaySound("UChatScrollButton") end
+  end)
+
+  scrollDown:SetScript("OnClick", function()
+    local current = scrollbar:GetValue() or 0
+    local _, maxValue = scrollbar:GetMinMaxValues()
+    local newValue = current + 40
+    if newValue > maxValue then newValue = maxValue end
+    scrollbar:SetValue(newValue)
+    if PlaySound then PlaySound("UChatScrollButton") end
   end)
   
   scrollFrame:SetScript("OnMouseWheel", function()
@@ -4548,6 +4765,12 @@ function LeafVE_AchTest.UI:Refresh()
     if self.adminFrame then self.adminFrame:Hide() end
     if self.scrollFrame then self.scrollFrame:Show() end
     if self.scrollbar then self.scrollbar:Show() end
+    if self.scrollUp then self.scrollUp:Show() end
+    if self.scrollDown then self.scrollDown:Show() end
+    if self.contentArt then self.contentArt:Show() end
+    if self.scrollUp then self.scrollUp:Show() end
+    if self.scrollDown then self.scrollDown:Show() end
+    if self.contentArt then self.contentArt:Show() end
     if self.categoryButtons then
       for _, btn in ipairs(self.categoryButtons) do
         if btn.filterValue == self.selectedCategory then
@@ -4587,6 +4810,12 @@ function LeafVE_AchTest.UI:Refresh()
     if self.adminFrame then self.adminFrame:Hide() end
     if self.scrollFrame then self.scrollFrame:Show() end
     if self.scrollbar then self.scrollbar:Show() end
+    if self.scrollUp then self.scrollUp:Show() end
+    if self.scrollDown then self.scrollDown:Show() end
+    if self.contentArt then self.contentArt:Show() end
+    if self.scrollUp then self.scrollUp:Show() end
+    if self.scrollDown then self.scrollDown:Show() end
+    if self.contentArt then self.contentArt:Show() end
     if self.companionCategoryButtons then
       for _, btn in ipairs(self.companionCategoryButtons) do
         if btn.filterValue == self.selectedCompanionFilter then
@@ -4620,6 +4849,12 @@ function LeafVE_AchTest.UI:Refresh()
     if self.adminFrame then self.adminFrame:Show() end
     if self.scrollFrame then self.scrollFrame:Hide() end
     if self.scrollbar then self.scrollbar:Hide() end
+    if self.scrollUp then self.scrollUp:Hide() end
+    if self.scrollDown then self.scrollDown:Hide() end
+    if self.contentArt then self.contentArt:Hide() end
+    if self.scrollUp then self.scrollUp:Hide() end
+    if self.scrollDown then self.scrollDown:Hide() end
+    if self.contentArt then self.contentArt:Hide() end
   else
     if self.achTab then self.achTab:Enable() end
     if self.companionTab then self.companionTab:Enable() end
@@ -4639,6 +4874,12 @@ function LeafVE_AchTest.UI:Refresh()
     if self.adminFrame then self.adminFrame:Hide() end
     if self.scrollFrame then self.scrollFrame:Show() end
     if self.scrollbar then self.scrollbar:Show() end
+    if self.scrollUp then self.scrollUp:Show() end
+    if self.scrollDown then self.scrollDown:Show() end
+    if self.contentArt then self.contentArt:Show() end
+    if self.scrollUp then self.scrollUp:Show() end
+    if self.scrollDown then self.scrollDown:Show() end
+    if self.contentArt then self.contentArt:Show() end
     if self.titleCategoryButtons then
       for _, btn in ipairs(self.titleCategoryButtons) do
         if btn.filterValue == self.titleCategoryFilter then
@@ -4718,6 +4959,7 @@ function LeafVE_AchTest.UI:RefreshAchievements()
   -- Set the scrollChild virtual height so the scrollbar range is correct.
   local totalHeight = math.max(10, table.getn(achievementList) * ACH_ROW_H + 10)
   self.scrollChild:SetHeight(totalHeight)
+  
 
   if self.scrollFrame and self.scrollbar then
     local maxScroll = self.scrollFrame:GetVerticalScrollRange()
@@ -4763,7 +5005,7 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
 
     local yOff = (rowIdx - 1) * ACH_ROW_H
     frame:ClearAllPoints()
-    frame:SetPoint("TOPLEFT", self.scrollChild, "TOPLEFT", 5, -yOff)
+    frame:SetPoint("TOPLEFT", self.scrollChild, "TOPLEFT", 8, -yOff)
 
     frame.achData       = ach.data
     frame.achCompleted  = ach.completed
@@ -4772,38 +5014,37 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
 
     frame.icon:SetTexture(ach.data.icon)
     if ach.completed then
-      if frame.rowBg then frame.rowBg:SetVertexColor(1.0, 1.0, 1.0, 0.96) end
+      if frame.rowBg then frame.rowBg:SetVertexColor(1.0, 1.0, 1.0, 1.0) end
       frame.icon:SetDesaturated(false)
       frame.icon:SetAlpha(1)
       frame.checkmark:Show()
       local isLeg = ach.data.category == "Legendary"
       if isLeg then
-        frame:SetBackdropBorderColor(0.9, 0.1, 0.1, 0.9)
         frame.name:SetTextColor(1, 0, 0)
       else
-        frame:SetBackdropBorderColor(0.56, 0.46, 0.28, 0.92)
         frame.name:SetTextColor(0.90, 0.88, 0.84)
       end
       frame.name:SetText(ach.data.name)
       frame.desc:SetText(ach.data.desc)
       frame.desc:SetTextColor(0.80, 0.78, 0.74)
-      frame.emblem:SetTexture("Interface\\Icons\\Spell_Nature_ResistNature")
-      frame.emblem:SetVertexColor(1.0, 0.82, 0.20)
+      frame.emblem:SetTexture(TEX.ashenBanner)
+      frame.emblem:SetTexCoord(0, 1, 0, 1)
+      frame.emblem:SetVertexColor(1, 1, 1, 1)
       frame.emblem:SetAlpha(1)
       frame.points:SetText("|cFFFFD433"..ach.data.points.."|r")
     else
-      if frame.rowBg then frame.rowBg:SetVertexColor(0.70, 0.70, 0.70, 0.78) end
+      if frame.rowBg then frame.rowBg:SetVertexColor(0.82, 0.82, 0.82, 1.0) end
       frame.icon:SetDesaturated(true)
       frame.icon:SetAlpha(0.5)
       frame.checkmark:Hide()
-      frame:SetBackdropBorderColor(0.32, 0.27, 0.20, 0.82)
       frame.name:SetText(ach.data.name)
       frame.name:SetTextColor(0.67, 0.65, 0.62)
       frame.desc:SetText(ach.data.desc)
       frame.desc:SetTextColor(0.52, 0.50, 0.48)
-      frame.emblem:SetTexture("Interface\\Icons\\Spell_Nature_ResistNature")
-      frame.emblem:SetVertexColor(0.5, 0.5, 0.5)
-      frame.emblem:SetAlpha(0.4)
+      frame.emblem:SetTexture(TEX.ashenBanner)
+      frame.emblem:SetTexCoord(0, 1, 0, 1)
+      frame.emblem:SetVertexColor(0.45, 0.45, 0.45, 0.75)
+      frame.emblem:SetAlpha(0.65)
       frame.points:SetText("|cFF888888"..ach.data.points.."|r")
     end
     frame:Show()
@@ -4850,49 +5091,43 @@ function LeafVE_AchTest.UI:RefreshTitles()
     if not frame then
       frame = CreateFrame("Frame", nil, self.scrollChild)
       frame:SetWidth(690)
-      frame:SetHeight(55)
-      frame:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 8,
-        insets = {left = 2, right = 2, top = 2, bottom = 2}
-      })
-      frame:SetBackdropColor(0.08, 0.07, 0.06, 0.96)
-      frame:SetBackdropBorderColor(0.34, 0.28, 0.20, 0.92)
+      frame:SetHeight(92)
+      frame:SetBackdrop(nil)
       local rowBg = frame:CreateTexture(nil, "BACKGROUND")
-      rowBg:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, -2)
-      rowBg:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 2)
-      rowBg:SetTexture(TEX.parchmentH)
-      rowBg:SetVertexColor(0.92, 0.90, 0.86, 0.94)
+      rowBg:SetAllPoints(frame)
+      rowBg:SetTexture(TEX.ashenRow)
+      rowBg:SetTexCoord(0, 1, 0, 1)
+      rowBg:SetVertexColor(1, 1, 1, 1)
       frame.rowBg = rowBg
       local icon = frame:CreateTexture(nil, "ARTWORK")
-      icon:SetWidth(32)
-      icon:SetHeight(32)
-      icon:SetPoint("LEFT", frame, "LEFT", 10, 0)
+      icon:SetWidth(44)
+      icon:SetHeight(44)
+      icon:SetPoint("LEFT", frame, "LEFT", 22, 0)
       icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
       frame.icon = icon
       local iconFrame = frame:CreateTexture(nil, "OVERLAY")
-      iconFrame:SetWidth(40)
-      iconFrame:SetHeight(40)
+      iconFrame:SetWidth(52)
+      iconFrame:SetHeight(52)
       iconFrame:SetPoint("CENTER", icon, "CENTER", 0, 0)
       iconFrame:SetTexture(TEX.iconFrame)
-      iconFrame:SetVertexColor(1, 1, 1, 0.95)
+      iconFrame:SetVertexColor(1, 1, 1, 0.92)
       frame.iconFrame = iconFrame
-      local name = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-      name:SetPoint("LEFT", icon, "RIGHT", 10, 8)
+      local name = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+      name:SetPoint("TOPLEFT", frame, "TOPLEFT", 78, -20)
       name:SetWidth(430)
       name:SetJustifyH("LEFT")
       frame.name = name
-      local requirement = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-      requirement:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -3)
+      local requirement = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+      requirement:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -5)
       requirement:SetWidth(430)
       requirement:SetJustifyH("LEFT")
       frame.requirement = requirement
       local equipBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-      equipBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -5, -12)
-      equipBtn:SetWidth(70)
-      equipBtn:SetHeight(24)
+      equipBtn:SetPoint("RIGHT", frame, "RIGHT", -22, 0)
+      equipBtn:SetWidth(82)
+      equipBtn:SetHeight(28)
       equipBtn:SetText("Equip")
+      if LeafVE_SkinAshenButton then LeafVE_SkinAshenButton(equipBtn) end
       frame.equipBtn = equipBtn
       -- Tooltip
       frame:EnableMouse(true)
@@ -4939,10 +5174,9 @@ function LeafVE_AchTest.UI:RefreshTitles()
     local achData = ACHIEVEMENTS[titleData.achievement]
     frame.icon:SetTexture(titleData.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
     if earned then
-      if frame.rowBg then frame.rowBg:SetVertexColor(1.0, 1.0, 1.0, 0.96) end
+      if frame.rowBg then frame.rowBg:SetVertexColor(1.0, 1.0, 1.0, 1.0) end
       local isLeg = titleData.legendary
       local br = isLeg and {1,0,0} or {THEME.leaf[1],THEME.leaf[2],THEME.leaf[3]}
-      frame:SetBackdropBorderColor(br[1], br[2], br[3], 0.84)
       frame.icon:SetDesaturated(false)
       frame.icon:SetAlpha(1)
       frame.name:SetText(titleData.name)
@@ -4971,8 +5205,7 @@ function LeafVE_AchTest.UI:RefreshTitles()
         end)
       end
     else
-      if frame.rowBg then frame.rowBg:SetVertexColor(0.70, 0.70, 0.70, 0.78) end
-      frame:SetBackdropBorderColor(0.32, 0.27, 0.20, 0.82)
+      if frame.rowBg then frame.rowBg:SetVertexColor(0.82, 0.82, 0.82, 1.0) end
       frame.icon:SetDesaturated(true)
       frame.icon:SetAlpha(0.3)
       frame.name:SetText(titleData.name)
@@ -4982,7 +5215,7 @@ function LeafVE_AchTest.UI:RefreshTitles()
       frame.equipBtn:Disable()
     end
     frame:Show()
-    yOffset = yOffset + 60
+    yOffset = yOffset + 96
   end
   
   -- Hide unused frames
@@ -6083,3 +6316,62 @@ Print("LeafVillageAchievements loaded successfully!")
 
 
 
+
+
+-- Ashen Banner texture diagnostics.
+-- /ashenbg red    = proves the main UI layer is being updated
+-- /ashenbg custom = reapplies the custom tiled TGA background
+SLASH_ASHENBANNERBG1 = "/ashenbg"
+SlashCmdList["ASHENBANNERBG"] = function(msg)
+  msg = string.lower(Trim(msg or ""))
+  local ui = LeafVE_AchTest.UI
+  if not ui or not ui.frame then
+    Print("Open the achievement UI first, then run /ashenbg.")
+    return
+  end
+  if msg == "red" then
+    LeafVE_AddTiledTexture(ui.frame, "BACKGROUND", "Interface\\Buttons\\WHITE8X8", 4, -4, -4, 4, 512, 128, 1)
+    if ui.frame.leafveAshenTiles then
+      local i = 1
+      while ui.frame.leafveAshenTiles[i] do
+        ui.frame.leafveAshenTiles[i]:SetVertexColor(1, 0, 0, 0.70)
+        i = i + 1
+      end
+    end
+    Print("Ashen background diagnostic: red test applied.")
+  else
+    LeafVE_AddTiledTexture(ui.frame, "BACKGROUND", TEX.ashenBg, 4, -4, -4, 4, 512, 128, 1)
+    Print("Ashen background applied: "..TEX.ashenBg)
+  end
+end
+
+
+SLASH_ASHENROWTEST1 = "/ashenrowtest"
+SlashCmdList["ASHENROWTEST"] = function(msg)
+  msg = string.lower(msg or "")
+  local ui = LeafVE_AchTest and LeafVE_AchTest.UI
+  if not ui or not ui.achievementFrames or not ui.achievementFrames[1] then
+    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD433[Ashen]|r Open the achievement UI first.")
+    return
+  end
+  local f = ui.achievementFrames[1]
+  if not f or not f.rowBg then return end
+  if msg == "red" then
+    f.rowBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+    f.rowBg:SetVertexColor(1, 0, 0, 1)
+    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD433[Ashen]|r First row set to red test.")
+  else
+    f.rowBg:SetTexture(TEX.ashenRow)
+    f.rowBg:SetVertexColor(1, 1, 1, 1)
+    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD433[Ashen]|r First row set to custom: "..TEX.ashenRow)
+  end
+end
+
+
+SLASH_ASHENUITEST1 = "/ashenuittest"
+SlashCmdList["ASHENUITEST"] = function(msg)
+  DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD433[Ashen UI]|r Header: "..tostring(TEX.ashenHeaderPanel))
+  DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD433[Ashen UI]|r Points: "..tostring(TEX.ashenPointsPlaque))
+  DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD433[Ashen UI]|r Search: "..tostring(TEX.ashenSearchBox))
+  DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD433[Ashen UI]|r Tab: "..tostring(TEX.ashenTabButton))
+end
