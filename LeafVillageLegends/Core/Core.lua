@@ -38439,6 +38439,7 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
     Print("Loaded v"..LeafVE.version)
     Print("Auto-tracking: Login embers and group embers enabled!")
     EnsureDB()
+    LeafVE:RegisterShoutoutSlashCommand()
     LeafVE:RefreshMinimapButtonAccess()
     LeafVE:InvalidateClientAchievementCatalog()
     LeafVE:ApplyGuildWipeMarkerIfNeeded()
@@ -38506,6 +38507,11 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
     LeafVE:ScheduleDeferred("player_login_chat_announce_hook_2", 9, function()
       LeafVE:InstallChatAnnouncementSendHook()
       LeafVE:PatchAchievementsChatAnnouncements()
+    end)
+    LeafVE:ScheduleDeferred("player_login_shoutout_slash_reregister", 4, function()
+      if LeafVE and LeafVE.RegisterShoutoutSlashCommand then
+        LeafVE:RegisterShoutoutSlashCommand()
+      end
     end)
 
     LeafVE:ScheduleDeferred("player_login_sync_phase_1", 5, function()
@@ -38994,20 +39000,38 @@ SlashCmdList["LEAFVE"] = function(msg)
   end
 end
 
-SLASH_LEAFSHOUTOUT1 = "/shoutout"
-SLASH_LEAFSHOUTOUT2 = "/so"
-SlashCmdList["LEAFSHOUTOUT"] = function(msg)
-  if not msg or msg == "" then
+function LeafVE:HandleShoutoutSlashCommand(msg)
+  local text = Trim(msg or "")
+  if text == "" then
     Print("Usage: /shoutout PlayerName [reason]")
-    return
+    return false
   end
-  
-  local playerName, reason = string.match(msg, "^(%S+)%s*(.*)$")
-  
-  if playerName then
-    LeafVE:GiveShoutout(playerName, reason)
+
+  local splitAt = string.find(text, " ", 1, true)
+  local playerName = text
+  local reason = ""
+  if splitAt then
+    playerName = Trim(string.sub(text, 1, splitAt - 1))
+    reason = Trim(string.sub(text, splitAt + 1))
+  end
+
+  if playerName == "" then
+    Print("Usage: /shoutout PlayerName [reason]")
+    return false
+  end
+
+  return self:GiveShoutout(playerName, reason)
+end
+
+function LeafVE:RegisterShoutoutSlashCommand()
+  SLASH_LEAFSHOUTOUT1 = "/shoutout"
+  SLASH_LEAFSHOUTOUT2 = "/so"
+  SlashCmdList["LEAFSHOUTOUT"] = function(msg)
+    LeafVE:HandleShoutoutSlashCommand(msg)
   end
 end
+
+LeafVE:RegisterShoutoutSlashCommand()
 
 SLASH_RESETSHOUTOUTS1 = "/resetshoutouts"
 SlashCmdList["RESETSHOUTOUTS"] = function()
