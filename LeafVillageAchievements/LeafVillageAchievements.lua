@@ -46,6 +46,8 @@ local TEX = {
   ashenPointsPlaque = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_points_plaque",
   ashenSearchBox = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_search_box",
   ashenTabButton = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_tab_button",
+  ashenAchievementPopup = "Interface\\AddOns\\LeafVillageAchievements\\tga\\achievement_popup_banner",
+  ashenAchievementPopupIconRing = "Interface\\AddOns\\LeafVillageAchievements\\tga\\achievement_popup_icon_ring",
 }
 
 local function Print(msg)
@@ -2291,54 +2293,75 @@ end
 function LeafVE_AchTest:ShowAchievementPopup(achievementID)
   local achievement = ACHIEVEMENTS[achievementID]
   if not achievement then return end
-  
+
   local popup = CreateFrame("Frame", nil, UIParent)
-  popup:SetWidth(320)
-  popup:SetHeight(90)
+  popup:SetWidth(500)
+  popup:SetHeight(122)
   popup:SetPoint("TOP", UIParent, "TOP", 0, -150)
-  popup:SetFrameStrata("HIGH")
+  popup:SetFrameStrata("DIALOG")
+  popup:SetFrameLevel(100)
   popup:SetAlpha(0)
-  
-  popup:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 16,
-    insets = {left = 4, right = 4, top = 4, bottom = 4}
-  })
-  popup:SetBackdropColor(0.02, 0.05, 0.07, 0.95)
-  popup:SetBackdropBorderColor(0.42, 0.52, 0.30, 1)
-  
-  local earnedText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  earnedText:SetPoint("TOP", popup, "TOP", 0, -10)
-  earnedText:SetText("|cFFFFD433Achievement Earned!|r")
-  
+
+  -- Custom popup texture. Same framework as the working custom rows:
+  -- direct Texture object, exact addon TGA path, no .tga extension, no fallback/backdrop.
+  local bg = popup:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints(popup)
+  bg:SetTexture(TEX.ashenAchievementPopup)
+  bg:SetTexCoord(0, 1, 0, 1)
+  bg:SetVertexColor(1, 1, 1, 1)
+  bg:Show()
+  popup.bg = bg
+
+  -- Zoom the square icon behind a circular medallion overlay.
+  -- The overlay sits above the icon and hides the square corners,
+  -- making the visible icon area read as a circle.
   local icon = popup:CreateTexture(nil, "ARTWORK")
-  icon:SetWidth(48)
-  icon:SetHeight(48)
-  icon:SetPoint("LEFT", popup, "LEFT", 15, -5)
-  icon:SetTexture(achievement.icon)
-  icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-  
-  local nameText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  nameText:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, 0)
-  nameText:SetPoint("RIGHT", popup, "RIGHT", -10, 0)
+  icon:SetWidth(58)
+  icon:SetHeight(58)
+  icon:SetPoint("LEFT", popup, "LEFT", 36, -2)
+  local popupIconTex = achievement.icon
+  if not popupIconTex or popupIconTex == "" then
+    popupIconTex = "Interface\Icons\INV_Misc_QuestionMark"
+  end
+  icon:SetTexture(popupIconTex)
+  icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+  local iconRing = popup:CreateTexture(nil, "OVERLAY")
+  iconRing:SetWidth(105)
+  iconRing:SetHeight(105)
+  iconRing:SetPoint("LEFT", popup, "LEFT", 6, -2)
+  iconRing:SetTexture(TEX.ashenAchievementPopupIconRing)
+  iconRing:SetTexCoord(0, 1, 0, 1)
+  iconRing:SetVertexColor(1, 1, 1, 1)
+  iconRing:Show()
+  popup.iconRing = iconRing
+
+  local earnedText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  earnedText:SetPoint("TOP", popup, "TOP", 14, -14)
+  earnedText:SetWidth(260)
+  earnedText:SetJustifyH("CENTER")
+  earnedText:SetText("|cFFFFD433Achievement Earned!|r")
+
+  local nameText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  nameText:SetPoint("TOPLEFT", popup, "TOPLEFT", 114, -38)
+  nameText:SetWidth(315)
   nameText:SetJustifyH("LEFT")
-  nameText:SetText("|cFF2DD35C"..achievement.name.."|r")
-  
+  nameText:SetText("|cFFFFFFFF"..achievement.name.."|r")
+
   local descText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  descText:SetPoint("TOPLEFT", nameText, "BOTTOMLEFT", 0, -3)
-  descText:SetPoint("RIGHT", popup, "RIGHT", -10, 0)
+  descText:SetPoint("TOPLEFT", nameText, "BOTTOMLEFT", 0, -2)
+  descText:SetWidth(315)
   descText:SetJustifyH("LEFT")
-  descText:SetText(achievement.desc)
-  
+  descText:SetText("|cFFDDDDDD"..achievement.desc.."|r")
+
   local pointsText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  pointsText:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", 10, 0)
-  pointsText:SetText("|cFFFF7F00+"..achievement.points.." points|r")
-  
+  pointsText:SetPoint("BOTTOMLEFT", popup, "BOTTOMLEFT", 114, 18)
+  pointsText:SetText("|cFFFFB347+"..achievement.points.." points|r")
+
   local fadeIn = 0
   local stay = 0
   local fadeOut = 0
-  
+
   popup:SetScript("OnUpdate", function()
     if fadeIn < 0.5 then
       fadeIn = fadeIn + arg1
@@ -2354,7 +2377,7 @@ function LeafVE_AchTest:ShowAchievementPopup(achievementID)
       popup:Hide()
     end
   end)
-  
+
   popup:Show()
   PlaySound("LevelUp")
 end
@@ -3763,8 +3786,6 @@ end
 
 function LeafVE_AchTest.UI:Build()
   if self.frame then
-    self.frame:SetFrameStrata("DIALOG")
-    self.frame:SetFrameLevel(100)
     self.frame:Show()
     self:Refresh()
     return
@@ -3772,12 +3793,12 @@ function LeafVE_AchTest.UI:Build()
   
   local f = CreateFrame("Frame", "LeafVE_AchTestFrame", UIParent)
   self.frame = f
-  -- Keep this UI above custom action bars and other normal UI frames.
-  f:SetFrameStrata("DIALOG")
-  f:SetFrameLevel(100)
   f:SetPoint("CENTER", 0, 0)
   f:SetWidth(930)
   f:SetHeight(640)
+  f:SetFrameStrata("FULLSCREEN_DIALOG")
+  f:SetFrameLevel(100)
+  f:SetToplevel(true)
   f:EnableMouse(true)
   f:SetMovable(true)
   f:RegisterForDrag("LeftButton")
@@ -4575,7 +4596,6 @@ function LeafVE_AchTest.UI:Build()
   scrollFrame:EnableMouseWheel(true)
   self.scrollFrame = scrollFrame
 
-  -- Solid/textured panel behind the list so action bars/world do not show through.
   local contentArt = f:CreateTexture(nil, "BACKGROUND")
   contentArt:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -158)
   contentArt:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, 12)
@@ -4583,7 +4603,7 @@ function LeafVE_AchTest.UI:Build()
   contentArt:SetVertexColor(1, 1, 1, 1)
   contentArt:Show()
   self.contentArt = contentArt
-
+  
   local scrollChild = CreateFrame("Frame", nil, scrollFrame)
   scrollChild:SetWidth(710)
   scrollChild:SetHeight(1)
@@ -4591,14 +4611,14 @@ function LeafVE_AchTest.UI:Build()
   self.scrollChild = scrollChild
   
   local scrollbar = CreateFrame("Slider", nil, f)
-  scrollbar:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -176)
-  scrollbar:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 34)
+  scrollbar:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, -176)
+  scrollbar:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -18, 34)
   scrollbar:SetWidth(16)
   scrollbar:SetOrientation("VERTICAL")
-  scrollbar:SetThumbTexture([[Interface\Buttons\UI-ScrollBar-Knob]])
+  scrollbar:SetThumbTexture("Interface\Buttons\UI-ScrollBar-Knob")
   scrollbar:SetBackdrop({
-    bgFile = [[Interface\Tooltips\UI-Tooltip-Background]],
-    edgeFile = [[Interface\Tooltips\UI-Tooltip-Border]],
+    bgFile = "Interface\Tooltips\UI-Tooltip-Background",
+    edgeFile = "Interface\Tooltips\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 8,
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
@@ -4612,22 +4632,21 @@ function LeafVE_AchTest.UI:Build()
   scrollUp:SetWidth(18)
   scrollUp:SetHeight(18)
   scrollUp:SetPoint("BOTTOM", scrollbar, "TOP", 0, 4)
-  scrollUp:SetNormalTexture([[Interface\Buttons\UI-ScrollBar-ScrollUpButton-Up]])
-  scrollUp:SetPushedTexture([[Interface\Buttons\UI-ScrollBar-ScrollUpButton-Down]])
-  scrollUp:SetHighlightTexture([[Interface\Buttons\UI-ScrollBar-ScrollUpButton-Highlight]])
-  scrollUp:SetDisabledTexture([[Interface\Buttons\UI-ScrollBar-ScrollUpButton-Disabled]])
+  scrollUp:SetNormalTexture("Interface\Buttons\UI-ScrollBar-ScrollUpButton-Up")
+  scrollUp:SetPushedTexture("Interface\Buttons\UI-ScrollBar-ScrollUpButton-Down")
+  scrollUp:SetHighlightTexture("Interface\Buttons\UI-ScrollBar-ScrollUpButton-Highlight")
+  scrollUp:SetDisabledTexture("Interface\Buttons\UI-ScrollBar-ScrollUpButton-Disabled")
   self.scrollUp = scrollUp
 
   local scrollDown = CreateFrame("Button", nil, f)
   scrollDown:SetWidth(18)
   scrollDown:SetHeight(18)
   scrollDown:SetPoint("TOP", scrollbar, "BOTTOM", 0, -4)
-  scrollDown:SetNormalTexture([[Interface\Buttons\UI-ScrollBar-ScrollDownButton-Up]])
-  scrollDown:SetPushedTexture([[Interface\Buttons\UI-ScrollBar-ScrollDownButton-Down]])
-  scrollDown:SetHighlightTexture([[Interface\Buttons\UI-ScrollBar-ScrollDownButton-Highlight]])
-  scrollDown:SetDisabledTexture([[Interface\Buttons\UI-ScrollBar-ScrollDownButton-Disabled]])
+  scrollDown:SetNormalTexture("Interface\Buttons\UI-ScrollBar-ScrollDownButton-Up")
+  scrollDown:SetPushedTexture("Interface\Buttons\UI-ScrollBar-ScrollDownButton-Down")
+  scrollDown:SetHighlightTexture("Interface\Buttons\UI-ScrollBar-ScrollDownButton-Highlight")
+  scrollDown:SetDisabledTexture("Interface\Buttons\UI-ScrollBar-ScrollDownButton-Disabled")
   self.scrollDown = scrollDown
-
   scrollbar:SetScript("OnValueChanged", function()
     if LeafVE_AchTest.UI and LeafVE_AchTest.UI.scrollFrame then
       LeafVE_AchTest.UI.scrollFrame:SetVerticalScroll(this:GetValue())
@@ -4638,23 +4657,6 @@ function LeafVE_AchTest.UI:Build()
   end)
 
   scrollUp:SetScript("OnClick", function()
-    local current = scrollbar:GetValue() or 0
-    local newValue = current - 40
-    if newValue < 0 then newValue = 0 end
-    scrollbar:SetValue(newValue)
-    if PlaySound then PlaySound("UChatScrollButton") end
-  end)
-
-  scrollDown:SetScript("OnClick", function()
-    local current = scrollbar:GetValue() or 0
-    local _, maxValue = scrollbar:GetMinMaxValues()
-    local newValue = current + 40
-    if newValue > maxValue then newValue = maxValue end
-    scrollbar:SetValue(newValue)
-    if PlaySound then PlaySound("UChatScrollButton") end
-  end)
-
-scrollUp:SetScript("OnClick", function()
     local current = scrollbar:GetValue() or 0
     local newValue = current - 40
     if newValue < 0 then newValue = 0 end
@@ -4768,9 +4770,6 @@ function LeafVE_AchTest.UI:Refresh()
     if self.scrollUp then self.scrollUp:Show() end
     if self.scrollDown then self.scrollDown:Show() end
     if self.contentArt then self.contentArt:Show() end
-    if self.scrollUp then self.scrollUp:Show() end
-    if self.scrollDown then self.scrollDown:Show() end
-    if self.contentArt then self.contentArt:Show() end
     if self.categoryButtons then
       for _, btn in ipairs(self.categoryButtons) do
         if btn.filterValue == self.selectedCategory then
@@ -4813,9 +4812,6 @@ function LeafVE_AchTest.UI:Refresh()
     if self.scrollUp then self.scrollUp:Show() end
     if self.scrollDown then self.scrollDown:Show() end
     if self.contentArt then self.contentArt:Show() end
-    if self.scrollUp then self.scrollUp:Show() end
-    if self.scrollDown then self.scrollDown:Show() end
-    if self.contentArt then self.contentArt:Show() end
     if self.companionCategoryButtons then
       for _, btn in ipairs(self.companionCategoryButtons) do
         if btn.filterValue == self.selectedCompanionFilter then
@@ -4852,9 +4848,6 @@ function LeafVE_AchTest.UI:Refresh()
     if self.scrollUp then self.scrollUp:Hide() end
     if self.scrollDown then self.scrollDown:Hide() end
     if self.contentArt then self.contentArt:Hide() end
-    if self.scrollUp then self.scrollUp:Hide() end
-    if self.scrollDown then self.scrollDown:Hide() end
-    if self.contentArt then self.contentArt:Hide() end
   else
     if self.achTab then self.achTab:Enable() end
     if self.companionTab then self.companionTab:Enable() end
@@ -4874,9 +4867,6 @@ function LeafVE_AchTest.UI:Refresh()
     if self.adminFrame then self.adminFrame:Hide() end
     if self.scrollFrame then self.scrollFrame:Show() end
     if self.scrollbar then self.scrollbar:Show() end
-    if self.scrollUp then self.scrollUp:Show() end
-    if self.scrollDown then self.scrollDown:Show() end
-    if self.contentArt then self.contentArt:Show() end
     if self.scrollUp then self.scrollUp:Show() end
     if self.scrollDown then self.scrollDown:Show() end
     if self.contentArt then self.contentArt:Show() end
@@ -5012,7 +5002,11 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
     frame.achTimestamp  = ach.timestamp
     frame.achPlayerName = me
 
-    frame.icon:SetTexture(ach.data.icon)
+    local rowIconTex = ach.data.icon
+    if not rowIconTex or rowIconTex == "" then
+      rowIconTex = "Interface\Icons\INV_Misc_QuestionMark"
+    end
+    frame.icon:SetTexture(rowIconTex)
     if ach.completed then
       if frame.rowBg then frame.rowBg:SetVertexColor(1.0, 1.0, 1.0, 1.0) end
       frame.icon:SetDesaturated(false)
@@ -6374,4 +6368,61 @@ SlashCmdList["ASHENUITEST"] = function(msg)
   DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD433[Ashen UI]|r Points: "..tostring(TEX.ashenPointsPlaque))
   DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD433[Ashen UI]|r Search: "..tostring(TEX.ashenSearchBox))
   DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD433[Ashen UI]|r Tab: "..tostring(TEX.ashenTabButton))
+end
+
+
+-- Popup texture debug tools.
+-- Use:
+-- /achpopdebug popup  = test achievement_popup_banner.tga
+-- /achpopdebug row    = test known-working row texture on the popup frame
+-- /achpopdebug bg     = test known-working main background texture
+-- /achpopdebug red    = test plain red WoW built-in texture
+-- /achpopdebug path   = print the popup texture path
+function LeafVE_AchTest:DebugPopupTexture(mode)
+  mode = string.lower(mode or "popup")
+
+  local popup = CreateFrame("Frame", nil, UIParent)
+  popup:SetWidth(500)
+  popup:SetHeight(112)
+  popup:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+  popup:SetFrameStrata("DIALOG")
+  popup:SetFrameLevel(200)
+
+  local bg = popup:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints(popup)
+  bg:SetTexCoord(0, 1, 0, 1)
+  bg:SetVertexColor(1, 1, 1, 1)
+
+  if mode == "red" then
+    bg:SetTexture([[Interface\Buttons\WHITE8X8]])
+    bg:SetVertexColor(1, 0, 0, 1)
+  elseif mode == "row" then
+    bg:SetTexture(TEX.ashenRow)
+  elseif mode == "bg" then
+    bg:SetTexture(TEX.ashenBg)
+  else
+    bg:SetTexture(TEX.ashenAchievementPopup)
+  end
+
+  local label = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  label:SetPoint("CENTER", popup, "CENTER", 0, 0)
+  label:SetText("|cFFFFD433Popup Texture Debug: "..mode.."|r")
+
+  popup:Show()
+  Print("Popup debug mode: "..mode)
+  Print("Popup path: "..tostring(TEX.ashenAchievementPopup))
+
+  local elapsed = 0
+  popup:SetScript("OnUpdate", function()
+    elapsed = elapsed + arg1
+    if elapsed > 5 then
+      popup:SetScript("OnUpdate", nil)
+      popup:Hide()
+    end
+  end)
+end
+
+SLASH_LEAFVE_POPUP_DEBUG1 = "/achpopdebug"
+SlashCmdList["LEAFVE_POPUP_DEBUG"] = function(msg)
+  LeafVE_AchTest:DebugPopupTexture(msg)
 end
