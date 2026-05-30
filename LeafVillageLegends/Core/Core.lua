@@ -5,7 +5,7 @@ AtlasLoot_Data = AtlasLoot_Data or {}
 LeafVE = LeafVE or {}
 LeafVE.name = "LeafVillageLegends"
 LeafVE.prefix = "LeafVE"
-LeafVE.version = "16.3"
+LeafVE.version = "16.5"
 LeafVE.allianceEnabled = false
 LeafVE.isAllianceStandalone = false
 LeafVE.guildBankOwner = "Methllyy"
@@ -32781,13 +32781,12 @@ function BuildLeaderboardPanel(panel, isWeekly)
   headerBG:SetPoint("TOP", panel, "TOP", -15, -10)
   headerBG:SetWidth(420)
   headerBG:SetHeight(50)
-  headerBG:SetTexture("Interface\\AddOns\\LeafVillageLegends\\Textures\\ph")
-  headerBG:SetTexCoord(0, 1, 0, 0.1171875)
-  panel._ashenHeaderBG = headerBG
-  if LeafVE_AshenDossierSkin and LeafVE_AshenDossierSkin.ApplyPageHeaderToPanel then
-    LeafVE_AshenDossierSkin:ApplyPageHeaderToPanel(panel)
-  end
-  headerBG:SetVertexColor(1, 1, 1, 1)
+  -- Old page-header art was showing as a random black box on the leaderboard.
+  -- Keep the title text, but hide the texture background entirely.
+  headerBG:SetTexture(nil)
+  headerBG:SetAlpha(0)
+  headerBG:Hide()
+  panel._ashenHeaderBG = nil
   
   -- Top accent stripe
   local accentTop = panel:CreateTexture(nil, "BORDER")
@@ -32806,8 +32805,9 @@ function BuildLeaderboardPanel(panel, isWeekly)
   subtitle:SetText(isWeekly and "|cFF888888Top performers ranked by achievement points|r" or "|cFF888888Top performers ranked by achievement points|r")
   panel._ashenHeaderTitle = h
   panel._ashenHeaderSubtitle = subtitle
-  if h and h.Hide then h:Hide() end
-  if subtitle and subtitle.Hide then subtitle:Hide() end
+  -- Show text title since the black header texture is removed.
+  if h and h.Show then h:Show() end
+  if subtitle and subtitle.Show then subtitle:Show() end
   
   local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
   scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -45)
