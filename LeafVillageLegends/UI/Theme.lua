@@ -16,14 +16,14 @@ local classColors = (Colors and Colors.CLASS) or {
 
 LEAFVE_STYLE = LEAFVE_STYLE or {}
 LEAFVE_STYLE.colors = {
-  border = {0.18, 0.30, 0.20, 1.0},
-  bgDark = {0.03, 0.05, 0.08, 0.97},
-  bgPanel = {0.06, 0.09, 0.13, 0.92},
-  uncommon = {0.15, 0.65, 0.25, 1.0},
-  rare = {0.10, 0.50, 0.22, 1.0},
-  soft = {0.15, 0.20, 0.18, 1.0},
-  epic = {0.64, 0.21, 0.93, 1.0},
-  white = {0.95, 0.95, 0.95, 1.0},
+  border = {0.46, 0.29, 0.18, 1.0},
+  bgDark = {0.05, 0.04, 0.04, 0.97},
+  bgPanel = {0.09, 0.07, 0.07, 0.94},
+  uncommon = {0.80, 0.38, 0.16, 1.0},
+  rare = {0.53, 0.18, 0.12, 1.0},
+  soft = {0.34, 0.26, 0.23, 1.0},
+  epic = {0.61, 0.24, 0.16, 1.0},
+  white = {0.95, 0.93, 0.90, 1.0},
 }
 LEAFVE_STYLE.classColors = classColors
 

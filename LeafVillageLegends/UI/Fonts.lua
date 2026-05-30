@@ -3,11 +3,14 @@
 LeafVE_Fonts = LeafVE_Fonts or {}
 
 LeafVE_Fonts.STYLES = {
-  header = {font = "Fonts\\FRIZQT__.TTF", size = 13, flags = "OUTLINE"},
+  header_large = {font = "Fonts\\MORPHEUS.TTF", size = 18, flags = "OUTLINE"},
+  header = {font = "Fonts\\MORPHEUS.TTF", size = 14, flags = "OUTLINE"},
   subheader = {font = "Fonts\\FRIZQT__.TTF", size = 11, flags = "OUTLINE"},
-  body = {font = "Fonts\\ARIALN.TTF", size = 11, flags = ""},
+  body = {font = "Fonts\\FRIZQT__.TTF", size = 11, flags = ""},
+  body_small = {font = "Fonts\\FRIZQT__.TTF", size = 10, flags = ""},
   small = {font = "Fonts\\ARIALN.TTF", size = 10, flags = ""},
   tabLabel = {font = "Fonts\\FRIZQT__.TTF", size = 10, flags = "OUTLINE"},
+  button = {font = "Fonts\\FRIZQT__.TTF", size = 10, flags = "OUTLINE"},
   mono = {font = "Fonts\\ARIALN.TTF", size = 10, flags = ""},
 }
 

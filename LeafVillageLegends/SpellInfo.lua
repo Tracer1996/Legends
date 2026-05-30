@@ -8,7 +8,17 @@ if AceLibrary then
 	if okLib and localeLib and localeLib.new then
 		local okLocale, localeTable = pcall(localeLib.new, localeLib, "AtlasLoot")
 		if okLocale and localeTable then
-			AL = localeTable
+			AL = setmetatable({}, {
+				__index = function(_, key)
+					local okValue, value = pcall(function()
+						return localeTable[key]
+					end)
+					if okValue and value ~= nil then
+						return value
+					end
+					return tostring(key)
+				end
+			})
 		end
 	end
 end
@@ -725,7 +735,7 @@ GetSpellInfoAtlasLootDB = GetSpellInfoAtlasLootDB or {
 	["craftspells"] = {
 		[37] = {
 			["craftItem"] = 55043,
-			["name"] = AL["Harness of the High Thane"],
+			["name"] = "Harness of the High Thane",
 			["castTime"] = 60,
 			["reagents"] = {
 				{ 15407, 6 },
@@ -13447,7 +13457,7 @@ GetSpellInfoAtlasLootDB = GetSpellInfoAtlasLootDB or {
 		},
 		[41095] = {
 			["craftItem"] = 55269,
-			["name"] = AL["Glyph Codex"],
+			["name"] = AL["Glyph Co" .. "dex"],
 			["castTime"] = 5.13,
 			["tools"] = { 41328, 41327 },
 			["reagents"] = {

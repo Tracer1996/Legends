@@ -3,24 +3,24 @@ LeafVE_Colors = LeafVE_Colors or {}
 local COLORS = LeafVE_Colors
 
 COLORS.PRIMARY = {
-  darkest = {r = 0.05, g = 0.08, b = 0.18, hex = "#0D1530"},
-  dark = {r = 0.12, g = 0.15, b = 0.28, hex = "#1F2645"},
-  medium = {r = 0.18, g = 0.22, b = 0.35, hex = "#2D3856"},
-  light = {r = 0.25, g = 0.30, b = 0.45, hex = "#3D4D72"},
-  accent = {r = 1.00, g = 0.84, b = 0.00, hex = "#FFD700"},
+  darkest = {r = 0.07, g = 0.05, b = 0.05, hex = "#120D0D"},
+  dark = {r = 0.13, g = 0.09, b = 0.09, hex = "#211717"},
+  medium = {r = 0.20, g = 0.15, b = 0.14, hex = "#342624"},
+  light = {r = 0.31, g = 0.23, b = 0.20, hex = "#4F3B33"},
+  accent = {r = 0.86, g = 0.66, b = 0.37, hex = "#DBA95E"},
 }
 
 COLORS.SECONDARY = {
-  purple_dark = {r = 0.25, g = 0.15, b = 0.40, hex = "#401D66"},
-  purple_light = {r = 0.45, g = 0.30, b = 0.60, hex = "#734D99"},
+  purple_dark = {r = 0.41, g = 0.15, b = 0.10, hex = "#68261A"},
+  purple_light = {r = 0.67, g = 0.28, b = 0.17, hex = "#AB482B"},
 }
 
 COLORS.TEXT = {
   bright_white = {r = 1.00, g = 1.00, b = 1.00, hex = "#FFFFFF"},
-  off_white = {r = 0.92, g = 0.92, b = 0.94, hex = "#EBEBF0"},
-  muted_gray = {r = 0.65, g = 0.65, b = 0.70, hex = "#A6A6B2"},
-  gold = {r = 1.00, g = 0.84, b = 0.00, hex = "#FFD700"},
-  warning = {r = 1.00, g = 0.67, b = 0.00, hex = "#FFAA00"},
+  off_white = {r = 0.94, g = 0.92, b = 0.88, hex = "#F0EADF"},
+  muted_gray = {r = 0.71, g = 0.67, b = 0.63, hex = "#B5AAA0"},
+  gold = {r = 0.86, g = 0.66, b = 0.37, hex = "#DBA95E"},
+  warning = {r = 0.94, g = 0.52, b = 0.19, hex = "#F18530"},
 }
 
 COLORS.QUALITY = {
@@ -46,11 +46,11 @@ COLORS.CLASS = {
 }
 
 COLORS.STATUS = {
-  success = {r = 0.20, g = 0.90, b = 0.20, hex = "#33E633"},
-  warning = {r = 1.00, g = 0.82, b = 0.00, hex = "#FFD100"},
-  error = {r = 1.00, g = 0.33, b = 0.33, hex = "#FF5555"},
-  info = {r = 0.20, g = 0.70, b = 0.95, hex = "#33B2F0"},
-  disabled = {r = 0.40, g = 0.40, b = 0.42, hex = "#666B6C"},
+  success = {r = 0.72, g = 0.78, b = 0.49, hex = "#B7C77C"},
+  warning = {r = 0.94, g = 0.76, b = 0.36, hex = "#F0C25D"},
+  error = {r = 0.82, g = 0.31, b = 0.24, hex = "#D14F3D"},
+  info = {r = 0.76, g = 0.62, b = 0.45, hex = "#C29D73"},
+  disabled = {r = 0.36, g = 0.34, b = 0.34, hex = "#5C5757"},
 }
 
 -- Compatibility aliases for existing modules

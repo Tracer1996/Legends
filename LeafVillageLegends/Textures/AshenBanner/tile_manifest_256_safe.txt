@@ -1,0 +1,36 @@
+Ashen Banner Background Tiles - Safe 256x256
+Source: 2048x1024
+Rows: 4, Columns: 8
+Tile size: 256x256
+AshenBanner_BG_r1_c1.tga
+AshenBanner_BG_r1_c2.tga
+AshenBanner_BG_r1_c3.tga
+AshenBanner_BG_r1_c4.tga
+AshenBanner_BG_r1_c5.tga
+AshenBanner_BG_r1_c6.tga
+AshenBanner_BG_r1_c7.tga
+AshenBanner_BG_r1_c8.tga
+AshenBanner_BG_r2_c1.tga
+AshenBanner_BG_r2_c2.tga
+AshenBanner_BG_r2_c3.tga
+AshenBanner_BG_r2_c4.tga
+AshenBanner_BG_r2_c5.tga
+AshenBanner_BG_r2_c6.tga
+AshenBanner_BG_r2_c7.tga
+AshenBanner_BG_r2_c8.tga
+AshenBanner_BG_r3_c1.tga
+AshenBanner_BG_r3_c2.tga
+AshenBanner_BG_r3_c3.tga
+AshenBanner_BG_r3_c4.tga
+AshenBanner_BG_r3_c5.tga
+AshenBanner_BG_r3_c6.tga
+AshenBanner_BG_r3_c7.tga
+AshenBanner_BG_r3_c8.tga
+AshenBanner_BG_r4_c1.tga
+AshenBanner_BG_r4_c2.tga
+AshenBanner_BG_r4_c3.tga
+AshenBanner_BG_r4_c4.tga
+AshenBanner_BG_r4_c5.tga
+AshenBanner_BG_r4_c6.tga
+AshenBanner_BG_r4_c7.tga
+AshenBanner_BG_r4_c8.tga

@@ -1,7 +1,0 @@
-## Interface: 11200
-## Title: LeafAlliance
-## Notes: Alliance channel helper for WoW 1.12
-## Author: Tracer1996
-## Version: 1.0.0
-
-LeafAlliance.lua

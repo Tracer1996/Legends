@@ -1,15 +1,19 @@
 ## Interface: 11200
-## Title: LeafVillageLegends
-## Notes: LeafVillageLegends guild utility addon for WoW 1.12.
-## Version: 16.0
-## SavedVariables: LeafVE_GlobalDB
+## Title: The Ashen Banner
+## Notes: The Ashen Banner guild utility addon for WoW 1.12.
+## Version: 16.3
+## SavedVariables: LeafVE_GlobalDB, LeafVE_AshenDossierLayout, LeafVE_AshenBGLayout
 ## SavedVariablesPerCharacter: LeafVE_DB
 
 Core\Constants.lua
 Core\Compatibility_112.lua
 Utils\Colors.lua
+UI\Theme.lua
 UI\Fonts.lua
 UI\FrameSkins.lua
+UI\AshenDossierSkin.lua
+UI\AshenBG.lua
+UI\AshenUIEditor.lua
 SpellInfo.lua
 Crafting.lua
 Core\Core.lua

@@ -34,6 +34,20 @@ local TEX = {
   iconFrame = TEX_ROOT.."ui-achievement-iconframe.blp",
   shadow = TEX_ROOT.."ui-shadow-backdrop.blp",
   bankBg = "Interface\\ContainerFrame\\UI-Bag-Background",
+
+  -- Ashen Banner custom TGA assets.
+  -- Files live in: Interface\AddOns\LeafVillageAchievements\tga\
+  -- Do not include .tga in SetTexture paths.
+  ashenBg = "Interface\\AddOns\\LeafVillageAchievements\\tga\\achievement_bg",
+  ashenRow = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_row_rect_fixed",
+  ashenSidebar = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_sidebar_panel",
+  ashenBanner = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_points_banner",
+  ashenHeaderPanel = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_header_panel",
+  ashenPointsPlaque = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_points_plaque",
+  ashenSearchBox = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_search_box",
+  ashenTabButton = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_tab_button",
+  ashenAchievementPopup = "Interface\\AddOns\\LeafVillageAchievements\\tga\\achievement_popup_banner",
+  ashenAchievementPopupIconRing = "Interface\\AddOns\\LeafVillageAchievements\\tga\\achievement_popup_icon_ring",
 }
 
 local function Print(msg)
@@ -105,8 +119,19 @@ local function CompareVersions(leftVersion, rightVersion)
   return 0
 end
 
+local function NormalizeGuildRankName(rankName)
+  return string.lower(Trim(rankName or ""))
+end
+
 local function IsOfficerRank(rankName)
-  return rankName == "Anbu" or rankName == "Sannin" or rankName == "Hokage"
+  local normalized = NormalizeGuildRankName(rankName)
+  return normalized == "anbu"
+    or normalized == "sannin"
+    or normalized == "hokage"
+    or normalized == "flame"
+    or normalized == "flame keeper"
+    or normalized == "banner warden"
+    or normalized == "oath captain"
 end
 
 local function ResolveGuildMemberName(name)
@@ -162,6 +187,7 @@ local function EnsureDB()
   if not LeafVE_AchTest_DB.peakGold then LeafVE_AchTest_DB.peakGold = {} end
   if not LeafVE_AchTest_DB.goldEarnedTotal then LeafVE_AchTest_DB.goldEarnedTotal = {} end
   if not LeafVE_AchTest_DB.goldLastSeen then LeafVE_AchTest_DB.goldLastSeen = {} end
+  if type(LeafVE_AchTest_DB.guildRankState) ~= "table" then LeafVE_AchTest_DB.guildRankState = {} end
   if type(LeafVE_AchTest_DB.versionInfo) ~= "table" then LeafVE_AchTest_DB.versionInfo = {} end
   if type(LeafVE_AchTest_DB.versionInfo.guildVersions) ~= "table" then LeafVE_AchTest_DB.versionInfo.guildVersions = {} end
   if not LeafVE_AchTest_DB.versionInfo.lastReminderAt then LeafVE_AchTest_DB.versionInfo.lastReminderAt = 0 end
@@ -777,6 +803,26 @@ local ACHIEVEMENTS = {
   casual_mount_60={id="casual_mount_60",name="First Mount",desc="Obtain your first mount",category="Casual",points=10,icon="Interface\\Icons\\Ability_Mount_Raptor"},
   casual_hearthstone_use={id="casual_hearthstone_use",name="Frequent Traveler",desc="Use your hearthstone 50 times",category="Casual",points=10,icon="Interface\\Icons\\INV_Misc_Rune_01"},
   casual_guild_join={id="casual_guild_join",name="Guild Member",desc="Join a guild",category="Casual",points=5,icon="Interface\\Icons\\INV_Shirt_GuildTabard_01"},
+  guild_rank_member_born={id="guild_rank_member_born",name="Member: Born",desc="Attain the guild rank of Member: Born in The Ashen Banner.",category="Guild",points=5,icon="Interface\\Icons\\INV_Shirt_GuildTabard_01"},
+  guild_rank_flamebound={id="guild_rank_flamebound",name="Flamebound",desc="Attain the guild rank of Flamebound in The Ashen Banner.",category="Guild",points=10,icon="Interface\\Icons\\Spell_Fire_Immolation"},
+  guild_rank_oath_captain={id="guild_rank_oath_captain",name="Oath Captain",desc="Attain the guild rank of Oath Captain in The Ashen Banner.",category="Guild",points=20,icon="Interface\\Icons\\INV_Sword_62"},
+  guild_rank_banner_warden={id="guild_rank_banner_warden",name="Banner Warden",desc="Attain the guild rank of Banner Warden in The Ashen Banner.",category="Guild",points=35,icon="Interface\\Icons\\INV_BannerPVP_02"},
+  guild_rank_flame_keeper={id="guild_rank_flame_keeper",name="Flame Keeper",desc="Attain the guild rank of Flame Keeper in The Ashen Banner.",category="Guild",points=50,icon="Interface\\Icons\\Spell_Fire_FireArmor"},
+  guild_rank_flame={id="guild_rank_flame",name="Flame",desc="Attain the guild rank of Flame in The Ashen Banner.",category="Guild",points=75,icon="Interface\\Icons\\Spell_Fire_Fire"},
+  guild_methl_salute={id="guild_methl_salute",name="Hail the Flame",desc="Use /salute on Methl the Flame.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_Fire"},
+  guild_methl_bow={id="guild_methl_bow",name="Before the Flame",desc="Use /bow on Methl the Flame.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_Fire"},
+  guild_methl_kiss={id="guild_methl_kiss",name="The Flame's Favor",desc="Use /kiss on Methl the Flame.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_Fire"},
+  guild_eakers_salute={id="guild_eakers_salute",name="Hail the Keeper",desc="Use /salute on Eakers the Flame Keeper.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_FireArmor"},
+  guild_eakers_bow={id="guild_eakers_bow",name="Before the Keeper",desc="Use /bow on Eakers the Flame Keeper.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_FireArmor"},
+  guild_eakers_kiss={id="guild_eakers_kiss",name="The Keeper's Favor",desc="Use /kiss on Eakers the Flame Keeper.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_FireArmor"},
+  guild_eakers_pat={id="guild_eakers_pat",name="Eakers Pattery",desc="Use /pat on Eakers the Flame Keeper.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_FireArmor"},
+  guild_danari_salute={id="guild_danari_salute",name="Hail the Second Keeper",desc="Use /salute on Danari the Flame Keeper.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_FireArmor"},
+  guild_danari_bow={id="guild_danari_bow",name="Before the Second Keeper",desc="Use /bow on Danari the Flame Keeper.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_FireArmor"},
+  guild_danari_kiss={id="guild_danari_kiss",name="The Second Keeper's Favor",desc="Use /kiss on Danari the Flame Keeper.",category="Guild",points=5,icon="Interface\\Icons\\Spell_Fire_FireArmor"},
+  guild_methl_honor={id="guild_methl_honor",name="Honor the Flame",desc="Complete all Methl the Flame emote achievements.",category="Guild",points=10,icon="Interface\\Icons\\Spell_Fire_Fire",criteria_type="ach_meta",criteria_ids={"guild_methl_salute","guild_methl_bow","guild_methl_kiss"}},
+  guild_eakers_honor={id="guild_eakers_honor",name="Honor the Flame Keeper (Part 1)",desc="Complete all Eakers the Flame Keeper emote achievements.",category="Guild",points=15,icon="Interface\\Icons\\Spell_Fire_FireArmor",criteria_type="ach_meta",criteria_ids={"guild_eakers_salute","guild_eakers_bow","guild_eakers_kiss","guild_eakers_pat"}},
+  guild_danari_honor={id="guild_danari_honor",name="Honor the Flame Keeper's Part 2",desc="Complete all Danari the Flame Keeper emote achievements.",category="Guild",points=10,icon="Interface\\Icons\\Spell_Fire_FireArmor",criteria_type="ach_meta",criteria_ids={"guild_danari_salute","guild_danari_bow","guild_danari_kiss"}},
+  guild_pay_respects_banner={id="guild_pay_respects_banner",name="Pay Respects to the Banner",desc="Complete the full courtesy ritual for Methl, Eakers, and Danari.",category="Guild",points=25,icon="Interface\\Icons\\INV_Shirt_GuildTabard_01",criteria_type="ach_meta",criteria_ids={"guild_methl_honor","guild_eakers_honor","guild_danari_honor"}},
   casual_hearthstone_1={id="casual_hearthstone_1",name="Home Is Where the Hearth Is",desc="Use your hearthstone for the first time",category="Casual",points=5,icon="Interface\\Icons\\INV_Misc_Rune_01"},
   casual_drown={id="casual_drown",name="Landlubber",desc="Drown 10 times",category="Casual",points=5,icon="Interface\\Icons\\Spell_Frost_FrostShock"},
   casual_quest_1000={id="casual_quest_1000",name="Loremaster",desc="Complete 1000 quests",category="Casual",points=50,icon="Interface\\Icons\\INV_Misc_Book_09"},
@@ -847,6 +893,14 @@ local TITLES = {
   -- Leveling Titles
   {id="title_champion",name="Champion",achievement="lvl_60",prefix=false,category="Leveling",icon="Interface\\Icons\\Spell_Holy_BlessingOfStrength"},
   {id="title_elder",name="the Elder",achievement="lvl_60",prefix=false,category="Leveling",icon="Interface\\Icons\\Spell_Holy_BlessingOfStrength"},
+
+  -- Guild Rank Titles
+  {id="title_member_born",name="Member: Born",chatName="Born",achievement="guild_rank_member_born",prefix=true,category="Guild",icon="Interface\\Icons\\INV_Shirt_GuildTabard_01",guild=true,desc="A new ember of The Ashen Banner, beginning their path beneath its flame and oath."},
+  {id="title_flamebound",name="Flamebound",chatName="Bound",achievement="guild_rank_flamebound",prefix=true,category="Guild",icon="Interface\\Icons\\Spell_Fire_Immolation",guild=true,desc="A proven warrior bound to the Banner's flame through loyalty, skill, and battle."},
+  {id="title_oath_captain",name="Oath Captain",chatName="Captain",achievement="guild_rank_oath_captain",prefix=true,category="Guild",icon="Interface\\Icons\\INV_Sword_62",guild=true,desc="Keeper of class discipline and raid readiness, leading their sworn allies by example."},
+  {id="title_banner_warden",name="Banner Warden",chatName="Warden",achievement="guild_rank_banner_warden",prefix=true,category="Guild",icon="Interface\\Icons\\INV_BannerPVP_02",guild=true,desc="Protector of the Banner's order, enforcing standards and supporting the guild's members."},
+  {id="title_flame_keeper",name="Flame Keeper",chatName="Keeper",achievement="guild_rank_flame_keeper",prefix=true,category="Guild",icon="Interface\\Icons\\Spell_Fire_FireArmor",guild=true,desc="Guardian of the Flame's will, helping lead the guild and keep its spirit burning strong."},
+  {id="title_flame",name="Flame",chatName="Flame",achievement="guild_rank_flame",prefix=true,category="Guild",icon="Interface\\Icons\\Spell_Fire_Fire",guild=true,desc="The living spark of the guild, guiding The Ashen Banner's purpose, direction, and legacy."},
   
   -- Molten Core Titles
   {id="title_firelord",name="Firelord",achievement="raid_mc_ragnaros",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Fire_LavaSpawn"},
@@ -945,7 +999,7 @@ local TITLES = {
   -- Casual Titles
   {id="title_loremaster",name="Loremaster",achievement="casual_quest_1000",prefix=false,category="Casual",icon="Interface\\Icons\\INV_Misc_Book_09"},
   {id="title_angler",name="the Master Angler",achievement="casual_fish_1000",prefix=false,category="Casual",icon="Interface\\Icons\\Trade_Fishing"},
-  {id="title_pet_collector",name="the Pet Collector",achievement="casual_pet_fanatic",prefix=false,category="Casual",icon="Interface\\Icons\\INV_Misc_Toy_07"},
+  {id="title_pet_collector",name="Handler",chatName="Handler",achievement="casual_pet_fanatic",prefix=false,category="Companions",icon="Interface\\Icons\\INV_Misc_Toy_07",desc="Awarded for collecting 25 Turtle WoW companions."},
   {id="title_banker",name="the Banker",achievement="gold_5000",prefix=false,category="Casual",icon="Interface\\Icons\\INV_Misc_Coin_17"},
   {id="title_death_prone",name="Death-Prone",achievement="casual_deaths_100",prefix=false,category="Casual",icon="Interface\\Icons\\Spell_Shadow_DeathScream"},
   {id="title_clumsy",name="the Clumsy",achievement="casual_fall_death",prefix=false,category="Casual",icon="Interface\\Icons\\Ability_Rogue_FeintedStrike"},
@@ -974,6 +1028,171 @@ local TITLES = {
   {id="title_one_man_army",name="the One-Man Army",achievement="legendary_solo_60_boss",prefix=false,category="Legendary",icon="Interface\\Icons\\Spell_Holy_BlessingOfStrength",legendary=true},
   {id="title_pure_mortal",name="the Pure Mortal",achievement="legendary_no_consumes_t2plus",prefix=false,category="Legendary",icon="Interface\\Icons\\INV_Potion_01",legendary=true},
 }
+
+local TRACKED_GUILD_RANKS = {
+  {rankName="Member: Born", achievement="guild_rank_member_born", title="title_member_born"},
+  {rankName="Flamebound", achievement="guild_rank_flamebound", title="title_flamebound"},
+  {rankName="Oath Captain", achievement="guild_rank_oath_captain", title="title_oath_captain"},
+  {rankName="Banner Warden", achievement="guild_rank_banner_warden", title="title_banner_warden"},
+  {rankName="Flame Keeper", achievement="guild_rank_flame_keeper", title="title_flame_keeper"},
+  {rankName="Flame", achievement="guild_rank_flame", title="title_flame"},
+}
+
+local TRACKED_GUILD_RANK_INDEX = {}
+local TRACKED_GUILD_RANK_TITLE_IDS = {}
+for i, rankData in ipairs(TRACKED_GUILD_RANKS) do
+  TRACKED_GUILD_RANK_INDEX[NormalizeGuildRankName(rankData.rankName)] = i
+  TRACKED_GUILD_RANK_TITLE_IDS[rankData.title] = true
+end
+
+local DIRECTED_GUILD_EMOTE_ACHIEVEMENTS = {
+  methl = {
+    salute = "guild_methl_salute",
+    bow = "guild_methl_bow",
+    kiss = "guild_methl_kiss",
+  },
+  eakers = {
+    salute = "guild_eakers_salute",
+    bow = "guild_eakers_bow",
+    kiss = "guild_eakers_kiss",
+    pat = "guild_eakers_pat",
+  },
+  danari = {
+    salute = "guild_danari_salute",
+    bow = "guild_danari_bow",
+    kiss = "guild_danari_kiss",
+  },
+}
+
+local function CaptureFirstEmoteTarget(message, patterns)
+  local index
+  if not message or not patterns then return nil end
+  for index = 1, table.getn(patterns) do
+    local target = smatch(message, patterns[index])
+    if target then
+      return target
+    end
+  end
+  return nil
+end
+
+local function ResolveDirectedEmoteTargetKey(targetText)
+  local normalized = string.lower(ShortName(Trim(targetText)) or "")
+  local token
+  if normalized == "" then
+    return nil
+  end
+
+  if DIRECTED_GUILD_EMOTE_ACHIEVEMENTS[normalized] then
+    return normalized
+  end
+
+  local trailingName = smatch(normalized, "([a-z]+)$")
+  if trailingName and DIRECTED_GUILD_EMOTE_ACHIEVEMENTS[trailingName] then
+    return trailingName
+  end
+
+  for token in string.gfind(normalized, "([a-z]+)") do
+    if DIRECTED_GUILD_EMOTE_ACHIEVEMENTS[token] then
+      return token
+    end
+  end
+
+  return nil
+end
+
+local function DetectDirectedEmoteTarget(message)
+  local action, target
+
+  target = CaptureFirstEmoteTarget(message, {
+    "^You salute (.+) with respect%.$",
+    "^You salute (.+)%.$",
+  })
+  if target then
+    action = "salute"
+  else
+    target = CaptureFirstEmoteTarget(message, {
+      "^You bow before (.+)%.$",
+      "^You bow down before (.+)%.$",
+      "^You bow to (.+)%.$",
+    })
+    if target then
+      action = "bow"
+    else
+      target = CaptureFirstEmoteTarget(message, {
+        "^You blow (.+) a kiss%.$",
+        "^You blow a kiss to (.+)%.$",
+        "^You blow a kiss at (.+)%.$",
+      })
+      if target then
+        action = "kiss"
+      else
+        target = CaptureFirstEmoteTarget(message, {
+          "^You gently pat (.+)%.$",
+          "^You pat (.+) on the head%.$",
+          "^You pat (.+)%.$",
+        })
+        if target then
+          action = "pat"
+        end
+      end
+    end
+  end
+
+  if not action or not target then
+    return nil
+  end
+
+  local targetKey = ResolveDirectedEmoteTargetKey(target)
+  if not targetKey then
+    return nil
+  end
+
+  local actionMap = DIRECTED_GUILD_EMOTE_ACHIEVEMENTS[targetKey]
+  if not actionMap then
+    return nil
+  end
+
+  return actionMap[action]
+end
+
+local function GetTitleDefinition(titleID)
+  for _, titleData in ipairs(TITLES) do
+    if titleData.id == titleID then
+      return titleData
+    end
+  end
+  return nil
+end
+
+local function MaybeAutoEquipGuildRankTitle(playerName, titleID)
+  EnsureDB()
+  playerName = ShortName(playerName or UnitName("player"))
+  if not playerName or not titleID then return false end
+
+  local titleData = GetTitleDefinition(titleID)
+  if not titleData then return false end
+
+  local currentTitleData = LeafVE_AchTest_DB.selectedTitles[playerName]
+  local currentTitleID = currentTitleData
+  local currentAsPrefix = false
+  if type(currentTitleData) == "table" then
+    currentTitleID = currentTitleData.id
+    currentAsPrefix = currentTitleData.asPrefix or false
+  end
+
+  if currentTitleID and currentTitleID ~= "" and not TRACKED_GUILD_RANK_TITLE_IDS[currentTitleID] then
+    return false
+  end
+
+  local desiredPrefix = titleData.prefix or false
+  if currentTitleID == titleID and currentAsPrefix == desiredPrefix then
+    return false
+  end
+
+  LeafVE_AchTest_DB.selectedTitles[playerName] = {id = titleID, asPrefix = desiredPrefix}
+  return true
+end
 
 -- ==========================================
 -- BOSS CRITERIA DATA (from AtlasLoot)
@@ -1203,6 +1422,11 @@ local function GetAchievementIcon(achId)
   -- Profession icons
   if string.find(lowerAchId, "^prof_") then
     return "Interface\\Icons\\Trade_Engineering"
+  end
+
+  -- Guild rank icons
+  if string.find(lowerAchId, "^guild_rank_") then
+    return "Interface\\Icons\\INV_Shirt_GuildTabard_01"
   end
   
   -- Gold icons
@@ -1657,6 +1881,38 @@ function LeafVE_AchTest:CheckPvPRankAchievements(silent)
   if rank >= 14 then self:AwardAchievement("elite_pvp_rank_14", silent) end
 end
 
+function LeafVE_AchTest:CheckGuildRankAchievements(silent)
+  local me = ShortName(UnitName("player"))
+  if not me then return false end
+
+  EnsureDB()
+  local awardSilent = true
+
+  local guildName, rankName = GetGuildInfo("player")
+  local normalizedRank = NormalizeGuildRankName(rankName)
+  local tier = TRACKED_GUILD_RANK_INDEX[normalizedRank]
+  local titleChanged = false
+
+  if guildName and guildName ~= "" then
+    self:AwardAchievement("casual_guild_join", awardSilent)
+  end
+
+  if tier then
+    for i = 1, tier do
+      self:AwardAchievement(TRACKED_GUILD_RANKS[i].achievement, awardSilent)
+    end
+    titleChanged = MaybeAutoEquipGuildRankTitle(me, TRACKED_GUILD_RANKS[tier].title)
+  end
+
+  LeafVE_AchTest_DB.guildRankState[me] = normalizedRank
+
+  if titleChanged and LeafVE_AchTest.UI and LeafVE_AchTest.UI.Refresh then
+    LeafVE_AchTest.UI:Refresh()
+  end
+
+  return titleChanged
+end
+
 local function CountExaltedFactions()
   if not GetNumFactions or not GetFactionInfo then return 0 end
 
@@ -2089,54 +2345,75 @@ end
 function LeafVE_AchTest:ShowAchievementPopup(achievementID)
   local achievement = ACHIEVEMENTS[achievementID]
   if not achievement then return end
-  
+
   local popup = CreateFrame("Frame", nil, UIParent)
-  popup:SetWidth(320)
-  popup:SetHeight(90)
+  popup:SetWidth(500)
+  popup:SetHeight(122)
   popup:SetPoint("TOP", UIParent, "TOP", 0, -150)
-  popup:SetFrameStrata("HIGH")
+  popup:SetFrameStrata("DIALOG")
+  popup:SetFrameLevel(100)
   popup:SetAlpha(0)
-  
-  popup:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 16,
-    insets = {left = 4, right = 4, top = 4, bottom = 4}
-  })
-  popup:SetBackdropColor(0.02, 0.05, 0.07, 0.95)
-  popup:SetBackdropBorderColor(0.42, 0.52, 0.30, 1)
-  
-  local earnedText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  earnedText:SetPoint("TOP", popup, "TOP", 0, -10)
-  earnedText:SetText("|cFFFFD433Achievement Earned!|r")
-  
+
+  -- Custom popup texture. Same framework as the working custom rows:
+  -- direct Texture object, exact addon TGA path, no .tga extension, no fallback/backdrop.
+  local bg = popup:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints(popup)
+  bg:SetTexture(TEX.ashenAchievementPopup)
+  bg:SetTexCoord(0, 1, 0, 1)
+  bg:SetVertexColor(1, 1, 1, 1)
+  bg:Show()
+  popup.bg = bg
+
+  -- Zoom the square icon behind a circular medallion overlay.
+  -- The overlay sits above the icon and hides the square corners,
+  -- making the visible icon area read as a circle.
   local icon = popup:CreateTexture(nil, "ARTWORK")
-  icon:SetWidth(48)
-  icon:SetHeight(48)
-  icon:SetPoint("LEFT", popup, "LEFT", 15, -5)
-  icon:SetTexture(achievement.icon)
-  icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-  
-  local nameText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  nameText:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, 0)
-  nameText:SetPoint("RIGHT", popup, "RIGHT", -10, 0)
+  icon:SetWidth(58)
+  icon:SetHeight(58)
+  icon:SetPoint("LEFT", popup, "LEFT", 36, -2)
+  local popupIconTex = achievement.icon
+  if not popupIconTex or popupIconTex == "" then
+    popupIconTex = "Interface\Icons\INV_Misc_QuestionMark"
+  end
+  icon:SetTexture(popupIconTex)
+  icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+  local iconRing = popup:CreateTexture(nil, "OVERLAY")
+  iconRing:SetWidth(105)
+  iconRing:SetHeight(105)
+  iconRing:SetPoint("LEFT", popup, "LEFT", 6, -2)
+  iconRing:SetTexture(TEX.ashenAchievementPopupIconRing)
+  iconRing:SetTexCoord(0, 1, 0, 1)
+  iconRing:SetVertexColor(1, 1, 1, 1)
+  iconRing:Show()
+  popup.iconRing = iconRing
+
+  local earnedText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  earnedText:SetPoint("TOP", popup, "TOP", 14, -14)
+  earnedText:SetWidth(260)
+  earnedText:SetJustifyH("CENTER")
+  earnedText:SetText("|cFFFFD433Achievement Earned!|r")
+
+  local nameText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  nameText:SetPoint("TOPLEFT", popup, "TOPLEFT", 114, -38)
+  nameText:SetWidth(315)
   nameText:SetJustifyH("LEFT")
-  nameText:SetText("|cFF2DD35C"..achievement.name.."|r")
-  
+  nameText:SetText("|cFFFFFFFF"..achievement.name.."|r")
+
   local descText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  descText:SetPoint("TOPLEFT", nameText, "BOTTOMLEFT", 0, -3)
-  descText:SetPoint("RIGHT", popup, "RIGHT", -10, 0)
+  descText:SetPoint("TOPLEFT", nameText, "BOTTOMLEFT", 0, -2)
+  descText:SetWidth(315)
   descText:SetJustifyH("LEFT")
-  descText:SetText(achievement.desc)
-  
+  descText:SetText("|cFFDDDDDD"..achievement.desc.."|r")
+
   local pointsText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  pointsText:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", 10, 0)
-  pointsText:SetText("|cFFFF7F00+"..achievement.points.." points|r")
-  
+  pointsText:SetPoint("BOTTOMLEFT", popup, "BOTTOMLEFT", 114, 18)
+  pointsText:SetText("|cFFFFB347+"..achievement.points.." points|r")
+
   local fadeIn = 0
   local stay = 0
   local fadeOut = 0
-  
+
   popup:SetScript("OnUpdate", function()
     if fadeIn < 0.5 then
       fadeIn = fadeIn + arg1
@@ -2152,7 +2429,7 @@ function LeafVE_AchTest:ShowAchievementPopup(achievementID)
       popup:Hide()
     end
   end)
-  
+
   popup:Show()
   PlaySound("LevelUp")
 end
@@ -2218,7 +2495,7 @@ local function NormalizeGrantAchievementId(rawAchId)
   if ACHIEVEMENTS[achId] then return achId end
   local prefixes = {
     "dung_","raid_","explore_","casual_","elite_",
-    "pvp_","gold_","prof_","legendary_","lvl_","item_","quest_","rp_",
+    "pvp_","gold_","prof_","legendary_","lvl_","item_","quest_","rp_","guild_rank_",
   }
   for _, prefix in ipairs(prefixes) do
     local candidate = prefix..achId
@@ -2260,6 +2537,7 @@ local function GetAchievementRewardTitle(achId)
 end
 
 local announcementTitleLookupBuilt = false
+local announcementTitlesById = {}
 local announcementTitlesByName = {}
 local announcementAchievementsByName = {}
 
@@ -2270,11 +2548,19 @@ end
 local function EnsureAnnouncementLookups()
   if announcementTitleLookupBuilt then return end
 
+  announcementTitlesById = {}
   announcementTitlesByName = {}
   for _, titleData in ipairs(TITLES) do
+    if titleData.id and titleData.id ~= "" then
+      announcementTitlesById[titleData.id] = titleData
+    end
     local key = NormalizeAnnouncementLabel(titleData.name)
     if key ~= "" then
       announcementTitlesByName[key] = titleData
+    end
+    local chatKey = NormalizeAnnouncementLabel(titleData.chatName)
+    if chatKey ~= "" then
+      announcementTitlesByName[chatKey] = titleData
     end
   end
 
@@ -2291,8 +2577,12 @@ end
 
 local function GetAnnouncementTitleColorHex(titleData)
   if titleData and titleData.legendary then return "ffff0000" end
-  if titleData and titleData.guild then return "ff8b4513" end
-  return "ffff7f00"
+  return "ffffb347"
+end
+
+local function GetAnnouncementTitleDisplayText(titleData)
+  if not titleData then return nil end
+  return titleData.chatName or titleData.name
 end
 
 local function BuildAnnouncementItemLink(displayText, colorHex)
@@ -2300,14 +2590,20 @@ local function BuildAnnouncementItemLink(displayText, colorHex)
   return "|c"..colorHex.."|Hitem:"..LEAFVE_ANNOUNCEMENT_ITEM_ID..":0:0:0|h"..displayText.."|h|r"
 end
 
+local function BuildAnnouncementChatLink(linkType, payloadId, displayText, colorHex)
+  if not linkType or linkType == "" or not payloadId or payloadId == "" then return nil end
+  if not displayText or displayText == "" then return nil end
+  return "|c"..colorHex.."|H"..linkType..":"..tostring(payloadId).."|h"..displayText.."|h|r"
+end
+
 local function BuildAnnouncementTitleLink(titleData)
   if not titleData then return nil end
-  return BuildAnnouncementItemLink(titleData.name, GetAnnouncementTitleColorHex(titleData))
+  return BuildAnnouncementItemLink(GetAnnouncementTitleDisplayText(titleData), GetAnnouncementTitleColorHex(titleData))
 end
 
 local function BuildAnnouncementAchievementLink(achievement)
-  if not achievement or not achievement.name then return nil end
-  return BuildAnnouncementItemLink("["..achievement.name.."]", "ffffd700")
+  if not achievement or not achievement.id or not achievement.name then return nil end
+  return BuildAnnouncementChatLink("leafve_ach", achievement.id, "["..achievement.name.."]", "ffffd700")
 end
 
 local function ExtractAnnouncementLinkText(text)
@@ -2332,8 +2628,7 @@ local function ResolveAnnouncementLink(text)
   return "title", announcementTitlesByName[NormalizeAnnouncementLabel(displayText)]
 end
 
-local function ShowAnnouncementTooltip(linkText)
-  local kind, payload = ResolveAnnouncementLink(linkText)
+local function ShowAnnouncementTooltipFromPayload(kind, payload)
   if not kind or not payload then return false end
 
   local tooltip = ItemRefTooltip or GameTooltip
@@ -2353,6 +2648,9 @@ local function ShowAnnouncementTooltip(linkText)
     tooltip:AddLine("|c"..GetAnnouncementTitleColorHex(payload)..payload.name.."|r")
     tooltip:AddLine("LeafVE title", 1.0, 0.82, 0.0)
     tooltip:AddLine("Category: "..(payload.category or "Unknown"), 0.75, 0.75, 0.75)
+    if payload.desc and payload.desc ~= "" then
+      tooltip:AddLine(payload.desc, 0.95, 0.95, 0.95, 1)
+    end
     tooltip:AddLine(payload.prefix and "Format: Prefix title" or "Format: Suffix title", 0.75, 0.75, 0.75)
     local sourceAchievement = payload.achievement and ACHIEVEMENTS[payload.achievement]
     if sourceAchievement then
@@ -2378,6 +2676,27 @@ local function ShowAnnouncementTooltip(linkText)
   return true
 end
 
+local function ShowAnnouncementTooltip(linkText)
+  local kind, payload = ResolveAnnouncementLink(linkText)
+  return ShowAnnouncementTooltipFromPayload(kind, payload)
+end
+
+local function ShowAnnouncementTooltipFromLink(link, linkText)
+  EnsureAnnouncementLookups()
+
+  local titleId = smatch(link or "", "^leafve_title:(.+)$")
+  if titleId and announcementTitlesById[titleId] then
+    return ShowAnnouncementTooltipFromPayload("title", announcementTitlesById[titleId])
+  end
+
+  local achId = smatch(link or "", "^leafve_ach:(.+)$")
+  if achId and ACHIEVEMENTS[achId] then
+    return ShowAnnouncementTooltipFromPayload("achievement", {id = achId, data = ACHIEVEMENTS[achId]})
+  end
+
+  return ShowAnnouncementTooltip(linkText)
+end
+
 local function FormatAchievementTitleText(playerName, titleData)
   local titleLink = BuildAnnouncementTitleLink(titleData)
   if titleLink then return titleLink end
@@ -2385,22 +2704,16 @@ local function FormatAchievementTitleText(playerName, titleData)
 end
 
 local function BuildGuildAchievementMessage(playerName, achId, ach)
-  local rewardTitle = GetAchievementRewardTitle(achId)
-  local currentTitle = LeafVE_AchTest and LeafVE_AchTest.GetCurrentTitle and LeafVE_AchTest:GetCurrentTitle(playerName)
-  local titleLink = BuildAnnouncementTitleLink(rewardTitle or currentTitle)
   local achLink = BuildAnnouncementAchievementLink(ach) or ("["..ach.name.."]")
-
   local me = ShortName(UnitName("player"))
   local earnedByOtherPlayer = ShortName(playerName) ~= me
+  local titleData = me and not earnedByOtherPlayer and LeafVE_AchTest and LeafVE_AchTest.GetCurrentTitle and LeafVE_AchTest:GetCurrentTitle(me)
 
-  if titleLink and earnedByOtherPlayer then
-    return playerName.." "..titleLink.." has earned the achievement "..achLink
-  end
-  if titleLink then
-    return titleLink.." has earned the achievement "..achLink
-  end
   if earnedByOtherPlayer then
     return playerName.." has earned the achievement "..achLink
+  end
+  if titleData then
+    return FormatAchievementTitleText(me, titleData).." has earned the achievement "..achLink
   end
   return "has earned the achievement "..achLink
 end
@@ -2537,10 +2850,20 @@ function LeafVE_AchTest:GetCurrentTitle(playerName)
     titleID = titleData.id
     asPrefix = titleData.asPrefix or false
   end
-  for _, title in ipairs(TITLES) do
-    if title.id == titleID then
-      return {id=title.id,name=title.name,achievement=title.achievement,prefix=asPrefix,legendary=title.legendary,guild=title.guild}
-    end
+  local title = GetTitleDefinition(titleID)
+  if title then
+    return {
+      id = title.id,
+      name = title.name,
+      chatName = title.chatName,
+      achievement = title.achievement,
+      prefix = asPrefix,
+      legendary = title.legendary,
+      guild = title.guild,
+      category = title.category,
+      icon = title.icon,
+      desc = title.desc,
+    }
   end
   return nil
 end
@@ -2550,10 +2873,7 @@ function LeafVE_AchTest:SetTitle(playerName, titleID, usePrefix)
   playerName = ShortName(playerName or UnitName("player"))
   if not playerName then return end
   if not titleID or titleID == "" then return end
-  local titleData = nil
-  for _, title in ipairs(TITLES) do
-    if title.id == titleID then titleData = title break end
-  end
+  local titleData = GetTitleDefinition(titleID)
   if not titleData then return end
   if self:HasAchievement(playerName, titleData.achievement) then
     LeafVE_AchTest_DB.selectedTitles[playerName] = {id=titleID,asPrefix=usePrefix or false}
@@ -2728,6 +3048,11 @@ LeafVE_AchTest.UI.selectedCategory = "All"
 LeafVE_AchTest.UI.searchText = ""
 LeafVE_AchTest.UI.titleSearchText = ""
 LeafVE_AchTest.UI.titleCategoryFilter = "All"
+LeafVE_AchTest.UI.selectedCompanionFilter = "All"
+
+function LeafVE_AchTest.UI:IsAchievementListView()
+  return self.currentView == "achievements" or self.currentView == "companions"
+end
 
 -- Boss kill tracking: raid bosses only â€” dungeon bosses are tracked via BOSS_TO_DUNGEON
 local BOSS_ACHIEVEMENTS = {
@@ -3139,69 +3464,191 @@ function LeafVE_AchTest:CheckBossKill(bossName)
   end
 end
 
+
+-- Ashen Banner UI helpers -----------------------------------------------------
+-- Vanilla/1.12 clients can be picky about large TGA textures. These helpers
+-- repeat a safe 512x128 background instead of stretching one image over the UI.
+local function LeafVE_ClearTextureTiles(owner)
+  if not owner or not owner.leafveAshenTiles then return end
+  local i = 1
+  while owner.leafveAshenTiles[i] do
+    owner.leafveAshenTiles[i]:Hide()
+    i = i + 1
+  end
+end
+
+local function LeafVE_AddTiledTexture(owner, layer, texturePath, left, top, right, bottom, tileW, tileH, alpha)
+  if not owner then return end
+  if not owner.leafveAshenTiles then owner.leafveAshenTiles = {} end
+  left = left or 0
+  top = top or 0
+  right = right or 0
+  bottom = bottom or 0
+  tileW = tileW or 512
+  tileH = tileH or 128
+  alpha = alpha or 1
+
+  local width = owner:GetWidth() or 0
+  local height = owner:GetHeight() or 0
+  local areaW = width - left + right
+  local areaH = height + top - bottom
+  if areaW < tileW then areaW = tileW end
+  if areaH < tileH then areaH = tileH end
+
+  local cols = math.ceil(areaW / tileW)
+  local rows = math.ceil(areaH / tileH)
+  local idx = 1
+
+  for y = 0, rows - 1 do
+    for x = 0, cols - 1 do
+      local t = owner.leafveAshenTiles[idx]
+      if not t then
+        t = owner:CreateTexture(nil, layer or "BACKGROUND")
+        owner.leafveAshenTiles[idx] = t
+      end
+
+      local thisW = tileW
+      local thisH = tileH
+      if x == cols - 1 then thisW = areaW - (x * tileW) end
+      if y == rows - 1 then thisH = areaH - (y * tileH) end
+      if thisW < 1 then thisW = tileW end
+      if thisH < 1 then thisH = tileH end
+
+      t:ClearAllPoints()
+      t:SetPoint("TOPLEFT", owner, "TOPLEFT", left + (x * tileW), top - (y * tileH))
+      t:SetWidth(thisW)
+      t:SetHeight(thisH)
+      t:SetTexture(texturePath)
+      t:SetTexCoord(0, thisW / tileW, 0, thisH / tileH)
+      t:SetVertexColor(1, 1, 1, alpha)
+      t:Show()
+      idx = idx + 1
+    end
+  end
+
+  while owner.leafveAshenTiles[idx] do
+    owner.leafveAshenTiles[idx]:Hide()
+    idx = idx + 1
+  end
+end
+
+local function LeafVE_SetStretchTexture(frame, storageKey, texturePath, layer, left, top, right, bottom, alpha)
+  if not frame then return nil end
+  local tex = frame[storageKey]
+  if not tex then
+    tex = frame:CreateTexture(nil, layer or "BACKGROUND")
+    frame[storageKey] = tex
+  end
+  tex:ClearAllPoints()
+  tex:SetPoint("TOPLEFT", frame, "TOPLEFT", left or 0, top or 0)
+  tex:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", right or 0, bottom or 0)
+  tex:SetTexture(texturePath)
+  tex:SetVertexColor(1, 1, 1, alpha or 1)
+  tex:Show()
+  return tex
+end
+
+local function LeafVE_HideButtonTexture(tex)
+  if tex then
+    tex:SetTexture(nil)
+    tex:SetAlpha(0)
+    tex:Hide()
+  end
+end
+
+local function LeafVE_SkinAshenButton(btn)
+  if not btn then return end
+  if btn.GetNormalTexture then LeafVE_HideButtonTexture(btn:GetNormalTexture()) end
+  if btn.GetPushedTexture then LeafVE_HideButtonTexture(btn:GetPushedTexture()) end
+  if btn.GetHighlightTexture then LeafVE_HideButtonTexture(btn:GetHighlightTexture()) end
+  if btn.GetDisabledTexture then LeafVE_HideButtonTexture(btn:GetDisabledTexture()) end
+  btn:SetBackdrop(nil)
+  local bg = LeafVE_SetStretchTexture(btn, "leafveSkin", TEX.ashenTabButton, "BACKGROUND", 0, 0, 0, 0, 1)
+  if bg then bg:SetTexCoord(0, 1, 0, 1) end
+  local fs = btn:GetFontString()
+  if fs then
+    fs:SetTextColor(0.96, 0.78, 0.18)
+    fs:SetShadowColor(0, 0, 0, 1)
+    fs:SetShadowOffset(1, -1)
+  end
+end
+
+local function LeafVE_SkinAshenEditBox(box)
+  if not box then return end
+  box:SetBackdrop(nil)
+  LeafVE_SetStretchTexture(box, "leafveSkin", TEX.ashenSearchBox, "BACKGROUND", 0, 0, 0, 0, 1)
+  box:SetTextColor(1, 0.95, 0.85)
+end
+
 -- Virtual-scroll constants for the achievement list.
 -- ACH_ROW_H: pixel height of each achievement row.
 -- ACH_POOL:  number of recycled frame slots (covers visible area + buffer).
-local ACH_ROW_H = 85
+local ACH_ROW_H = 105
 local ACH_POOL  = 14
 
 -- Create one unstyled achievement row frame attached to `parent`.
 local function CreateAchievementRow(parent)
   local frame = CreateFrame("Frame", nil, parent)
   frame:SetWidth(690)
-  frame:SetHeight(80)
-  frame:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 8,
-    insets = {left = 2, right = 2, top = 2, bottom = 2}
-  })
-  frame:SetBackdropColor(0.08, 0.07, 0.06, 0.96)
-  frame:SetBackdropBorderColor(0.34, 0.28, 0.20, 0.92)
+  frame:SetHeight(92)
+
+  -- No WoW backdrop. The rectangular row TGA is the individual row panel.
+  frame:SetBackdrop(nil)
+
   local rowBg = frame:CreateTexture(nil, "BACKGROUND")
-  rowBg:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, -2)
-  rowBg:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 2)
-  rowBg:SetTexture(TEX.parchmentH)
-  rowBg:SetVertexColor(0.92, 0.90, 0.86, 0.94)
+  rowBg:SetAllPoints(frame)
+  rowBg:SetTexture(TEX.ashenRow)
+  rowBg:SetTexCoord(0, 1, 0, 1)
+  rowBg:SetVertexColor(1, 1, 1, 1)
+  rowBg:Show()
   frame.rowBg = rowBg
-  local icon = frame:CreateTexture(nil, "ARTWORK")
-  icon:SetWidth(48)
-  icon:SetHeight(48)
-  icon:SetPoint("LEFT", frame, "LEFT", 8, 0)
+
+  local icon = frame:CreateTexture(nil, "OVERLAY")
+  icon:SetWidth(44)
+  icon:SetHeight(44)
+  icon:SetPoint("LEFT", frame, "LEFT", 22, 0)
   icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
   frame.icon = icon
+
   local iconFrame = frame:CreateTexture(nil, "OVERLAY")
-  iconFrame:SetWidth(56)
-  iconFrame:SetHeight(56)
+  iconFrame:SetWidth(52)
+  iconFrame:SetHeight(52)
   iconFrame:SetPoint("CENTER", icon, "CENTER", 0, 0)
   iconFrame:SetTexture(TEX.iconFrame)
-  iconFrame:SetVertexColor(1, 1, 1, 0.95)
+  iconFrame:SetVertexColor(1, 1, 1, 0.92)
   frame.iconFrame = iconFrame
+
   local checkmark = frame:CreateTexture(nil, "OVERLAY")
-  checkmark:SetWidth(20)
-  checkmark:SetHeight(20)
-  checkmark:SetPoint("CENTER", icon, "TOPRIGHT", -2, -2)
+  checkmark:SetWidth(18)
+  checkmark:SetHeight(18)
+  checkmark:SetPoint("TOPRIGHT", icon, "TOPRIGHT", 3, 3)
   checkmark:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
   frame.checkmark = checkmark
+
   local name = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  name:SetPoint("TOPLEFT", icon, "TOPRIGHT", 8, -5)
-  name:SetWidth(490)
+  name:SetPoint("TOPLEFT", frame, "TOPLEFT", 78, -20)
+  name:SetWidth(445)
   name:SetJustifyH("LEFT")
   frame.name = name
+
   local desc = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  desc:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -3)
-  desc:SetWidth(490)
+  desc:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -5)
+  desc:SetWidth(445)
   desc:SetJustifyH("LEFT")
   frame.desc = desc
+
   local emblem = frame:CreateTexture(nil, "ARTWORK")
-  emblem:SetWidth(56)
-  emblem:SetHeight(56)
-  emblem:SetPoint("RIGHT", frame, "RIGHT", -8, 0)
-  emblem:SetTexture("Interface\\Icons\\Spell_Nature_ResistNature")
-  emblem:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+  emblem:SetWidth(50)
+  emblem:SetHeight(74)
+  emblem:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
+  emblem:SetTexture(TEX.ashenBanner)
+  emblem:SetTexCoord(0, 1, 0, 1)
+  emblem:SetVertexColor(1, 1, 1, 1)
   frame.emblem = emblem
+
   local points = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  points:SetPoint("CENTER", emblem, "CENTER", 0, 0)
+  points:SetPoint("CENTER", emblem, "CENTER", 0, -1)
+  points:SetTextColor(1, 0.83, 0.22, 1)
   frame.points = points
   frame:EnableMouse(true)
   frame:SetScript("OnEnter", function()
@@ -3401,85 +3848,86 @@ function LeafVE_AchTest.UI:Build()
   f:SetPoint("CENTER", 0, 0)
   f:SetWidth(930)
   f:SetHeight(640)
+  f:SetFrameStrata("FULLSCREEN_DIALOG")
+  f:SetFrameLevel(100)
+  f:SetToplevel(true)
   f:EnableMouse(true)
   f:SetMovable(true)
   f:RegisterForDrag("LeftButton")
   f:SetScript("OnDragStart", function() f:StartMoving() end)
   f:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
+  -- Border only. The full background is the Ashen Banner tiled TGA.
   f:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 16,
     insets = {left = 4, right = 4, top = 4, bottom = 4}
   })
-  f:SetBackdropColor(0.06, 0.06, 0.06, 0.98)
-  f:SetBackdropBorderColor(0.45, 0.45, 0.45, 1)
+  f:SetBackdropColor(0, 0, 0, 0)
+  f:SetBackdropBorderColor(0.55, 0.42, 0.18, 1)
 
-  -- Warm wood-toned backdrop.
-  local grad = f:CreateTexture(nil, "BACKGROUND")
-  grad:SetAllPoints(f)
-  grad:SetTexture(TEX.bankBg)
-  grad:SetVertexColor(1, 1, 1, 0.72)
+  LeafVE_AddTiledTexture(f, "BACKGROUND", TEX.ashenBg, 4, -4, -4, 4, 512, 128, 1)
   
   local header = CreateFrame("Frame", nil, f)
   header:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -4)
   header:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, -4)
-  header:SetHeight(46)
-  header:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 8,
-    insets = {left = 2, right = 2, top = 2, bottom = 2}
-  })
-  header:SetBackdropColor(0.10, 0.10, 0.10, 0.96)
-  header:SetBackdropBorderColor(0.42, 0.42, 0.42, 0.95)
+  header:SetHeight(52)
+  header:SetBackdrop(nil)
   local headerArt = header:CreateTexture(nil, "BACKGROUND")
   headerArt:SetAllPoints(header)
-  headerArt:SetTexture(TEX.bankBg)
-  headerArt:SetVertexColor(1, 1, 1, 0.35)
+  headerArt:SetTexture(TEX.ashenHeaderPanel)
+  headerArt:SetVertexColor(1, 1, 1, 1)
 
   local title = header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("CENTER", header, "CENTER", 0, 0)
-  title:SetText("LeafVillageAchievements")
+  title:SetText("Ashen Banner Achievements")
   title:SetTextColor(THEME.gold[1], THEME.gold[2], THEME.gold[3])
   
   local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
   close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, -6)
   
   self.pointsLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  self.pointsLabel:SetPoint("TOP", f, "TOP", 0, -52)
+  self.pointsLabel:SetPoint("TOP", f, "TOP", 0, -54)
   local pointsFrame = CreateFrame("Frame", nil, f)
-  pointsFrame:SetPoint("TOP", f, "TOP", 0, -52)
-  pointsFrame:SetWidth(230)
-  pointsFrame:SetHeight(24)
-  pointsFrame:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 8,
-    insets = {left = 2, right = 2, top = 2, bottom = 2}
-  })
-  pointsFrame:SetBackdropColor(0.12, 0.12, 0.12, 0.95)
-  pointsFrame:SetBackdropBorderColor(0.40, 0.40, 0.40, 0.95)
+  pointsFrame:SetPoint("TOP", f, "TOP", 0, -54)
+  pointsFrame:SetWidth(260)
+  pointsFrame:SetHeight(32)
+  pointsFrame:SetBackdrop(nil)
   pointsFrame:SetFrameLevel(f:GetFrameLevel() + 2)
+  local pointsArt = pointsFrame:CreateTexture(nil, "BACKGROUND")
+  pointsArt:SetAllPoints(pointsFrame)
+  pointsArt:SetTexture(TEX.ashenPointsPlaque)
+  pointsArt:SetVertexColor(1, 1, 1, 1)
+  pointsFrame.bg = pointsArt
   self.pointsLabel:SetParent(pointsFrame)
   self.pointsLabel:ClearAllPoints()
   self.pointsLabel:SetPoint("CENTER", pointsFrame, "CENTER", 0, 0)
   
   local achTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  achTab:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -82)
+  achTab:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -86)
   achTab:SetWidth(100)
-  achTab:SetHeight(25)
+  achTab:SetHeight(28)
   achTab:SetText("Achievements")
   achTab:SetScript("OnClick", function()
     LeafVE_AchTest.UI.currentView = "achievements"
     LeafVE_AchTest.UI:Refresh()
   end)
   self.achTab = achTab
+
+  local companionTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  companionTab:SetPoint("LEFT", achTab, "RIGHT", 5, 0)
+  companionTab:SetWidth(95)
+  companionTab:SetHeight(28)
+  companionTab:SetText("Companions")
+  companionTab:SetScript("OnClick", function()
+    LeafVE_AchTest.UI.currentView = "companions"
+    LeafVE_AchTest.UI:Refresh()
+  end)
+  self.companionTab = companionTab
   
   local titlesTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  titlesTab:SetPoint("LEFT", achTab, "RIGHT", 5, 0)
+  titlesTab:SetPoint("LEFT", companionTab, "RIGHT", 5, 0)
   titlesTab:SetWidth(80)
-  titlesTab:SetHeight(25)
+  titlesTab:SetHeight(28)
   titlesTab:SetText("Titles")
   titlesTab:SetScript("OnClick", function()
     LeafVE_AchTest.UI.currentView = "titles"
@@ -3490,12 +3938,12 @@ function LeafVE_AchTest.UI:Build()
   local adminTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   adminTab:SetPoint("LEFT", titlesTab, "RIGHT", 5, 0)
   adminTab:SetWidth(60)
-  adminTab:SetHeight(25)
+  adminTab:SetHeight(28)
   adminTab:SetText("Admin")
   adminTab:SetScript("OnClick", function()
     local _, rankName = GetGuildInfo("player")
     if not IsOfficerRank(rankName) then
-      Print("Only Anbu, Sannin, or Hokage may access the Admin panel.")
+      Print("Only guild officers may access the Admin panel.")
       return
     end
     LeafVE_AchTest.UI.currentView = "admin"
@@ -3507,12 +3955,12 @@ function LeafVE_AchTest.UI:Build()
   local awardBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   awardBtn:SetPoint("LEFT", adminTab, "RIGHT", 15, 0)
   awardBtn:SetWidth(60)
-  awardBtn:SetHeight(25)
+  awardBtn:SetHeight(28)
   awardBtn:SetText("Award")
   awardBtn:SetScript("OnClick", function()
     local _, rankName = GetGuildInfo("player")
     if not IsOfficerRank(rankName) then
-      Print("Only Anbu, Sannin, or Hokage may use the Award button.")
+      Print("Only guild officers may use the Award button.")
       return
     end
     local me = ShortName(UnitName("player") or "")
@@ -3536,12 +3984,12 @@ function LeafVE_AchTest.UI:Build()
   local resetBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   resetBtn:SetPoint("LEFT", awardBtn, "RIGHT", 5, 0)
   resetBtn:SetWidth(60)
-  resetBtn:SetHeight(25)
+  resetBtn:SetHeight(28)
   resetBtn:SetText("Reset")
   resetBtn:SetScript("OnClick", function()
     local _, rankName = GetGuildInfo("player")
     if not IsOfficerRank(rankName) then
-      Print("Only Anbu, Sannin, or Hokage may reset achievements.")
+      Print("Only guild officers may reset achievements.")
       return
     end
     LeafVE_AchTest_DB.achievements    = {}
@@ -3551,6 +3999,7 @@ function LeafVE_AchTest.UI:Build()
     LeafVE_AchTest_DB.exploredZones   = {}
     LeafVE_AchTest_DB.dungeonProgress = {}
     LeafVE_AchTest_DB.raidProgress    = {}
+    LeafVE_AchTest_DB.guildRankState  = {}
     LeafVE_AchTest_DB.completedQuests = {}
     LeafVE_AchTest_DB.peakGold        = {}
     LeafVE_AchTest_DB.goldEarnedTotal = {}
@@ -3703,7 +4152,7 @@ function LeafVE_AchTest.UI:Build()
 
     local tokenKind, tokenCatIndex, tokenPage = nil, nil, nil
     if type(menuValue) == "string" then
-      tokenKind, tokenCatIndex, tokenPage = string.match(menuValue, "^(%u+):(%d+):?(%d*)$")
+      tokenKind, tokenCatIndex, tokenPage = smatch(menuValue, "^(%u+):(%d+):?(%d*)$")
     end
     local catIndex = tonumber(tokenCatIndex or "")
     local category = catIndex and adminAchCategories[catIndex]
@@ -3775,7 +4224,7 @@ function LeafVE_AchTest.UI:Build()
   adminGrantBtn:SetScript("OnClick", function()
     local _, rankName = GetGuildInfo("player")
     if not IsOfficerRank(rankName) then
-      Print("Only Anbu, Sannin, or Hokage may grant achievements.")
+      Print("Only guild officers may grant achievements.")
       return
     end
     local playerName = LeafVE_AchTest.UI.adminPlayerBox and LeafVE_AchTest.UI.adminPlayerBox:GetText() or ""
@@ -3796,7 +4245,7 @@ function LeafVE_AchTest.UI:Build()
   adminGrantGuildBtn:SetScript("OnClick", function()
     local _, rankName = GetGuildInfo("player")
     if not IsOfficerRank(rankName) then
-      Print("Only Anbu, Sannin, or Hokage may grant achievements.")
+      Print("Only guild officers may grant achievements.")
       return
     end
     local playerName = LeafVE_AchTest.UI.adminPlayerBox and LeafVE_AchTest.UI.adminPlayerBox:GetText() or ""
@@ -3847,13 +4296,20 @@ function LeafVE_AchTest.UI:Build()
   sidebarFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 10)
   sidebarFrame:SetWidth(140)
   sidebarFrame:SetBackdrop({
-    bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 8,
     insets = {left=2, right=2, top=2, bottom=2},
   })
-  sidebarFrame:SetBackdropColor(0.10, 0.10, 0.10, 0.95)
-  sidebarFrame:SetBackdropBorderColor(0.40, 0.40, 0.40, 0.90)
+  sidebarFrame:SetBackdropColor(0, 0, 0, 0)
+  sidebarFrame:SetBackdropBorderColor(0.55, 0.42, 0.18, 1)
+
+  local sidebarBg = sidebarFrame:CreateTexture(nil, "BACKGROUND")
+  sidebarBg:SetPoint("TOPLEFT", sidebarFrame, "TOPLEFT", 2, -2)
+  sidebarBg:SetPoint("BOTTOMRIGHT", sidebarFrame, "BOTTOMRIGHT", -2, 2)
+  sidebarBg:SetTexture(TEX.ashenSidebar)
+  sidebarBg:SetTexCoord(0, 1, 0, 1)
+  sidebarBg:SetVertexColor(1, 1, 1, 1)
+  sidebarFrame.bg = sidebarBg
   self.sidebarFrame = sidebarFrame
 
   -- Ordered list of categories shown in the sidebar
@@ -3870,6 +4326,7 @@ function LeafVE_AchTest.UI:Build()
     {display="Gold",           filter="Gold"},
     {display="Elite",          filter="Elite"},
     {display="Casual",         filter="Casual"},
+    {display="Companions",     filter="Companions"},
     {display="Roleplay",       filter="Roleplay"},
     {display="Kills",          filter="Kills"},
     {display="Identity",       filter="Identity"},
@@ -3904,58 +4361,140 @@ function LeafVE_AchTest.UI:Build()
     hi:Hide()
     btn.highlight = hi
     btn:SetScript("OnMouseDown", function()
+      PlaySound("igMainMenuOptionCheckBoxOn")
       LeafVE_AchTest.UI.selectedCategory = this.filterValue
       LeafVE_AchTest.UI:Refresh()
     end)
     btn:SetScript("OnEnter", function()
-      if this.filterValue ~= LeafVE_AchTest.UI.selectedCategory then
-        if this.highlight then
-          this.highlight:SetVertexColor(1, 1, 1, 0.55)
-          this.highlight:Show()
-        end
+      if this.highlight then
+        this.highlight:SetVertexColor(1, 1, 1, 0.82)
+        this.highlight:Show()
       end
+      if this.label then this.label:SetTextColor(1, 1, 1) end
     end)
     btn:SetScript("OnLeave", function()
       if this.filterValue ~= LeafVE_AchTest.UI.selectedCategory then
         if this.highlight then this.highlight:Hide() end
+        if this.label then this.label:SetTextColor(0.92, 0.78, 0.26) end
+      else
+        if this.highlight then
+          this.highlight:SetVertexColor(1, 1, 1, 0.88)
+          this.highlight:Show()
+        end
+        if this.label then this.label:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3]) end
       end
     end)
     table.insert(self.categoryButtons, btn)
   end
+
+  local companionSidebarFrame = CreateFrame("Frame", nil, f)
+  companionSidebarFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -110)
+  companionSidebarFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 10)
+  companionSidebarFrame:SetWidth(140)
+  companionSidebarFrame:SetBackdrop({
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 8,
+    insets = {left=2, right=2, top=2, bottom=2},
+  })
+  companionSidebarFrame:SetBackdropColor(0, 0, 0, 0)
+  companionSidebarFrame:SetBackdropBorderColor(0.55, 0.42, 0.18, 1)
+  local companionSidebarBg = companionSidebarFrame:CreateTexture(nil, "BACKGROUND")
+  companionSidebarBg:SetPoint("TOPLEFT", companionSidebarFrame, "TOPLEFT", 2, -2)
+  companionSidebarBg:SetPoint("BOTTOMRIGHT", companionSidebarFrame, "BOTTOMRIGHT", -2, 2)
+  companionSidebarBg:SetTexture(TEX.ashenSidebar)
+  companionSidebarBg:SetTexCoord(0, 1, 0, 1)
+  companionSidebarBg:SetVertexColor(1, 1, 1, 1)
+  companionSidebarFrame.bg = companionSidebarBg
+  companionSidebarFrame:Hide()
+  self.companionSidebarFrame = companionSidebarFrame
+
+  local COMPANION_SIDEBAR_CATS = {
+    {display="All",         filter="All"},
+    {display="Collected",   filter="Collected"},
+    {display="Missing",     filter="Missing"},
+    {display="Milestones",  filter="Milestones"},
+    {display="Individuals", filter="Individuals"},
+  }
+  self.companionCategoryButtons = {}
+  for i, cat in ipairs(COMPANION_SIDEBAR_CATS) do
+    local filterVal = cat.filter
+    local btn = CreateFrame("Frame", nil, companionSidebarFrame)
+    btn:SetPoint("TOPLEFT", companionSidebarFrame, "TOPLEFT", 4, -(i-1)*27 - 4)
+    btn:SetWidth(132)
+    btn:SetHeight(24)
+    btn:EnableMouse(true)
+    btn:SetBackdrop({
+      bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+      tile = true, tileSize = 8,
+      insets = {left=2, right=2, top=2, bottom=2},
+    })
+    btn:SetBackdropColor(0, 0, 0, 0)
+    local lbl = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    lbl:SetAllPoints(btn)
+    lbl:SetJustifyH("CENTER")
+    lbl:SetText(cat.display)
+    lbl:SetTextColor(0.92, 0.78, 0.26)
+    btn.label = lbl
+    btn.filterValue = filterVal
+    local hi = btn:CreateTexture(nil, "BACKGROUND")
+    hi:SetAllPoints(btn)
+    hi:SetTexture(TEX.categoryHi)
+    hi:SetVertexColor(1, 1, 1, 0.70)
+    hi:Hide()
+    btn.highlight = hi
+    btn:SetScript("OnMouseDown", function()
+      PlaySound("igMainMenuOptionCheckBoxOn")
+      LeafVE_AchTest.UI.selectedCompanionFilter = this.filterValue
+      LeafVE_AchTest.UI:Refresh()
+    end)
+    btn:SetScript("OnEnter", function()
+      if this.highlight then
+        this.highlight:SetVertexColor(1, 1, 1, 0.82)
+        this.highlight:Show()
+      end
+      if this.label then this.label:SetTextColor(1, 1, 1) end
+    end)
+    btn:SetScript("OnLeave", function()
+      if this.filterValue ~= LeafVE_AchTest.UI.selectedCompanionFilter then
+        if this.highlight then this.highlight:Hide() end
+        if this.label then this.label:SetTextColor(0.92, 0.78, 0.26) end
+      else
+        if this.highlight then
+          this.highlight:SetVertexColor(1, 1, 1, 0.88)
+          this.highlight:Show()
+        end
+        if this.label then this.label:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3]) end
+      end
+    end)
+    table.insert(self.companionCategoryButtons, btn)
+  end
   
   -- Achievement Search Bar
   local searchLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  searchLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 155, -110)
+  searchLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 155, -128)
   searchLabel:SetText("Search:")
   self.searchLabel = searchLabel
   
   local searchBox = CreateFrame("EditBox", nil, f)
   searchBox:SetPoint("LEFT", searchLabel, "RIGHT", 5, 0)
-  searchBox:SetWidth(230)
-  searchBox:SetHeight(25)
+  searchBox:SetWidth(240)
+  searchBox:SetHeight(26)
   searchBox:SetAutoFocus(false)
   searchBox:SetFontObject("GameFontHighlight")
-  searchBox:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 16,
-    insets = {left = 4, right = 4, top = 4, bottom = 4}
-  })
-  searchBox:SetBackdropColor(0.10, 0.10, 0.10, 0.92)
-  searchBox:SetBackdropBorderColor(0.38, 0.38, 0.38, 1)
-  searchBox:SetTextInsets(8, 8, 0, 0)
+  searchBox:SetTextInsets(12, 12, 0, 0)
   searchBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
   searchBox:SetScript("OnEnterPressed", function() this:ClearFocus() end)
   searchBox:SetScript("OnTextChanged", function()
     LeafVE_AchTest.UI.searchText = this:GetText()
     LeafVE_AchTest.UI:Refresh()
   end)
+  LeafVE_SkinAshenEditBox(searchBox)
   self.searchBox = searchBox
   
   local clearBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   clearBtn:SetPoint("LEFT", searchBox, "RIGHT", 5, 0)
-  clearBtn:SetWidth(50)
-  clearBtn:SetHeight(25)
+  clearBtn:SetWidth(58)
+  clearBtn:SetHeight(28)
   clearBtn:SetText("Clear")
   clearBtn:SetScript("OnClick", function()
     searchBox:SetText("")
@@ -3966,39 +4505,32 @@ function LeafVE_AchTest.UI:Build()
   
   -- Title Search Bar (hidden by default)
   local titleSearchLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  titleSearchLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 155, -110)
+  titleSearchLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 155, -128)
   titleSearchLabel:SetText("Search:")
   titleSearchLabel:Hide()
   self.titleSearchLabel = titleSearchLabel
   
   local titleSearchBox = CreateFrame("EditBox", nil, f)
   titleSearchBox:SetPoint("LEFT", titleSearchLabel, "RIGHT", 5, 0)
-  titleSearchBox:SetWidth(230)
-  titleSearchBox:SetHeight(25)
+  titleSearchBox:SetWidth(240)
+  titleSearchBox:SetHeight(26)
   titleSearchBox:SetAutoFocus(false)
   titleSearchBox:SetFontObject("GameFontHighlight")
-  titleSearchBox:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 16,
-    insets = {left = 4, right = 4, top = 4, bottom = 4}
-  })
-  titleSearchBox:SetBackdropColor(0.10, 0.10, 0.10, 0.92)
-  titleSearchBox:SetBackdropBorderColor(0.38, 0.38, 0.38, 1)
-  titleSearchBox:SetTextInsets(8, 8, 0, 0)
+  titleSearchBox:SetTextInsets(12, 12, 0, 0)
   titleSearchBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
   titleSearchBox:SetScript("OnEnterPressed", function() this:ClearFocus() end)
   titleSearchBox:SetScript("OnTextChanged", function()
     LeafVE_AchTest.UI.titleSearchText = this:GetText()
     LeafVE_AchTest.UI:Refresh()
   end)
+  LeafVE_SkinAshenEditBox(titleSearchBox)
   titleSearchBox:Hide()
   self.titleSearchBox = titleSearchBox
   
   local titleClearBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   titleClearBtn:SetPoint("LEFT", titleSearchBox, "RIGHT", 5, 0)
-  titleClearBtn:SetWidth(50)
-  titleClearBtn:SetHeight(25)
+  titleClearBtn:SetWidth(58)
+  titleClearBtn:SetHeight(28)
   titleClearBtn:SetText("Clear")
   titleClearBtn:SetScript("OnClick", function()
     titleSearchBox:SetText("")
@@ -4008,19 +4540,34 @@ function LeafVE_AchTest.UI:Build()
   titleClearBtn:Hide()
   self.titleClearBtn = titleClearBtn
 
+  LeafVE_SkinAshenButton(achTab)
+  LeafVE_SkinAshenButton(companionTab)
+  LeafVE_SkinAshenButton(titlesTab)
+  LeafVE_SkinAshenButton(adminTab)
+  LeafVE_SkinAshenButton(awardBtn)
+  LeafVE_SkinAshenButton(resetBtn)
+  LeafVE_SkinAshenButton(clearBtn)
+  LeafVE_SkinAshenButton(titleClearBtn)
+
   -- â”€â”€ Left sidebar for title category navigation (same layout as achievement sidebar) â”€â”€
   local titleSidebarFrame = CreateFrame("Frame", nil, f)
   titleSidebarFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -110)
   titleSidebarFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 10)
   titleSidebarFrame:SetWidth(140)
   titleSidebarFrame:SetBackdrop({
-    bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 8,
     insets = {left=2, right=2, top=2, bottom=2},
   })
-  titleSidebarFrame:SetBackdropColor(0.10, 0.10, 0.10, 0.95)
-  titleSidebarFrame:SetBackdropBorderColor(0.40, 0.40, 0.40, 0.90)
+  titleSidebarFrame:SetBackdropColor(0, 0, 0, 0)
+  titleSidebarFrame:SetBackdropBorderColor(0.55, 0.42, 0.18, 1)
+  local titleSidebarBg = titleSidebarFrame:CreateTexture(nil, "BACKGROUND")
+  titleSidebarBg:SetPoint("TOPLEFT", titleSidebarFrame, "TOPLEFT", 2, -2)
+  titleSidebarBg:SetPoint("BOTTOMRIGHT", titleSidebarFrame, "BOTTOMRIGHT", -2, 2)
+  titleSidebarBg:SetTexture(TEX.ashenSidebar)
+  titleSidebarBg:SetTexCoord(0, 1, 0, 1)
+  titleSidebarBg:SetVertexColor(1, 1, 1, 1)
+  titleSidebarFrame.bg = titleSidebarBg
   titleSidebarFrame:Hide()
   self.titleSidebarFrame = titleSidebarFrame
 
@@ -4036,6 +4583,7 @@ function LeafVE_AchTest.UI:Build()
     {display="Gold",         filter="Gold"},
     {display="Exploration",  filter="Exploration"},
     {display="Casual",       filter="Casual"},
+    {display="Companions",   filter="Companions"},
     {display="Roleplay",     filter="Roleplay"},
     {display="Quests",       filter="Quests"},
     {display="Legendary",    filter="Legendary"},
@@ -4068,36 +4616,44 @@ function LeafVE_AchTest.UI:Build()
     hi:Hide()
     btn.highlight = hi
     btn:SetScript("OnMouseDown", function()
+      PlaySound("igMainMenuOptionCheckBoxOn")
       LeafVE_AchTest.UI.titleCategoryFilter = this.filterValue
       LeafVE_AchTest.UI:Refresh()
     end)
     btn:SetScript("OnEnter", function()
-      if this.filterValue ~= LeafVE_AchTest.UI.titleCategoryFilter then
-        if this.highlight then
-          this.highlight:SetVertexColor(1, 1, 1, 0.55)
-          this.highlight:Show()
-        end
+      if this.highlight then
+        this.highlight:SetVertexColor(1, 1, 1, 0.82)
+        this.highlight:Show()
       end
+      if this.label then this.label:SetTextColor(1, 1, 1) end
     end)
     btn:SetScript("OnLeave", function()
       if this.filterValue ~= LeafVE_AchTest.UI.titleCategoryFilter then
         if this.highlight then this.highlight:Hide() end
+        if this.label then this.label:SetTextColor(0.92, 0.78, 0.26) end
+      else
+        if this.highlight then
+          this.highlight:SetVertexColor(1, 1, 1, 0.88)
+          this.highlight:Show()
+        end
+        if this.label then this.label:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3]) end
       end
     end)
     table.insert(self.titleCategoryButtons, btn)
   end
   
   local scrollFrame = CreateFrame("ScrollFrame", nil, f)
-  scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -152)
+  scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -158)
   scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, 12)
   scrollFrame:EnableMouseWheel(true)
   self.scrollFrame = scrollFrame
 
   local contentArt = f:CreateTexture(nil, "BACKGROUND")
-  contentArt:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -152)
+  contentArt:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -158)
   contentArt:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, 12)
-  contentArt:SetTexture(TEX.bankBg)
-  contentArt:SetVertexColor(1, 1, 1, 0.55)
+  contentArt:SetTexture(TEX.ashenBg)
+  contentArt:SetVertexColor(1, 1, 1, 1)
+  contentArt:Show()
   self.contentArt = contentArt
   
   local scrollChild = CreateFrame("Frame", nil, scrollFrame)
@@ -4107,14 +4663,14 @@ function LeafVE_AchTest.UI:Build()
   self.scrollChild = scrollChild
   
   local scrollbar = CreateFrame("Slider", nil, f)
-  scrollbar:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -152)
-  scrollbar:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -15, 15)
+  scrollbar:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, -176)
+  scrollbar:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -18, 34)
   scrollbar:SetWidth(16)
   scrollbar:SetOrientation("VERTICAL")
-  scrollbar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+  scrollbar:SetThumbTexture("Interface\Buttons\UI-ScrollBar-Knob")
   scrollbar:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    bgFile = "Interface\Tooltips\UI-Tooltip-Background",
+    edgeFile = "Interface\Tooltips\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 8,
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
@@ -4123,14 +4679,50 @@ function LeafVE_AchTest.UI:Build()
   scrollbar:SetValue(0)
   scrollbar:SetValueStep(20)
   self.scrollbar = scrollbar
-  
+
+  local scrollUp = CreateFrame("Button", nil, f)
+  scrollUp:SetWidth(18)
+  scrollUp:SetHeight(18)
+  scrollUp:SetPoint("BOTTOM", scrollbar, "TOP", 0, 4)
+  scrollUp:SetNormalTexture("Interface\Buttons\UI-ScrollBar-ScrollUpButton-Up")
+  scrollUp:SetPushedTexture("Interface\Buttons\UI-ScrollBar-ScrollUpButton-Down")
+  scrollUp:SetHighlightTexture("Interface\Buttons\UI-ScrollBar-ScrollUpButton-Highlight")
+  scrollUp:SetDisabledTexture("Interface\Buttons\UI-ScrollBar-ScrollUpButton-Disabled")
+  self.scrollUp = scrollUp
+
+  local scrollDown = CreateFrame("Button", nil, f)
+  scrollDown:SetWidth(18)
+  scrollDown:SetHeight(18)
+  scrollDown:SetPoint("TOP", scrollbar, "BOTTOM", 0, -4)
+  scrollDown:SetNormalTexture("Interface\Buttons\UI-ScrollBar-ScrollDownButton-Up")
+  scrollDown:SetPushedTexture("Interface\Buttons\UI-ScrollBar-ScrollDownButton-Down")
+  scrollDown:SetHighlightTexture("Interface\Buttons\UI-ScrollBar-ScrollDownButton-Highlight")
+  scrollDown:SetDisabledTexture("Interface\Buttons\UI-ScrollBar-ScrollDownButton-Disabled")
+  self.scrollDown = scrollDown
   scrollbar:SetScript("OnValueChanged", function()
     if LeafVE_AchTest.UI and LeafVE_AchTest.UI.scrollFrame then
       LeafVE_AchTest.UI.scrollFrame:SetVerticalScroll(this:GetValue())
-      if LeafVE_AchTest.UI.currentView == "achievements" then
+      if LeafVE_AchTest.UI:IsAchievementListView() then
         LeafVE_AchTest.UI:UpdateVisibleAchievements()
       end
     end
+  end)
+
+  scrollUp:SetScript("OnClick", function()
+    local current = scrollbar:GetValue() or 0
+    local newValue = current - 40
+    if newValue < 0 then newValue = 0 end
+    scrollbar:SetValue(newValue)
+    if PlaySound then PlaySound("UChatScrollButton") end
+  end)
+
+  scrollDown:SetScript("OnClick", function()
+    local current = scrollbar:GetValue() or 0
+    local _, maxValue = scrollbar:GetMinMaxValues()
+    local newValue = current + 40
+    if newValue > maxValue then newValue = maxValue end
+    scrollbar:SetValue(newValue)
+    if PlaySound then PlaySound("UChatScrollButton") end
   end)
   
   scrollFrame:SetScript("OnMouseWheel", function()
@@ -4204,6 +4796,7 @@ function LeafVE_AchTest.UI:Refresh()
   
   if self.currentView == "achievements" then
     if self.achTab then self.achTab:Disable() end
+    if self.companionTab then self.companionTab:Enable() end
     if self.titlesTab then self.titlesTab:Enable() end
     if self.adminTab and hasAdminAccess then self.adminTab:Enable() end
     if self.awardBtn then
@@ -4221,10 +4814,14 @@ function LeafVE_AchTest.UI:Refresh()
     if self.titleClearBtn then self.titleClearBtn:Hide() end
     -- Show achievement sidebar, hide title sidebar and admin panel
     if self.sidebarFrame then self.sidebarFrame:Show() end
+    if self.companionSidebarFrame then self.companionSidebarFrame:Hide() end
     if self.titleSidebarFrame then self.titleSidebarFrame:Hide() end
     if self.adminFrame then self.adminFrame:Hide() end
     if self.scrollFrame then self.scrollFrame:Show() end
     if self.scrollbar then self.scrollbar:Show() end
+    if self.scrollUp then self.scrollUp:Show() end
+    if self.scrollDown then self.scrollDown:Show() end
+    if self.contentArt then self.contentArt:Show() end
     if self.categoryButtons then
       for _, btn in ipairs(self.categoryButtons) do
         if btn.filterValue == self.selectedCategory then
@@ -4240,8 +4837,51 @@ function LeafVE_AchTest.UI:Refresh()
       end
     end
     self:RefreshAchievements()
+  elseif self.currentView == "companions" then
+    if self.achTab then self.achTab:Enable() end
+    if self.companionTab then self.companionTab:Disable() end
+    if self.titlesTab then self.titlesTab:Enable() end
+    if self.adminTab and hasAdminAccess then self.adminTab:Enable() end
+    if self.awardBtn then
+      if hasAdminAccess then
+        self.awardBtn:Show()
+      else
+        self.awardBtn:Hide()
+      end
+    end
+    if self.searchLabel then self.searchLabel:Show() end
+    if self.searchBox then self.searchBox:Show() end
+    if self.clearBtn then self.clearBtn:Show() end
+    if self.titleSearchLabel then self.titleSearchLabel:Hide() end
+    if self.titleSearchBox then self.titleSearchBox:Hide() end
+    if self.titleClearBtn then self.titleClearBtn:Hide() end
+    if self.sidebarFrame then self.sidebarFrame:Hide() end
+    if self.companionSidebarFrame then self.companionSidebarFrame:Show() end
+    if self.titleSidebarFrame then self.titleSidebarFrame:Hide() end
+    if self.adminFrame then self.adminFrame:Hide() end
+    if self.scrollFrame then self.scrollFrame:Show() end
+    if self.scrollbar then self.scrollbar:Show() end
+    if self.scrollUp then self.scrollUp:Show() end
+    if self.scrollDown then self.scrollDown:Show() end
+    if self.contentArt then self.contentArt:Show() end
+    if self.companionCategoryButtons then
+      for _, btn in ipairs(self.companionCategoryButtons) do
+        if btn.filterValue == self.selectedCompanionFilter then
+          if btn.highlight then
+            btn.highlight:SetVertexColor(1, 1, 1, 0.88)
+            btn.highlight:Show()
+          end
+          btn.label:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3])
+        else
+          if btn.highlight then btn.highlight:Hide() end
+          btn.label:SetTextColor(0.92, 0.78, 0.26)
+        end
+      end
+    end
+    self:RefreshAchievements()
   elseif self.currentView == "admin" then
     if self.achTab then self.achTab:Enable() end
+    if self.companionTab then self.companionTab:Enable() end
     if self.titlesTab then self.titlesTab:Enable() end
     if self.adminTab and hasAdminAccess then self.adminTab:Disable() end
     if self.awardBtn then self.awardBtn:Hide() end
@@ -4252,12 +4892,17 @@ function LeafVE_AchTest.UI:Refresh()
     if self.titleSearchBox then self.titleSearchBox:Hide() end
     if self.titleClearBtn then self.titleClearBtn:Hide() end
     if self.sidebarFrame then self.sidebarFrame:Hide() end
+    if self.companionSidebarFrame then self.companionSidebarFrame:Hide() end
     if self.titleSidebarFrame then self.titleSidebarFrame:Hide() end
     if self.adminFrame then self.adminFrame:Show() end
     if self.scrollFrame then self.scrollFrame:Hide() end
     if self.scrollbar then self.scrollbar:Hide() end
+    if self.scrollUp then self.scrollUp:Hide() end
+    if self.scrollDown then self.scrollDown:Hide() end
+    if self.contentArt then self.contentArt:Hide() end
   else
     if self.achTab then self.achTab:Enable() end
+    if self.companionTab then self.companionTab:Enable() end
     if self.titlesTab then self.titlesTab:Disable() end
     if self.adminTab and hasAdminAccess then self.adminTab:Enable() end
     if self.awardBtn then self.awardBtn:Hide() end
@@ -4269,10 +4914,14 @@ function LeafVE_AchTest.UI:Refresh()
     if self.titleClearBtn then self.titleClearBtn:Show() end
     -- Show title sidebar, hide achievement sidebar and admin panel
     if self.sidebarFrame then self.sidebarFrame:Hide() end
+    if self.companionSidebarFrame then self.companionSidebarFrame:Hide() end
     if self.titleSidebarFrame then self.titleSidebarFrame:Show() end
     if self.adminFrame then self.adminFrame:Hide() end
     if self.scrollFrame then self.scrollFrame:Show() end
     if self.scrollbar then self.scrollbar:Show() end
+    if self.scrollUp then self.scrollUp:Show() end
+    if self.scrollDown then self.scrollDown:Show() end
+    if self.contentArt then self.contentArt:Show() end
     if self.titleCategoryButtons then
       for _, btn in ipairs(self.titleCategoryButtons) do
         if btn.filterValue == self.titleCategoryFilter then
@@ -4304,17 +4953,35 @@ function LeafVE_AchTest.UI:RefreshAchievements()
 
   -- Build filtered & sorted achievement list.
   local achievementList = {}
+  local activeCategory = self.selectedCategory or "All"
+  local companionFilter = self.selectedCompanionFilter or "All"
+  if self.currentView == "companions" then
+    activeCategory = "Companions"
+  end
   for achID, achData in pairs(ACHIEVEMENTS) do
-    local matchesCategory = self.selectedCategory == "All" or achData.category == self.selectedCategory
+    local completed = playerAchievements[achID] ~= nil
+    local matchesCategory = activeCategory == "All" or achData.category == activeCategory
     local matchesSearch = true
+    local matchesCompanionFilter = true
     if self.searchText and self.searchText ~= "" then
       local searchLower = string.lower(self.searchText)
       local nameLower = string.lower(achData.name)
       local descLower = string.lower(achData.desc)
       matchesSearch = string.find(nameLower, searchLower) or string.find(descLower, searchLower)
     end
-    if matchesCategory and matchesSearch then
-      local completed = playerAchievements[achID] ~= nil
+    if self.currentView == "companions" then
+      local companionType = achData.companionType or "individual"
+      if companionFilter == "Collected" then
+        matchesCompanionFilter = completed
+      elseif companionFilter == "Missing" then
+        matchesCompanionFilter = not completed
+      elseif companionFilter == "Milestones" then
+        matchesCompanionFilter = companionType == "milestone"
+      elseif companionFilter == "Individuals" then
+        matchesCompanionFilter = companionType ~= "milestone"
+      end
+    end
+    if matchesCategory and matchesSearch and matchesCompanionFilter then
       local timestamp = completed and playerAchievements[achID].timestamp or 0
       table.insert(achievementList, {id=achID, data=achData, completed=completed, timestamp=timestamp})
     end
@@ -4334,6 +5001,7 @@ function LeafVE_AchTest.UI:RefreshAchievements()
   -- Set the scrollChild virtual height so the scrollbar range is correct.
   local totalHeight = math.max(10, table.getn(achievementList) * ACH_ROW_H + 10)
   self.scrollChild:SetHeight(totalHeight)
+  
 
   if self.scrollFrame and self.scrollbar then
     local maxScroll = self.scrollFrame:GetVerticalScrollRange()
@@ -4379,47 +5047,50 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
 
     local yOff = (rowIdx - 1) * ACH_ROW_H
     frame:ClearAllPoints()
-    frame:SetPoint("TOPLEFT", self.scrollChild, "TOPLEFT", 5, -yOff)
+    frame:SetPoint("TOPLEFT", self.scrollChild, "TOPLEFT", 8, -yOff)
 
     frame.achData       = ach.data
     frame.achCompleted  = ach.completed
     frame.achTimestamp  = ach.timestamp
     frame.achPlayerName = me
 
-    frame.icon:SetTexture(ach.data.icon)
+    local rowIconTex = ach.data.icon
+    if not rowIconTex or rowIconTex == "" then
+      rowIconTex = "Interface\Icons\INV_Misc_QuestionMark"
+    end
+    frame.icon:SetTexture(rowIconTex)
     if ach.completed then
-      if frame.rowBg then frame.rowBg:SetVertexColor(1.0, 1.0, 1.0, 0.96) end
+      if frame.rowBg then frame.rowBg:SetVertexColor(1.0, 1.0, 1.0, 1.0) end
       frame.icon:SetDesaturated(false)
       frame.icon:SetAlpha(1)
       frame.checkmark:Show()
       local isLeg = ach.data.category == "Legendary"
       if isLeg then
-        frame:SetBackdropBorderColor(0.9, 0.1, 0.1, 0.9)
         frame.name:SetTextColor(1, 0, 0)
       else
-        frame:SetBackdropBorderColor(0.56, 0.46, 0.28, 0.92)
         frame.name:SetTextColor(0.90, 0.88, 0.84)
       end
       frame.name:SetText(ach.data.name)
       frame.desc:SetText(ach.data.desc)
       frame.desc:SetTextColor(0.80, 0.78, 0.74)
-      frame.emblem:SetTexture("Interface\\Icons\\Spell_Nature_ResistNature")
-      frame.emblem:SetVertexColor(1.0, 0.82, 0.20)
+      frame.emblem:SetTexture(TEX.ashenBanner)
+      frame.emblem:SetTexCoord(0, 1, 0, 1)
+      frame.emblem:SetVertexColor(1, 1, 1, 1)
       frame.emblem:SetAlpha(1)
       frame.points:SetText("|cFFFFD433"..ach.data.points.."|r")
     else
-      if frame.rowBg then frame.rowBg:SetVertexColor(0.70, 0.70, 0.70, 0.78) end
+      if frame.rowBg then frame.rowBg:SetVertexColor(0.82, 0.82, 0.82, 1.0) end
       frame.icon:SetDesaturated(true)
       frame.icon:SetAlpha(0.5)
       frame.checkmark:Hide()
-      frame:SetBackdropBorderColor(0.32, 0.27, 0.20, 0.82)
       frame.name:SetText(ach.data.name)
       frame.name:SetTextColor(0.67, 0.65, 0.62)
       frame.desc:SetText(ach.data.desc)
       frame.desc:SetTextColor(0.52, 0.50, 0.48)
-      frame.emblem:SetTexture("Interface\\Icons\\Spell_Nature_ResistNature")
-      frame.emblem:SetVertexColor(0.5, 0.5, 0.5)
-      frame.emblem:SetAlpha(0.4)
+      frame.emblem:SetTexture(TEX.ashenBanner)
+      frame.emblem:SetTexCoord(0, 1, 0, 1)
+      frame.emblem:SetVertexColor(0.45, 0.45, 0.45, 0.75)
+      frame.emblem:SetAlpha(0.65)
       frame.points:SetText("|cFF888888"..ach.data.points.."|r")
     end
     frame:Show()
@@ -4466,49 +5137,43 @@ function LeafVE_AchTest.UI:RefreshTitles()
     if not frame then
       frame = CreateFrame("Frame", nil, self.scrollChild)
       frame:SetWidth(690)
-      frame:SetHeight(55)
-      frame:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 8,
-        insets = {left = 2, right = 2, top = 2, bottom = 2}
-      })
-      frame:SetBackdropColor(0.08, 0.07, 0.06, 0.96)
-      frame:SetBackdropBorderColor(0.34, 0.28, 0.20, 0.92)
+      frame:SetHeight(92)
+      frame:SetBackdrop(nil)
       local rowBg = frame:CreateTexture(nil, "BACKGROUND")
-      rowBg:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, -2)
-      rowBg:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 2)
-      rowBg:SetTexture(TEX.parchmentH)
-      rowBg:SetVertexColor(0.92, 0.90, 0.86, 0.94)
+      rowBg:SetAllPoints(frame)
+      rowBg:SetTexture(TEX.ashenRow)
+      rowBg:SetTexCoord(0, 1, 0, 1)
+      rowBg:SetVertexColor(1, 1, 1, 1)
       frame.rowBg = rowBg
       local icon = frame:CreateTexture(nil, "ARTWORK")
-      icon:SetWidth(32)
-      icon:SetHeight(32)
-      icon:SetPoint("LEFT", frame, "LEFT", 10, 0)
+      icon:SetWidth(44)
+      icon:SetHeight(44)
+      icon:SetPoint("LEFT", frame, "LEFT", 22, 0)
       icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
       frame.icon = icon
       local iconFrame = frame:CreateTexture(nil, "OVERLAY")
-      iconFrame:SetWidth(40)
-      iconFrame:SetHeight(40)
+      iconFrame:SetWidth(52)
+      iconFrame:SetHeight(52)
       iconFrame:SetPoint("CENTER", icon, "CENTER", 0, 0)
       iconFrame:SetTexture(TEX.iconFrame)
-      iconFrame:SetVertexColor(1, 1, 1, 0.95)
+      iconFrame:SetVertexColor(1, 1, 1, 0.92)
       frame.iconFrame = iconFrame
-      local name = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-      name:SetPoint("LEFT", icon, "RIGHT", 10, 8)
+      local name = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+      name:SetPoint("TOPLEFT", frame, "TOPLEFT", 78, -20)
       name:SetWidth(430)
       name:SetJustifyH("LEFT")
       frame.name = name
-      local requirement = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-      requirement:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -3)
+      local requirement = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+      requirement:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -5)
       requirement:SetWidth(430)
       requirement:SetJustifyH("LEFT")
       frame.requirement = requirement
       local equipBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-      equipBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -5, -12)
-      equipBtn:SetWidth(70)
-      equipBtn:SetHeight(24)
+      equipBtn:SetPoint("RIGHT", frame, "RIGHT", -22, 0)
+      equipBtn:SetWidth(82)
+      equipBtn:SetHeight(28)
       equipBtn:SetText("Equip")
+      if LeafVE_SkinAshenButton then LeafVE_SkinAshenButton(equipBtn) end
       frame.equipBtn = equipBtn
       -- Tooltip
       frame:EnableMouse(true)
@@ -4521,6 +5186,9 @@ function LeafVE_AchTest.UI:RefreshTitles()
         if this.titleEarned then
           GameTooltip:SetText(td.name, THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 1, true)
           GameTooltip:AddLine("|cFF888888Title|r", 1, 1, 1)
+          if td.desc and td.desc ~= "" then
+            GameTooltip:AddLine(td.desc, 0.95, 0.95, 0.95, true)
+          end
           if achData then
             GameTooltip:AddLine("Requires: "..achData.name, 1, 1, 1, true)
           end
@@ -4529,6 +5197,9 @@ function LeafVE_AchTest.UI:RefreshTitles()
         else
           GameTooltip:SetText(td.name, 0.6, 0.6, 0.6, 1, true)
           GameTooltip:AddLine("|cFF888888Title|r", 1, 1, 1)
+          if td.desc and td.desc ~= "" then
+            GameTooltip:AddLine(td.desc, 0.85, 0.85, 0.85, true)
+          end
           if achData then
             GameTooltip:AddLine("Requires: "..achData.name, 0.7, 0.7, 0.7, true)
           end
@@ -4549,10 +5220,9 @@ function LeafVE_AchTest.UI:RefreshTitles()
     local achData = ACHIEVEMENTS[titleData.achievement]
     frame.icon:SetTexture(titleData.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
     if earned then
-      if frame.rowBg then frame.rowBg:SetVertexColor(1.0, 1.0, 1.0, 0.96) end
+      if frame.rowBg then frame.rowBg:SetVertexColor(1.0, 1.0, 1.0, 1.0) end
       local isLeg = titleData.legendary
       local br = isLeg and {1,0,0} or {THEME.leaf[1],THEME.leaf[2],THEME.leaf[3]}
-      frame:SetBackdropBorderColor(br[1], br[2], br[3], 0.84)
       frame.icon:SetDesaturated(false)
       frame.icon:SetAlpha(1)
       frame.name:SetText(titleData.name)
@@ -4581,8 +5251,7 @@ function LeafVE_AchTest.UI:RefreshTitles()
         end)
       end
     else
-      if frame.rowBg then frame.rowBg:SetVertexColor(0.70, 0.70, 0.70, 0.78) end
-      frame:SetBackdropBorderColor(0.32, 0.27, 0.20, 0.82)
+      if frame.rowBg then frame.rowBg:SetVertexColor(0.82, 0.82, 0.82, 1.0) end
       frame.icon:SetDesaturated(true)
       frame.icon:SetAlpha(0.3)
       frame.name:SetText(titleData.name)
@@ -4592,7 +5261,7 @@ function LeafVE_AchTest.UI:RefreshTitles()
       frame.equipBtn:Disable()
     end
     frame:Show()
-    yOffset = yOffset + 60
+    yOffset = yOffset + 96
   end
   
   -- Hide unused frames
@@ -4770,6 +5439,7 @@ ef:RegisterEvent("QUEST_LOG_UPDATE")
 ef:RegisterEvent("PARTY_MEMBERS_CHANGED")
 ef:RegisterEvent("CHAT_MSG_SYSTEM")
 ef:RegisterEvent("UPDATE_FACTION")
+ef:RegisterEvent("GUILD_ROSTER_UPDATE")
 ef:RegisterEvent("CHAT_MSG_BG_SYSTEM_ALLIANCE")
 ef:RegisterEvent("CHAT_MSG_BG_SYSTEM_HORDE")
 ef:RegisterEvent("CHAT_MSG_BG_SYSTEM_NEUTRAL")
@@ -4794,6 +5464,7 @@ ef:SetScript("OnEvent", function()
     LeafVE_AchTest:CheckProfessionAchievements(true)
     LeafVE_AchTest:CheckQuestAchievements(true)
     LeafVE_AchTest:CheckPvPRankAchievements(true)
+    LeafVE_AchTest:CheckGuildRankAchievements(true)
     LeafVE_AchTest:CheckReputationAchievements(true)
     LeafVE_AchTest:CheckBattlegroundAchievements(true)
     LeafVE_AchTest:CheckRunMilestoneAchievements(true)
@@ -4839,6 +5510,9 @@ ef:SetScript("OnEvent", function()
     end
   end
   if event == "PLAYER_MONEY" and LeafVE_AchTest.initialized then LeafVE_AchTest:CheckGoldAchievements() end
+  if event == "GUILD_ROSTER_UPDATE" and LeafVE_AchTest.initialized then
+    LeafVE_AchTest:CheckGuildRankAchievements(true)
+  end
   if event == "UPDATE_FACTION" and LeafVE_AchTest.initialized then LeafVE_AchTest:CheckReputationAchievements() end
   if event == "UNIT_INVENTORY_CHANGED" and arg1 == "player" and LeafVE_AchTest.initialized then
     LeafVE_AchTest:CheckEquipmentAchievements()
@@ -5371,6 +6045,11 @@ emoteFrame:SetScript("OnEvent", function()
       local total = IncrCounter(me, "emotes")
       if total >= 25  then LeafVE_AchTest:AwardAchievement("casual_emote_25")  end
       if total >= 100 then LeafVE_AchTest:AwardAchievement("casual_emote_100") end
+
+      local directedAchievement = DetectDirectedEmoteTarget(arg1)
+      if directedAchievement then
+        LeafVE_AchTest:AwardAchievement(directedAchievement)
+      end
     end
   end
 end)
@@ -5403,7 +6082,7 @@ SLASH_ACHGRANT1 = "/achgrant"
 SlashCmdList["ACHGRANT"] = function(msg)
   local _, rankName = GetGuildInfo("player")
   if not IsOfficerRank(rankName) then
-    Print("Only Anbu, Sannin, or Hokage may grant achievements.")
+    Print("Only guild officers may grant achievements.")
     return
   end
   local target, achId = smatch(msg, "^(%S+)%s+(%S+)$")
@@ -5424,7 +6103,7 @@ SLASH_ACHGRANTGUILD1 = "/achgrantguild"
 SlashCmdList["ACHGRANTGUILD"] = function(msg)
   local _, rankName = GetGuildInfo("player")
   if not IsOfficerRank(rankName) then
-    Print("Only Anbu, Sannin, or Hokage may grant achievements.")
+    Print("Only guild officers may grant achievements.")
     return
   end
   local target, achId = smatch(msg, "^(%S+)%s+(%S+)$")
@@ -5439,6 +6118,14 @@ SlashCmdList["ACHGRANTGUILD"] = function(msg)
     return
   end
   Print("|cFFFF7F00[Admin Guild Grant]|r "..targetOrError.." awarded: |cFF2DD35C"..achOrNil.name.."|r (+"..achOrNil.points.." pts)")
+end
+
+SLASH_ACHPROBE1 = "/achprobe"
+SlashCmdList["ACHPROBE"] = function(msg)
+  if LeafVE_AchTest and type(LeafVE_AchTest.RunProbeCommand) == "function" then
+    return LeafVE_AchTest.RunProbeCommand(msg)
+  end
+  Print("Probe module is not ready yet. Try /reload once. If it still fails, the probe file did not finish loading.")
 end
 
 -- Chat Title Integration with Orange Color (Vanilla WoW Compatible)
@@ -5456,11 +6143,12 @@ local function HookChatWithTitles()
     SendChatMessage = function(msg, chatType, language, channel)
       if chatType == "GUILD" and type(msg) == "string" and msg ~= "" then
         local hasLeafLink = string.find(msg, "|Hitem:"..LEAFVE_ANNOUNCEMENT_ITEM_ID..":0:0:0|h", 1, true)
+        local hasLeafVillageAchievement = string.find(msg, "|Hleafve_ach:", 1, true)
         local hasLeafVillageBadge = string.find(msg, "|Hleafve_badge:", 1, true)
         local hasLeafVillageTitle = string.find(msg, "|Hleafve_title:", 1, true)
         local me = ShortName(UnitName("player"))
         local title = me and LeafVE_AchTest and LeafVE_AchTest.GetCurrentTitle and LeafVE_AchTest:GetCurrentTitle(me)
-        local hasExistingTitle = hasLeafLink or hasLeafVillageBadge or hasLeafVillageTitle
+        local hasExistingTitle = hasLeafLink or hasLeafVillageAchievement or hasLeafVillageBadge or hasLeafVillageTitle
         if not hasExistingTitle and me and LeafVE and LeafVE.GetEquippedTitleNameForPlayer then
           local leafVillageTitle = LeafVE:GetEquippedTitleNameForPlayer(me)
           if leafVillageTitle and leafVillageTitle ~= "" then
@@ -5471,8 +6159,9 @@ local function HookChatWithTitles()
           end
         end
         if not hasExistingTitle and title and title.name and title.name ~= "" then
-          local ownPlainPrefix = tostring(title.name).." "
-          local ownBracketedPrefix = "["..tostring(title.name).."] "
+          local titleLabel = tostring(title.chatName or title.name)
+          local ownPlainPrefix = titleLabel.." "
+          local ownBracketedPrefix = "["..titleLabel.."] "
           hasExistingTitle = string.sub(msg, 1, string.len(ownPlainPrefix)) == ownPlainPrefix
             or string.sub(msg, 1, string.len(ownBracketedPrefix)) == ownBracketedPrefix
         end
@@ -5489,6 +6178,10 @@ local function HookChatWithTitles()
 
   if type(originalSetItemRef) == "function" then
     SetItemRef = function(link, text, button, chatFrame)
+      if ShowAnnouncementTooltipFromLink(link, text) then
+        return
+      end
+
       local itemId = tonumber(smatch(link or "", "item:(%d+)"))
       if itemId == LEAFVE_ANNOUNCEMENT_ITEM_ID and ShowAnnouncementTooltip(text) then
         return
@@ -5669,3 +6362,119 @@ Print("LeafVillageAchievements loaded successfully!")
 
 
 
+
+
+-- Ashen Banner texture diagnostics.
+-- /ashenbg red    = proves the main UI layer is being updated
+-- /ashenbg custom = reapplies the custom tiled TGA background
+SLASH_ASHENBANNERBG1 = "/ashenbg"
+SlashCmdList["ASHENBANNERBG"] = function(msg)
+  msg = string.lower(Trim(msg or ""))
+  local ui = LeafVE_AchTest.UI
+  if not ui or not ui.frame then
+    Print("Open the achievement UI first, then run /ashenbg.")
+    return
+  end
+  if msg == "red" then
+    LeafVE_AddTiledTexture(ui.frame, "BACKGROUND", "Interface\\Buttons\\WHITE8X8", 4, -4, -4, 4, 512, 128, 1)
+    if ui.frame.leafveAshenTiles then
+      local i = 1
+      while ui.frame.leafveAshenTiles[i] do
+        ui.frame.leafveAshenTiles[i]:SetVertexColor(1, 0, 0, 0.70)
+        i = i + 1
+      end
+    end
+    Print("Ashen background diagnostic: red test applied.")
+  else
+    LeafVE_AddTiledTexture(ui.frame, "BACKGROUND", TEX.ashenBg, 4, -4, -4, 4, 512, 128, 1)
+    Print("Ashen background applied: "..TEX.ashenBg)
+  end
+end
+
+
+SLASH_ASHENROWTEST1 = "/ashenrowtest"
+SlashCmdList["ASHENROWTEST"] = function(msg)
+  msg = string.lower(msg or "")
+  local ui = LeafVE_AchTest and LeafVE_AchTest.UI
+  if not ui or not ui.achievementFrames or not ui.achievementFrames[1] then
+    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD433[Ashen]|r Open the achievement UI first.")
+    return
+  end
+  local f = ui.achievementFrames[1]
+  if not f or not f.rowBg then return end
+  if msg == "red" then
+    f.rowBg:SetTexture("Interface\\Buttons\\WHITE8X8")
+    f.rowBg:SetVertexColor(1, 0, 0, 1)
+    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD433[Ashen]|r First row set to red test.")
+  else
+    f.rowBg:SetTexture(TEX.ashenRow)
+    f.rowBg:SetVertexColor(1, 1, 1, 1)
+    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD433[Ashen]|r First row set to custom: "..TEX.ashenRow)
+  end
+end
+
+
+SLASH_ASHENUITEST1 = "/ashenuittest"
+SlashCmdList["ASHENUITEST"] = function(msg)
+  DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD433[Ashen UI]|r Header: "..tostring(TEX.ashenHeaderPanel))
+  DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD433[Ashen UI]|r Points: "..tostring(TEX.ashenPointsPlaque))
+  DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD433[Ashen UI]|r Search: "..tostring(TEX.ashenSearchBox))
+  DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD433[Ashen UI]|r Tab: "..tostring(TEX.ashenTabButton))
+end
+
+
+-- Popup texture debug tools.
+-- Use:
+-- /achpopdebug popup  = test achievement_popup_banner.tga
+-- /achpopdebug row    = test known-working row texture on the popup frame
+-- /achpopdebug bg     = test known-working main background texture
+-- /achpopdebug red    = test plain red WoW built-in texture
+-- /achpopdebug path   = print the popup texture path
+function LeafVE_AchTest:DebugPopupTexture(mode)
+  mode = string.lower(mode or "popup")
+
+  local popup = CreateFrame("Frame", nil, UIParent)
+  popup:SetWidth(500)
+  popup:SetHeight(112)
+  popup:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+  popup:SetFrameStrata("DIALOG")
+  popup:SetFrameLevel(200)
+
+  local bg = popup:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints(popup)
+  bg:SetTexCoord(0, 1, 0, 1)
+  bg:SetVertexColor(1, 1, 1, 1)
+
+  if mode == "red" then
+    bg:SetTexture([[Interface\Buttons\WHITE8X8]])
+    bg:SetVertexColor(1, 0, 0, 1)
+  elseif mode == "row" then
+    bg:SetTexture(TEX.ashenRow)
+  elseif mode == "bg" then
+    bg:SetTexture(TEX.ashenBg)
+  else
+    bg:SetTexture(TEX.ashenAchievementPopup)
+  end
+
+  local label = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  label:SetPoint("CENTER", popup, "CENTER", 0, 0)
+  label:SetText("|cFFFFD433Popup Texture Debug: "..mode.."|r")
+
+  popup:Show()
+  Print("Popup debug mode: "..mode)
+  Print("Popup path: "..tostring(TEX.ashenAchievementPopup))
+
+  local elapsed = 0
+  popup:SetScript("OnUpdate", function()
+    elapsed = elapsed + arg1
+    if elapsed > 5 then
+      popup:SetScript("OnUpdate", nil)
+      popup:Hide()
+    end
+  end)
+end
+
+SLASH_LEAFVE_POPUP_DEBUG1 = "/achpopdebug"
+SlashCmdList["LEAFVE_POPUP_DEBUG"] = function(msg)
+  LeafVE_AchTest:DebugPopupTexture(msg)
+end
