@@ -2,11 +2,7 @@
 ## Title: The Ashen Banner
 ## Notes: The Ashen Banner guild utility addon for WoW 1.12.
 ## Version: 16.3
-<<<<<<< HEAD
 ## SavedVariables: LeafVE_GlobalDB, LeafVE_AshenDossierLayout, LeafVE_AshenBGLayout
-=======
-## SavedVariables: LeafVE_GlobalDB
->>>>>>> 4ffd9a7e28a50145ecb2856d3f7c2e047aead426
 ## SavedVariablesPerCharacter: LeafVE_DB
 
 Core\Constants.lua

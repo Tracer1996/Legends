@@ -1064,7 +1064,6 @@ local DIRECTED_GUILD_EMOTE_ACHIEVEMENTS = {
   },
 }
 
-<<<<<<< HEAD
 local function CaptureFirstEmoteTarget(message, patterns)
   local index
   if not message or not patterns then return nil end
@@ -1133,24 +1132,6 @@ local function DetectDirectedEmoteTarget(message)
           "^You pat (.+) on the head%.$",
           "^You pat (.+)%.$",
         })
-=======
-local function DetectDirectedEmoteTarget(message)
-  local action, target
-
-  target = smatch(message, "^You salute (.+)%.$")
-  if target then
-    action = "salute"
-  else
-    target = smatch(message, "^You bow before (.+)%.$") or smatch(message, "^You bow to (.+)%.$")
-    if target then
-      action = "bow"
-    else
-      target = smatch(message, "^You blow a kiss to (.+)%.$") or smatch(message, "^You blow a kiss at (.+)%.$")
-      if target then
-        action = "kiss"
-      else
-        target = smatch(message, "^You pat (.+)%.$")
->>>>>>> 4ffd9a7e28a50145ecb2856d3f7c2e047aead426
         if target then
           action = "pat"
         end
@@ -1162,21 +1143,12 @@ local function DetectDirectedEmoteTarget(message)
     return nil
   end
 
-<<<<<<< HEAD
   local targetKey = ResolveDirectedEmoteTargetKey(target)
   if not targetKey then
     return nil
   end
 
   local actionMap = DIRECTED_GUILD_EMOTE_ACHIEVEMENTS[targetKey]
-=======
-  target = string.lower(ShortName(Trim(target)) or "")
-  if target == "" then
-    return nil
-  end
-
-  local actionMap = DIRECTED_GUILD_EMOTE_ACHIEVEMENTS[target]
->>>>>>> 4ffd9a7e28a50145ecb2856d3f7c2e047aead426
   if not actionMap then
     return nil
   end

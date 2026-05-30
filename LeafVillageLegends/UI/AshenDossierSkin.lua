@@ -1300,65 +1300,10 @@ function LeafVE_AshenDossierSkin:CreateSmallButton(parent, text, width, height, 
 end
 
 function LeafVE_AshenDossierSkin:CreateLayoutEditorButton()
+  -- Layout editor button removed from the live UI.
   if LeafVE_AshenLayoutButton then
-    LeafVE_AshenLayoutButton:Show()
-    return
+    LeafVE_AshenLayoutButton:Hide()
   end
-
-  LeafVE_AshenDossierLayout = LeafVE_AshenDossierLayout or {}
-  LeafVE_AshenDossierLayout.editorButton = LeafVE_AshenDossierLayout.editorButton or { x = 375, y = 255 }
-
-  local b = CreateFrame("Button", "LeafVE_AshenLayoutButton", UIParent, "UIPanelButtonTemplate")
-  LeafVE_AshenLayoutButton = b
-  b:SetWidth(72)
-  b:SetHeight(22)
-  b:ClearAllPoints()
-  b:SetPoint("CENTER", UIParent, "CENTER", LeafVE_AshenDossierLayout.editorButton.x or 0, LeafVE_AshenDossierLayout.editorButton.y or 250)
-  b:SetFrameStrata("DIALOG")
-  b:SetMovable(true)
-  b:EnableMouse(true)
-  b:RegisterForDrag("LeftButton")
-  b:SetText("AB Edit")
-  if b:GetFontString() and b:GetFontString().SetFont then
-    b:GetFontString():SetFont(STANDARD_TEXT_FONT, 9, "")
-  end
-
-  b:SetScript("OnClick", function()
-    if not LeafVE_AshenLayoutButton_Dragged then
-      LeafVE_AshenDossierSkin:ToggleLayoutEditor()
-    end
-    LeafVE_AshenLayoutButton_Dragged = nil
-  end)
-
-  b:SetScript("OnDragStart", function()
-    LeafVE_AshenLayoutButton_Dragged = true
-    this:StartMoving()
-  end)
-
-  b:SetScript("OnDragStop", function()
-    this:StopMovingOrSizing()
-    LeafVE_AshenDossierLayout = LeafVE_AshenDossierLayout or {}
-    LeafVE_AshenDossierLayout.editorButton = LeafVE_AshenDossierLayout.editorButton or {}
-
-    local bx, by = this:GetCenter()
-    local ux, uy = UIParent:GetCenter()
-    if bx and by and ux and uy then
-      LeafVE_AshenDossierLayout.editorButton.x = math.floor((bx - ux) + 0.5)
-      LeafVE_AshenDossierLayout.editorButton.y = math.floor((by - uy) + 0.5)
-      LeafVE_AshenDossierSkin:Print("AB Edit button moved: x=" .. LeafVE_AshenDossierLayout.editorButton.x .. " y=" .. LeafVE_AshenDossierLayout.editorButton.y)
-    end
-  end)
-
-  b:SetScript("OnEnter", function()
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Ashen Banner Layout Editor")
-    GameTooltip:AddLine("Click: open editor", 1, 1, 1)
-    GameTooltip:AddLine("Drag: move this button", 1, 0.82, 0.3)
-    GameTooltip:Show()
-  end)
-  b:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-  b:Show()
 end
 
 function LeafVE_AshenDossierSkin:ToggleLayoutEditor()
