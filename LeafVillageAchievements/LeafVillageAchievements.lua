@@ -1665,9 +1665,6 @@ local ACHIEVEMENT_PROGRESS_DEF = {
   casual_bandage_25  = {counter="bandages", goal=25},
   casual_bandage_100 = {counter="bandages", goal=100},
   -- Loots tracked via CHAT_MSG_LOOT
-  casual_loot_100  = {counter="loots", goal=100},
-  casual_loot_1000 = {counter="loots", goal=1000},
-  casual_loot_5000 = {counter="loots", goal=5000},
   -- Trades tracked via TRADE_CLOSED
   casual_trade_10 = {counter="trades", goal=10},
   -- Reputation milestones (tracked via UPDATE_FACTION)
@@ -1676,8 +1673,6 @@ local ACHIEVEMENT_PROGRESS_DEF = {
   reputation_exalted_10 = {counter="exaltedFactions", goal=10},
   -- Generic kill milestones tracked via CHAT_MSG_COMBAT_HOSTILE_DEATH (player or party/raid member kill)
   kill_01    = {counter="genericKills", goal=1},
-  kill_100   = {counter="genericKills", goal=100},
-  kill_500   = {counter="genericKills", goal=500},
   kill_1000  = {counter="genericKills", goal=1000},
   kill_10000 = {counter="genericKills", goal=10000},
   kill_50000 = {counter="genericKills", goal=50000},
@@ -2344,7 +2339,7 @@ end
 
 function LeafVE_AchTest:ShowAchievementPopup(achievementID)
   local achievement = ACHIEVEMENTS[achievementID]
-  if not achievement then return end
+  if not achievement or achievement.disabled == true then return end
 
   local popup = CreateFrame("Frame", nil, UIParent)
   popup:SetWidth(500)
@@ -2762,6 +2757,8 @@ function LeafVE_AchTest:AdminGrantAchievement(targetInput, achInput, requireGuil
 end
 
 function LeafVE_AchTest:AwardAchievement(achievementID, silent)
+  local disabledCheck = ACHIEVEMENTS and ACHIEVEMENTS[achievementID]
+  if disabledCheck and disabledCheck.disabled == true then return end
   local playerName = UnitName("player")
   if not playerName or playerName == "" then return end
   local me = ShortName(playerName)
@@ -3157,6 +3154,28 @@ local BOSS_ACHIEVEMENTS = {
   ["Mephistroth"] = "raid_ukh_mephistroth",
 }
 
+-- Reduce spam: do not show/award low-value loot achievements, low kill milestones,
+-- or individual raid boss achievements. Raid bosses still track progress toward
+-- the raid-clear achievement and only the clear announces.
+local DISABLED_SPAM_ACHIEVEMENTS = {
+  casual_loot_100 = true, casual_loot_1000 = true, casual_loot_5000 = true,
+  kill_100 = true, kill_500 = true,
+}
+for disabledAchId in pairs(DISABLED_SPAM_ACHIEVEMENTS) do
+  if ACHIEVEMENTS[disabledAchId] then
+    ACHIEVEMENTS[disabledAchId].hidden = true
+    ACHIEVEMENTS[disabledAchId].disabled = true
+  end
+end
+local RAID_BOSS_ACHIEVEMENT_IDS = {}
+for bossName, bossAchId in pairs(BOSS_ACHIEVEMENTS) do
+  if BOSS_TO_RAID[bossName] and ACHIEVEMENTS[bossAchId] then
+    RAID_BOSS_ACHIEVEMENT_IDS[bossAchId] = true
+    ACHIEVEMENTS[bossAchId].hidden = true
+    ACHIEVEMENTS[bossAchId].disabled = true
+  end
+end
+
 -- ==========================================
 -- BOSS TRACKING & BACKLOG LOGIC
 -- ==========================================
@@ -3404,9 +3423,10 @@ function LeafVE_AchTest:CheckBossKill(bossName)
   local resolvedBossName = ResolveBossName(bossName)
   -- Ignore regular elite mobs that are not tracked bosses
   if not resolvedBossName then return end
-  -- Award individual raid boss achievement if mapped
-  if BOSS_ACHIEVEMENTS[resolvedBossName] then
-    Debug("Raid boss kill: "..resolvedBossName)
+  -- Award only non-raid standalone boss achievements. Raid bosses are tracked
+  -- as criteria and only award when the whole raid is cleared.
+  if BOSS_ACHIEVEMENTS[resolvedBossName] and not BOSS_TO_RAID[resolvedBossName] then
+    Debug("Boss kill: "..resolvedBossName)
     self:AwardAchievement(BOSS_ACHIEVEMENTS[resolvedBossName])
   end
   -- Track dungeon progress (awards completion when all bosses done)
@@ -3967,7 +3987,7 @@ function LeafVE_AchTest.UI:Build()
     local playerAchievements = LeafVE_AchTest:GetPlayerAchievements(me)
     local availableAchievements = {}
     for achID, achData in pairs(ACHIEVEMENTS) do
-      if not playerAchievements[achID] then
+      if not playerAchievements[achID] and achData.hidden ~= true and achData.disabled ~= true then
         table.insert(availableAchievements, achID)
       end
     end
@@ -4959,6 +4979,7 @@ function LeafVE_AchTest.UI:RefreshAchievements()
     activeCategory = "Companions"
   end
   for achID, achData in pairs(ACHIEVEMENTS) do
+    if achData.hidden ~= true then
     local completed = playerAchievements[achID] ~= nil
     local matchesCategory = activeCategory == "All" or achData.category == activeCategory
     local matchesSearch = true
@@ -4984,6 +5005,7 @@ function LeafVE_AchTest.UI:RefreshAchievements()
     if matchesCategory and matchesSearch and matchesCompanionFilter then
       local timestamp = completed and playerAchievements[achID].timestamp or 0
       table.insert(achievementList, {id=achID, data=achData, completed=completed, timestamp=timestamp})
+    end
     end
   end
 
@@ -6018,14 +6040,8 @@ lootFrame:SetScript("OnEvent", function()
         if total >= 1000 then LeafVE_AchTest:AwardAchievement("casual_fish_1000") end
       end
     end
-    -- Count all looted items for casual_loot_* achievements
-    local me = ShortName(UnitName("player"))
-    if me and string.find(string.lower(arg1 or ""), "you receive loot") then
-      local lootTotal = IncrCounter(me, "loots")
-      if lootTotal >= 100  then LeafVE_AchTest:AwardAchievement("casual_loot_100")  end
-      if lootTotal >= 1000 then LeafVE_AchTest:AwardAchievement("casual_loot_1000") end
-      if lootTotal >= 5000 then LeafVE_AchTest:AwardAchievement("casual_loot_5000") end
-    end
+    -- Generic looter achievements were intentionally disabled as too spammy.
+    -- Fishing loot above still counts for fishing achievements.
   elseif event == "PLAYER_REGEN_DISABLED" then
     -- Entering combat; can't be fishing, so clear the bobber/cast flags.
     fishingBobberActive = false
@@ -6204,11 +6220,12 @@ minimapButton:SetFrameLevel(8)
 minimapButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
 
 local MINIMAP_ICON_CANDIDATES = {
-  "Interface\\Icons\\Spell_Nature_ResistNature",
+  "Interface\\AddOns\\LeafVillageAchievements\\tga\\achievement_popup_icon_ring",
+  "Interface\\AddOns\\LeafVillageLegends\\Textures\\ashen_rank_1",
+  "Interface\\Icons\\INV_Misc_Rune_06",
   "Interface\\Icons\\INV_Misc_Book_09",
   "Interface\\Icons\\INV_Misc_QuestionMark",
 }
-
 local function ApplyMinimapIcon(tex)
   for _, path in ipairs(MINIMAP_ICON_CANDIDATES) do
     tex:SetTexture(path)

@@ -17,8 +17,6 @@ end
 -- Generic kill count milestones
 local GENERIC_KILLS = {
   {id="kill_01",     name="First Blood",       desc="Defeat your first enemy.",              value=1,      points=5},
-  {id="kill_100",    name="Endless War",        desc="Defeat 100 enemies.",                   value=100,    points=10},
-  {id="kill_500",    name="Warmaster",          desc="Defeat 500 enemies.",                   value=500,    points=20},
   {id="kill_1000",   name="Massacre Master",    desc="Defeat 1,000 enemies.",                 value=1000,   points=25},
   {id="kill_10000",  name="Unstoppable",        desc="Defeat 10,000 enemies.",                value=10000,  points=50},
   {id="kill_50000",  name="Godslayer",          desc="Defeat 50,000 enemies.",                value=50000,  points=100},

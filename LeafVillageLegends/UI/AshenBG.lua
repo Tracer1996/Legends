@@ -6,12 +6,22 @@ ASHEN_BG_TILE_COLS = 8
 
 function LeafVE_GetAshenBGLayout()
   LeafVE_AshenBGLayout = LeafVE_AshenBGLayout or {}
-  if LeafVE_AshenBGLayout.x == nil then LeafVE_AshenBGLayout.x = 510 end
-  if LeafVE_AshenBGLayout.y == nil then LeafVE_AshenBGLayout.y = 20 end
-  if LeafVE_AshenBGLayout.w == nil then LeafVE_AshenBGLayout.w = -1040 end
-  if LeafVE_AshenBGLayout.h == nil then LeafVE_AshenBGLayout.h = -20 end
-  if LeafVE_AshenBGLayout.tileW == nil then LeafVE_AshenBGLayout.tileW = 137 end
-  if LeafVE_AshenBGLayout.tileH == nil then LeafVE_AshenBGLayout.tileH = 92 end
+  if LeafVE_AshenBGLayout.__layoutVersion ~= 2 then
+    LeafVE_AshenBGLayout.x = 0
+    LeafVE_AshenBGLayout.y = 0
+    LeafVE_AshenBGLayout.w = 0
+    LeafVE_AshenBGLayout.h = 0
+    LeafVE_AshenBGLayout.tileW = 0
+    LeafVE_AshenBGLayout.tileH = 0
+    LeafVE_AshenBGLayout.alpha = 1
+    LeafVE_AshenBGLayout.__layoutVersion = 2
+  end
+  if LeafVE_AshenBGLayout.x == nil then LeafVE_AshenBGLayout.x = 0 end
+  if LeafVE_AshenBGLayout.y == nil then LeafVE_AshenBGLayout.y = 0 end
+  if LeafVE_AshenBGLayout.w == nil then LeafVE_AshenBGLayout.w = 0 end
+  if LeafVE_AshenBGLayout.h == nil then LeafVE_AshenBGLayout.h = 0 end
+  if LeafVE_AshenBGLayout.tileW == nil then LeafVE_AshenBGLayout.tileW = 0 end
+  if LeafVE_AshenBGLayout.tileH == nil then LeafVE_AshenBGLayout.tileH = 0 end
   if LeafVE_AshenBGLayout.alpha == nil then LeafVE_AshenBGLayout.alpha = 1 end
   return LeafVE_AshenBGLayout
 end
@@ -36,7 +46,8 @@ function LeafVE_CreateAshenTileBackground(parent)
 
   local holderW = pw + (cfg.w or 0)
   local holderH = ph + (cfg.h or 0)
-  local autoTile = holderH / ASHEN_BG_TILE_ROWS
+  local autoTileW = holderW / ASHEN_BG_TILE_COLS
+  local autoTileH = holderH / ASHEN_BG_TILE_ROWS
   local tileW, tileH, totalW, totalH, offsetX, offsetY
 
   parent._ashenBgHolder:ClearAllPoints()
@@ -45,10 +56,10 @@ function LeafVE_CreateAshenTileBackground(parent)
   parent._ashenBgHolder:SetHeight(holderH)
   parent._ashenBgHolder:Show()
 
-  -- Default mode keeps the art unstretched: every 256x256 source tile displays square.
-  -- Use /abbgtile w h only if you intentionally want manual non-square scaling.
-  if cfg.tileW and cfg.tileW ~= 0 then tileW = cfg.tileW else tileW = autoTile end
-  if cfg.tileH and cfg.tileH ~= 0 then tileH = cfg.tileH else tileH = autoTile end
+  -- Default mode anchors/scales the tiled background to the current UI frame.
+  -- Use /abbgtile w h only if you intentionally want manual tile sizing.
+  if cfg.tileW and cfg.tileW ~= 0 then tileW = cfg.tileW else tileW = autoTileW end
+  if cfg.tileH and cfg.tileH ~= 0 then tileH = cfg.tileH else tileH = autoTileH end
 
   parent._ashenBgTileW = tileW
   parent._ashenBgTileH = tileH
@@ -117,7 +128,7 @@ function LeafVE_NudgeAshenBG(field, amount)
 end
 
 function LeafVE_ResetAshenBG()
-  LeafVE_AshenBGLayout = { x = 510, y = 20, w = -1040, h = -20, tileW = 137, tileH = 92, alpha = 1 }
+  LeafVE_AshenBGLayout = { x = 0, y = 0, w = 0, h = 0, tileW = 0, tileH = 0, alpha = 1, __layoutVersion = 2 }
   LeafVE_RefreshAshenBG()
   LeafVE_DumpAshenBG()
 end

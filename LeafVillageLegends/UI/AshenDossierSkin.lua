@@ -94,12 +94,14 @@ LeafVE_AshenDossierSkin.PAGE_HEADER_LAYOUT_KEYS = {
   welcome = "headerWelcome",
   workOrderRep = "headerRep",
   shinobiDuties = "headerWeek",
+  bannerDutyBoard = "headerRep",
+  bannerDutyLive = "headerRoster",
 }
 
 LeafVE_AshenDossierSkin.PAGE_HEADER_TEXTURES = {
   me = "th_01",
-  leaderWeek = "th_02",
-  leaderLife = "th_03",
+  leaderWeek = "weekly_leaderboard_header",
+  leaderLife = "lifetime_leaderboard_header",
   achievements = "th_04",
   shinobiReputation = "th_05",
   badges = "th_06",
@@ -109,6 +111,8 @@ LeafVE_AshenDossierSkin.PAGE_HEADER_TEXTURES = {
   welcome = "th_10",
   workOrderRep = "th_11",
   shinobiDuties = "th_11",
+  bannerDutyBoard = "th_11",
+  bannerDutyLive = "th_08",
 }
 
 LeafVE_AshenDossierSkin.PAGE_HEADER_EDITOR_PIECES = {
@@ -1140,36 +1144,18 @@ function LeafVE_AshenDossierSkin:GetCropRect(name)
 end
 
 function LeafVE_AshenDossierSkin:ApplyPageHeaderToPanel(panel)
-  if not panel or not panel._ashenHeaderBG then return end
+  -- v17.1: all page headers are text-only again.
+  -- The old custom .tga header art could fail to render or cover the UI on Vanilla/Turtle.
+  -- Keep the font strings visible and keep the header texture hidden for every panel.
+  if not panel then return end
   local headerBG = panel._ashenHeaderBG
-  local piece = self:GetHeaderLayoutPiece(panel)
-  local texName = self:GetHeaderTextureName(panel)
-  local x = self:GetVal(piece, "x") or -15
-  local y = self:GetVal(piece, "y") or -10
-  local w = self:GetVal(piece, "w") or 420
-  local h = self:GetVal(piece, "h") or 50
-  local bleed = self:GetVal(piece, "bleed") or 0
-  if w < 32 then w = 32 end
-  if h < 16 then h = 16 end
-  headerBG:Show()
-  headerBG:ClearAllPoints()
-  headerBG:SetPoint("TOP", panel, "TOP", x, y)
-  headerBG:SetWidth(w)
-  headerBG:SetHeight(h)
-  headerBG:SetTexture(self:Tex(texName))
-  headerBG:SetBlendMode("BLEND")
-  headerBG:SetVertexColor(1, 1, 1, 1)
-  local l, r, t, btm = self:GetCropRect(texName)
-  local b = bleed / 256
-  if b < 0 then b = 0 end
-  if b > 0.2 then b = 0.2 end
-  if (r - l) > (b * 2) and (btm - t) > (b * 2) then
-    headerBG:SetTexCoord(l + b, r - b, t + b, btm - b)
-  else
-    headerBG:SetTexCoord(l, r, t, btm)
+  if headerBG then
+    headerBG:Hide()
+    if headerBG.SetTexture then headerBG:SetTexture(nil) end
+    if headerBG.SetAlpha then headerBG:SetAlpha(0) end
   end
-  if panel._ashenHeaderTitle and panel._ashenHeaderTitle.Hide then panel._ashenHeaderTitle:Hide() end
-  if panel._ashenHeaderSubtitle and panel._ashenHeaderSubtitle.Hide then panel._ashenHeaderSubtitle:Hide() end
+  if panel._ashenHeaderTitle and panel._ashenHeaderTitle.Show then panel._ashenHeaderTitle:Show() end
+  if panel._ashenHeaderSubtitle and panel._ashenHeaderSubtitle.Show then panel._ashenHeaderSubtitle:Show() end
 end
 
 function LeafVE_AshenDossierSkin:ApplyPageHeaderToAllPanels()

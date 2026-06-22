@@ -5,7 +5,7 @@ AtlasLoot_Data = AtlasLoot_Data or {}
 LeafVE = LeafVE or {}
 LeafVE.name = "LeafVillageLegends"
 LeafVE.prefix = "LeafVE"
-LeafVE.version = "16.5"
+LeafVE.version = "17.1"
 LeafVE.allianceEnabled = false
 LeafVE.isAllianceStandalone = false
 LeafVE.guildBankOwner = "Methllyy"
@@ -3633,6 +3633,8 @@ local function EnsureDB()
   if LeafVE_DB.options.enablePointNotifications == nil then LeafVE_DB.options.enablePointNotifications = true end
   if LeafVE_DB.options.enableBadgeNotifications == nil then LeafVE_DB.options.enableBadgeNotifications = true end
   if LeafVE_DB.options.enableWorkOrderChatMessages == nil then LeafVE_DB.options.enableWorkOrderChatMessages = true end
+  if LeafVE_DB.options.enableBannerDutyNotifications == nil then LeafVE_DB.options.enableBannerDutyNotifications = true end
+  if LeafVE_DB.options.addonMusicEnabled == nil then LeafVE_DB.options.addonMusicEnabled = true end
   if LeafVE.allianceEnabled == true then
     if LeafVE_DB.options.allianceAutoJoin == nil then LeafVE_DB.options.allianceAutoJoin = true end
   else
@@ -14096,6 +14098,25 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
   end
 
+  if message == "BANNERDUTYREQ" or message == "BANNERDUTYREQ_FORCE" then
+    local forceRespond = (message == "BANNERDUTYREQ_FORCE")
+    local me = ShortName(UnitName("player"))
+    if me and sender ~= me then
+      self:BroadcastBannerDutySnapshot(forceRespond)
+    end
+    return
+  end
+
+  if string.sub(message, 1, 11) == "BANNERDUTY:" then
+    self:HandleIncomingBannerDuty(string.sub(message, 12), sender, false)
+    return
+  end
+
+  if string.sub(message, 1, 15) == "BANNERDUTYSYNC:" then
+    self:HandleIncomingBannerDuty(string.sub(message, 16), sender, true)
+    return
+  end
+
   if message == "WORKORDERREQ" or message == "WORKORDERREQ_FORCE" then
     local forceRespond = (message == "WORKORDERREQ_FORCE")
     local me = ShortName(UnitName("player"))
@@ -15750,6 +15771,8 @@ function LeafVE:EnsureAddonMusicDriver()
 end
 
 function LeafVE:StartAddonMusic()
+  EnsureDB()
+  if LeafVE_DB and LeafVE_DB.options and LeafVE_DB.options.addonMusicEnabled == false then return end
   self:EnsureAddonMusicDriver()
   local originalVolume = self:GetCurrentMusicVolume()
   local originalEnabled = self:GetMusicCVar({"EnableMusic", "Sound_EnableMusic"}, "1")
@@ -15787,6 +15810,8 @@ function LeafVE:StopAddonMusic()
 end
 
 function LeafVE:StartRaiseBannerMusic()
+  EnsureDB()
+  if LeafVE_DB and LeafVE_DB.options and LeafVE_DB.options.addonMusicEnabled == false then return end
   self:EnsureAddonMusicDriver()
   if not self.addonMusicState then
     self:StartAddonMusic()
@@ -16109,7 +16134,7 @@ function LeafVE.UI:HideAllMainPanels()
   local panelNames = {
     "me", "shoutouts", "leaderWeek", "leaderLife", "roster", "history", "badges",
     "titles", "achievements", "shinobiReputation", "options", "admin", "liveHistory",
-    "guildEvents", "workOrders", "shinobiDuties", "workOrderRep", "welcome", "join"
+    "guildEvents", "workOrders", "shinobiDuties", "bannerDutyBoard", "bannerDutyLive", "workOrderRep", "welcome", "join"
   }
 
   for i = 1, table.getn(panelNames) do
@@ -16499,11 +16524,13 @@ local LEAFVE_GROUPED_NAV = {
   },
   {
     key = "orders",
-    label = "Orders",
-    width = 70,
+    label = "Banner Duties",
+    width = 118,
     defaultTab = "shinobiDuties",
     subtabs = {
-      {tab = "shinobiDuties", label = "Banner Duties", width = 98},
+      {tab = "shinobiDuties", label = "Weekly Duties", width = 102},
+      {tab = "bannerDutyBoard", label = "Bulletin Board", width = 104},
+      {tab = "bannerDutyLive", label = "Live Updates", width = 92},
       {tab = "workOrderRep", label = "Reputation", width = 84},
     },
   },
@@ -16543,6 +16570,8 @@ local LEAFVE_GROUPED_TAB_TO_CATEGORY = {
   shoutouts = "character",
   guildEvents = "calendar",
   shinobiDuties = "orders",
+  bannerDutyBoard = "orders",
+  bannerDutyLive = "orders",
   workOrderRep = "orders",
   options = "options",
   history = "options",
@@ -28177,6 +28206,700 @@ function BuildWorkOrdersPanel(panel)
   divider:SetVertexColor(0.35, 0.35, 0.38, 0.5)
 end
 
+
+-------------------------------------------------
+-- Banner Duties bulletin board + live updates
+-------------------------------------------------
+local BANNER_DUTY_MAX_TEXT = 140
+local BANNER_DUTY_LIVE_MAX = 80
+
+local function BannerDutyDefaultRepForCategory(category)
+  local c = Lower(tostring(category or ""))
+  if string.find(c, "lfg") or string.find(c, "dungeon") or string.find(c, "group") or string.find(c, "raid") then
+    return 10
+  end
+  return 5
+end
+
+local function BannerDutyGetLeaderBonus()
+  EnsureDB()
+  return math.max(0, math.floor(tonumber(LeafVE_DB.options and LeafVE_DB.options.bannerDutyLeaderBonusRep) or 0))
+end
+
+local function BannerDutyAwardOwnerRepEnabled()
+  EnsureDB()
+  -- Default OFF: the poster/leader confirms completion, but does not farm rep for their own request.
+  -- Helpers/group members receive Banner Rep automatically. This can be enabled later from options if desired.
+  return LeafVE_DB.options and LeafVE_DB.options.bannerDutyAwardOwnerRep == true
+end
+
+local function BannerDutyGetRepAmount(entry)
+  local amount = tonumber(entry and entry.repAmount)
+  if amount and amount > 0 then
+    return math.floor(amount)
+  end
+  return BannerDutyDefaultRepForCategory(entry and entry.category)
+end
+
+local function SerializeBannerDutyMembers(members)
+  local out = {}
+  if type(members) ~= "table" then return "" end
+  for name, data in pairs(members) do
+    local shortName = ShortName(name)
+    if shortName and type(data) == "table" and data.active ~= false then
+      local role = Trim(tostring(data.role or "Helper"))
+      if role == "" then role = "Helper" end
+      table.insert(out, EncodeTalentField(shortName) .. "=" .. EncodeTalentField(role))
+    end
+  end
+  table.sort(out)
+  return table.concat(out, ",")
+end
+
+local function DecodeBannerDutyMembers(raw)
+  local members = {}
+  raw = tostring(raw or "")
+  if raw == "" then return members end
+  local chunks = SplitByLiteralSep(raw, ",")
+  for i = 1, table.getn(chunks) do
+    local chunk = chunks[i] or ""
+    local eq = string.find(chunk, "=", 1, true)
+    local name, role
+    if eq then
+      name = DecodeTalentField(string.sub(chunk, 1, eq - 1))
+      role = DecodeTalentField(string.sub(chunk, eq + 1))
+    else
+      name = DecodeTalentField(chunk)
+      role = "Helper"
+    end
+    name = ShortName(name)
+    if name and name ~= "" then
+      role = Trim(role or "Helper")
+      if role == "" then role = "Helper" end
+      members[name] = { role = role, joinedAt = 0, active = true }
+    end
+  end
+  return members
+end
+
+local function SerializeBannerDutyAwards(awards)
+  local out = {}
+  if type(awards) ~= "table" then return "" end
+  for name, data in pairs(awards) do
+    local shortName = ShortName(name)
+    if shortName and type(data) == "table" then
+      local amount = math.max(0, math.floor(tonumber(data.amount) or 0))
+      local updatedAt = math.max(0, math.floor(tonumber(data.updatedAt) or 0))
+      if amount > 0 and updatedAt > 0 then
+        table.insert(out, EncodeTalentField(shortName) .. "=" .. tostring(amount) .. "=" .. tostring(updatedAt))
+      end
+    end
+  end
+  table.sort(out)
+  return table.concat(out, ",")
+end
+
+local function DecodeBannerDutyAwards(raw)
+  local awards = {}
+  raw = tostring(raw or "")
+  if raw == "" then return awards end
+  local chunks = SplitByLiteralSep(raw, ",")
+  for i = 1, table.getn(chunks) do
+    local fields = SplitByLiteralSep(chunks[i] or "", "=")
+    local name = ShortName(DecodeTalentField(fields[1] or ""))
+    local amount = tonumber(fields[2]) or 0
+    local updatedAt = tonumber(fields[3]) or 0
+    if name and amount > 0 and updatedAt > 0 then
+      awards[name] = { amount = amount, updatedAt = updatedAt }
+    end
+  end
+  return awards
+end
+
+local function CountBannerDutyMembers(entry)
+  local n = 0
+  if type(entry) ~= "table" or type(entry.members) ~= "table" then return 0 end
+  for _, data in pairs(entry.members) do
+    if type(data) == "table" and data.active ~= false then n = n + 1 end
+  end
+  return n
+end
+
+local function BuildBannerDutyMemberText(entry)
+  local names = {}
+  if type(entry) == "table" and type(entry.members) == "table" then
+    for name, data in pairs(entry.members) do
+      if type(data) == "table" and data.active ~= false then
+        table.insert(names, tostring(name) .. " (" .. tostring(data.role or "Helper") .. ")")
+      end
+    end
+  end
+  table.sort(names)
+  if table.getn(names) == 0 then
+    return "|cFF777777No one has joined yet.|r"
+  end
+  local joined = table.concat(names, ", ")
+  if string.len(joined) > 76 then joined = string.sub(joined, 1, 73) .. "..." end
+  return "|cFFAAAAAAJoined:|r |cFFFFFFFF" .. joined .. "|r"
+end
+
+function LeafVE:EnsureBannerDutyDB()
+  EnsureDB()
+  LeafVE_GlobalDB.bannerDuties = LeafVE_GlobalDB.bannerDuties or {}
+  LeafVE_GlobalDB.bannerDutyMeta = LeafVE_GlobalDB.bannerDutyMeta or { updatedAt = 0 }
+  LeafVE_GlobalDB.bannerDutyLive = LeafVE_GlobalDB.bannerDutyLive or {}
+  return LeafVE_GlobalDB.bannerDuties
+end
+
+function LeafVE:EnsureBannerDutyLiveDB()
+  EnsureDB()
+  LeafVE_GlobalDB.bannerDutyLive = LeafVE_GlobalDB.bannerDutyLive or {}
+  return LeafVE_GlobalDB.bannerDutyLive
+end
+
+function LeafVE:MakeBannerDutyId(author, createdAt)
+  return tostring(author or "Unknown") .. "-" .. tostring(createdAt or Now()) .. "-" .. tostring(math.random(1000, 9999))
+end
+
+function LeafVE:AddBannerDutyLiveEvent(eventType, actor, taskText, detail, eventAt, eventId)
+  local live = self:EnsureBannerDutyLiveDB()
+  eventAt = tonumber(eventAt) or Now()
+  eventId = tostring(eventId or (tostring(eventType or "event") .. "-" .. tostring(eventAt) .. "-" .. tostring(math.random(1000, 9999))))
+  for i = 1, table.getn(live) do
+    if live[i] and live[i].id == eventId then return end
+  end
+  table.insert(live, 1, {
+    id = eventId,
+    type = tostring(eventType or "update"),
+    actor = ShortName(actor or "") or tostring(actor or "?"),
+    task = Trim(tostring(taskText or "")),
+    detail = Trim(tostring(detail or "")),
+    at = eventAt,
+  })
+  while table.getn(live) > BANNER_DUTY_LIVE_MAX do
+    table.remove(live)
+  end
+  if LeafVE.UI and LeafVE.UI.RefreshBannerDutyLivePanel then
+    LeafVE.UI:RefreshBannerDutyLivePanel()
+  end
+end
+
+function LeafVE:StoreBannerDuty(entry, fromSync)
+  if type(entry) ~= "table" or not entry.id then return nil end
+  local board = self:EnsureBannerDutyDB()
+  local id = tostring(entry.id)
+  local existing = board[id]
+  local updatedAt = tonumber(entry.updatedAt or entry.createdAt) or Now()
+  if existing and (tonumber(existing.updatedAt or existing.createdAt) or 0) > updatedAt then
+    return existing
+  end
+  entry.id = id
+  entry.author = ShortName(entry.author or "") or tostring(entry.author or "Unknown")
+  entry.category = Trim(entry.category or "General")
+  if entry.category == "" then entry.category = "General" end
+  entry.text = Trim(entry.text or "")
+  if string.len(entry.text) > BANNER_DUTY_MAX_TEXT then entry.text = string.sub(entry.text, 1, BANNER_DUTY_MAX_TEXT) end
+  entry.createdAt = tonumber(entry.createdAt) or updatedAt
+  entry.updatedAt = updatedAt
+  entry.closed = entry.closed == true or entry.closed == "1"
+  entry.members = type(entry.members) == "table" and entry.members or {}
+  entry.repAmount = math.max(0, math.floor(tonumber(entry.repAmount) or BannerDutyDefaultRepForCategory(entry.category)))
+  entry.leaderBonus = math.max(0, math.floor(tonumber(entry.leaderBonus) or BannerDutyGetLeaderBonus()))
+  board[id] = entry
+  LeafVE_GlobalDB.bannerDutyMeta.updatedAt = Now()
+
+  if entry.lastEventType and entry.lastEventType ~= "" then
+    local evId = tostring(entry.id) .. ":" .. tostring(entry.lastEventAt or entry.updatedAt or updatedAt) .. ":" .. tostring(entry.lastEventType)
+    self:AddBannerDutyLiveEvent(entry.lastEventType, entry.lastEventActor or entry.author, entry.text, entry.lastEventDetail or "", entry.lastEventAt or entry.updatedAt, evId)
+  end
+
+  if type(entry.repAwards) == "table" then
+    for awardName, awardData in pairs(entry.repAwards) do
+      if type(awardData) == "table" then
+        self:StoreShinobiDutyRepBonus(awardName, awardData.amount or 0, awardData.updatedAt or entry.updatedAt or Now(), true)
+      end
+    end
+  end
+
+  if not fromSync and SendAddonMessage then
+    self:BroadcastBannerDuty(entry, false)
+  end
+
+  if LeafVE.UI and LeafVE.UI.RefreshBannerDutyBoard then
+    LeafVE.UI:RefreshBannerDutyBoard()
+  elseif LeafVE.UI and LeafVE.UI.Refresh then
+    LeafVE.UI:Refresh()
+  end
+  return entry
+end
+
+function LeafVE:EncodeBannerDuty(entry)
+  local sep = TALENT_RECORD_SEP
+  return table.concat({
+    EncodeTalentField(entry.id or ""),
+    EncodeTalentField(entry.author or ""),
+    tostring(entry.createdAt or Now()),
+    tostring(entry.updatedAt or entry.createdAt or Now()),
+    EncodeTalentField(entry.category or "General"),
+    EncodeTalentField(entry.text or ""),
+    entry.closed and "1" or "0",
+    EncodeTalentField(SerializeBannerDutyMembers(entry.members)),
+    tostring(math.max(0, math.floor(tonumber(entry.repAmount) or BannerDutyDefaultRepForCategory(entry.category)))),
+    tostring(math.max(0, math.floor(tonumber(entry.leaderBonus) or BannerDutyGetLeaderBonus()))),
+    EncodeTalentField(entry.lastEventType or ""),
+    EncodeTalentField(entry.lastEventActor or ""),
+    tostring(entry.lastEventAt or entry.updatedAt or Now()),
+    EncodeTalentField(entry.lastEventDetail or ""),
+    EncodeTalentField(SerializeBannerDutyAwards(entry.repAwards))
+  }, sep)
+end
+
+function LeafVE:DecodeBannerDuty(payload)
+  local fields = SplitByLiteralSep(payload or "", TALENT_RECORD_SEP)
+  if table.getn(fields) < 7 then return nil end
+  return {
+    id = DecodeTalentField(fields[1] or ""),
+    author = DecodeTalentField(fields[2] or ""),
+    createdAt = tonumber(fields[3]) or Now(),
+    updatedAt = tonumber(fields[4]) or Now(),
+    category = DecodeTalentField(fields[5] or "General"),
+    text = DecodeTalentField(fields[6] or ""),
+    closed = fields[7] == "1",
+    members = DecodeBannerDutyMembers(DecodeTalentField(fields[8] or "")),
+    repAmount = tonumber(fields[9]) or nil,
+    leaderBonus = tonumber(fields[10]) or nil,
+    lastEventType = DecodeTalentField(fields[11] or ""),
+    lastEventActor = DecodeTalentField(fields[12] or ""),
+    lastEventAt = tonumber(fields[13]) or nil,
+    lastEventDetail = DecodeTalentField(fields[14] or ""),
+    repAwards = DecodeBannerDutyAwards(DecodeTalentField(fields[15] or "")),
+  }
+end
+
+function LeafVE:BroadcastBannerDuty(entry, asSync)
+  if not entry or not SendAddonMessage then return end
+  local prefix = asSync and "BANNERDUTYSYNC:" or "BANNERDUTY:"
+  SendAddonMessage("LeafVE", prefix .. self:EncodeBannerDuty(entry), "GUILD")
+end
+
+function LeafVE:BroadcastBannerDutySnapshot(force)
+  local board = self:EnsureBannerDutyDB()
+  local sent = 0
+  for _, entry in pairs(board) do
+    if type(entry) == "table" and not entry.closed then
+      self:BroadcastBannerDuty(entry, true)
+      sent = sent + 1
+      if not force and sent >= 8 then break end
+    end
+  end
+end
+
+function LeafVE:PostBannerDuty(category, text)
+  EnsureDB()
+  local me = ShortName(UnitName("player")) or "Unknown"
+  local now = Now()
+  text = Trim(text or "")
+  if text == "" then
+    Print("|cFFFFAA00Banner Duties:|r Enter a task before posting.")
+    return nil
+  end
+  category = Trim(category or "General")
+  if category == "" then category = "General" end
+  local entry = {
+    id = self:MakeBannerDutyId(me, now),
+    author = me,
+    createdAt = now,
+    updatedAt = now,
+    category = category,
+    text = text,
+    closed = false,
+    members = {},
+    repAmount = BannerDutyDefaultRepForCategory(category),
+    leaderBonus = BannerDutyGetLeaderBonus(),
+    lastEventType = "posted",
+    lastEventActor = me,
+    lastEventAt = now,
+    lastEventDetail = "New task posted",
+  }
+  self:StoreBannerDuty(entry, false)
+  Print("|cFFFFD700Banner Duties:|r Posted new task: |cFFFFFFFF" .. entry.text .. "|r")
+  return entry
+end
+
+function LeafVE:JoinBannerDuty(id, role)
+  local board = self:EnsureBannerDutyDB()
+  local entry = board and board[id]
+  if not entry or entry.closed then return end
+  local me = ShortName(UnitName("player")) or "Unknown"
+  if Lower(me) == Lower(tostring(entry.author or "")) then
+    Print("|cFFFFAA00Banner Duties:|r The task owner is already counted as the leader and does not need to join.")
+    return
+  end
+  role = Trim(role or "Helper")
+  if role == "" then role = "Helper" end
+  entry.members = type(entry.members) == "table" and entry.members or {}
+  entry.members[me] = { role = role, joinedAt = Now(), active = true }
+  entry.updatedAt = Now()
+  entry.lastEventType = "joined"
+  entry.lastEventActor = me
+  entry.lastEventAt = entry.updatedAt
+  entry.lastEventDetail = "joined as " .. role
+  self:StoreBannerDuty(entry, false)
+end
+
+function LeafVE:LeaveBannerDuty(id)
+  local board = self:EnsureBannerDutyDB()
+  local entry = board and board[id]
+  if not entry or entry.closed then return end
+  local me = ShortName(UnitName("player")) or "Unknown"
+  if type(entry.members) == "table" then
+    entry.members[me] = nil
+  end
+  entry.updatedAt = Now()
+  entry.lastEventType = "left"
+  entry.lastEventActor = me
+  entry.lastEventAt = entry.updatedAt
+  entry.lastEventDetail = "left the task"
+  self:StoreBannerDuty(entry, false)
+end
+
+function LeafVE:CompleteBannerDuty(id)
+  local board = self:EnsureBannerDutyDB()
+  local entry = board and board[id]
+  if not entry or entry.closed then return end
+  local me = ShortName(UnitName("player")) or "Unknown"
+  local author = ShortName(entry.author or "") or me
+  if Lower(me) ~= Lower(author) and not LeafVE:IsAdminRank() then
+    Print("|cFFFFAA00Banner Duties:|r Only the task leader or an officer can mark this complete.")
+    return
+  end
+
+  local eligibleMemberCount = 0
+  if type(entry.members) == "table" then
+    for name, data in pairs(entry.members) do
+      if type(data) == "table" and data.active ~= false and Lower(tostring(name or "")) ~= Lower(author) then
+        eligibleMemberCount = eligibleMemberCount + 1
+      end
+    end
+  end
+  if eligibleMemberCount <= 0 then
+    Print("|cFFFFAA00Banner Duties:|r Add at least one helper/group member before completing this task. Posting alone cannot award Banner Rep.")
+    return
+  end
+
+  local repAmount = BannerDutyGetRepAmount(entry)
+  local leaderBonus = math.max(0, math.floor(tonumber(entry.leaderBonus) or BannerDutyGetLeaderBonus()))
+  local awarded = {}
+  local detailNames = {}
+  local repAwards = {}
+
+  local function award(name, amount)
+    local shortName = ShortName(name)
+    amount = math.max(0, math.floor(tonumber(amount) or 0))
+    if shortName and amount > 0 and not awarded[Lower(shortName)] then
+      local gained = self:AwardShinobiDutyRepBonus(shortName, amount)
+      local current = self:GetShinobiDutyRepBonusEntry(shortName)
+      awarded[Lower(shortName)] = true
+      repAwards[shortName] = { amount = tonumber(current and current.amount) or amount, updatedAt = Now() }
+      table.insert(detailNames, tostring(shortName) .. " +" .. tostring(gained > 0 and gained or amount))
+    end
+  end
+
+  if BannerDutyAwardOwnerRepEnabled() then
+    award(author, repAmount + leaderBonus)
+  end
+  if type(entry.members) == "table" then
+    for name, data in pairs(entry.members) do
+      if type(data) == "table" and data.active ~= false and Lower(tostring(name or "")) ~= Lower(author) then
+        award(name, repAmount)
+      end
+    end
+  end
+
+  entry.closed = true
+  entry.completedAt = Now()
+  entry.updatedAt = entry.completedAt
+  entry.completedBy = me
+  entry.repAwards = repAwards
+  entry.lastEventType = "completed"
+  entry.lastEventActor = me
+  entry.lastEventAt = entry.completedAt
+  local detail = "completed"
+  if table.getn(detailNames) > 0 then
+    detail = "rep awarded: " .. table.concat(detailNames, ", ")
+  end
+  entry.lastEventDetail = detail
+  self:StoreBannerDuty(entry, false)
+  Print("|cFFFFD700Banner Duties:|r Completed task and awarded Banner Rep to helpers/group members.")
+end
+
+function LeafVE:CloseBannerDuty(id)
+  self:CompleteBannerDuty(id)
+end
+
+function LeafVE:HandleIncomingBannerDuty(payload, sender, fromSync)
+  if not IsSenderCompatible(sender) then return end
+  local entry = self:DecodeBannerDuty(payload)
+  if not entry or not entry.id or entry.id == "" then return end
+  local wasNew = not (LeafVE_GlobalDB and LeafVE_GlobalDB.bannerDuties and LeafVE_GlobalDB.bannerDuties[entry.id])
+  self:StoreBannerDuty(entry, true)
+  if wasNew and not fromSync and entry.closed ~= true and sender ~= ShortName(UnitName("player")) then
+    EnsureDB()
+    if LeafVE_DB.options.enableNotifications ~= false and LeafVE_DB.options.enableBannerDutyNotifications ~= false then
+      Print("|cFFFFD700[Banner Duties]|r New task from |cFF88CCFF" .. tostring(sender or entry.author or "?") .. "|r: |cFFFFFFFF" .. tostring(entry.text or "") .. "|r")
+    end
+  end
+end
+
+function LeafVE.UI:RefreshBannerDutyBoard()
+  local panel = self.panels and self.panels.bannerDutyBoard
+  if not panel or not panel.bannerDutyRows then return end
+  local board = LeafVE:EnsureBannerDutyDB()
+  local entries = {}
+  for _, entry in pairs(board) do
+    if type(entry) == "table" and not entry.closed then
+      table.insert(entries, entry)
+    end
+  end
+  table.sort(entries, function(a, b) return (tonumber(a.updatedAt or a.createdAt) or 0) > (tonumber(b.updatedAt or b.createdAt) or 0) end)
+
+  if panel.bannerDutyEmptyText then
+    if table.getn(entries) == 0 then panel.bannerDutyEmptyText:Show() else panel.bannerDutyEmptyText:Hide() end
+  end
+
+  local me = ShortName(UnitName("player") or "") or ""
+  for i = 1, table.getn(panel.bannerDutyRows) do
+    local row = panel.bannerDutyRows[i]
+    local entry = entries[i]
+    if row and entry then
+      row.entryId = entry.id
+      row.titleText:SetText("|cFFFFD700" .. tostring(entry.category or "General") .. "|r  |cFFAAAAAAby " .. tostring(entry.author or "?") .. "|r  |cFF88CC88+" .. tostring(BannerDutyGetRepAmount(entry)) .. " rep|r")
+      row.bodyText:SetText("|cFFFFFFFF" .. tostring(entry.text or "") .. "|r")
+      row.membersText:SetText(BuildBannerDutyMemberText(entry))
+      row.metaText:SetText("|cFF777777" .. tostring(CountBannerDutyMembers(entry)) .. " joined | " .. FormatCompactCountdownText(Now() - (tonumber(entry.createdAt) or Now())) .. " ago|r")
+      local isOwner = Lower(me) == Lower(tostring(entry.author or ""))
+      local canComplete = isOwner or LeafVE:IsAdminRank()
+      local isJoined = type(entry.members) == "table" and entry.members[me]
+      if row.joinBtn then row.joinBtn:SetText(isJoined and "Update" or "Join"); if isOwner then row.joinBtn:Hide() else row.joinBtn:Show() end end
+      if row.roleBox then if isOwner then row.roleBox:Hide() else row.roleBox:Show() end end
+      if row.leaveBtn then if isJoined and not isOwner then row.leaveBtn:Show() else row.leaveBtn:Hide() end end
+      if row.completeBtn then if canComplete then row.completeBtn:Show() else row.completeBtn:Hide() end end
+      row:Show()
+    elseif row then
+      row.entryId = nil
+      row:Hide()
+    end
+  end
+end
+
+function BuildBannerDutyBoardPanel(panel)
+  if not panel or panel.isBannerDutyBoardBuilt then return end
+  panel.isBannerDutyBoardBuilt = true
+
+  local headerBG = panel:CreateTexture(nil, "BACKGROUND")
+  headerBG:SetPoint("TOP", panel, "TOP", 0, -10)
+  headerBG:SetWidth(760)
+  headerBG:SetHeight(56)
+  headerBG:SetTexture("Interface\\AddOns\\LeafVillageLegends\\Textures\\ph")
+  headerBG:SetTexCoord(0, 1, 0, 0.1171875)
+  panel._ashenHeaderBG = headerBG
+  if LeafVE_AshenDossierSkin and LeafVE_AshenDossierSkin.ApplyPageHeaderToPanel then
+    LeafVE_AshenDossierSkin:ApplyPageHeaderToPanel(panel)
+  end
+  headerBG:SetVertexColor(1, 1, 1, 1)
+
+  local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
+  h:SetText("|cFFFFD700Banner Duties|r")
+
+  local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  subtitle:SetPoint("TOP", h, "BOTTOM", 0, -4)
+  subtitle:SetText("|cFF888888Post LFG, quests, crafting, dungeon help, or anything the village needs.|r")
+  panel._ashenHeaderTitle = h
+  panel._ashenHeaderSubtitle = subtitle
+
+  local postCard = CreateGradientInset(panel)
+  postCard:SetPoint("TOPLEFT", panel, "TOPLEFT", 18, -76)
+  postCard:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -18, -76)
+  postCard:SetHeight(92)
+
+  local catLabel = postCard:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  catLabel:SetPoint("TOPLEFT", postCard, "TOPLEFT", 14, -12)
+  catLabel:SetText("|cFFD8A24ACategory|r")
+
+  local catBtn = CreateFrame("Button", nil, postCard, "UIPanelButtonTemplate")
+  catBtn:SetPoint("TOPLEFT", catLabel, "BOTTOMLEFT", 0, -6)
+  catBtn:SetWidth(150)
+  catBtn:SetHeight(22)
+  catBtn.categories = {"LFG", "Dungeon", "Quest", "Crafting", "Raid", "Help", "Other"}
+  catBtn.index = 1
+  catBtn:SetText(catBtn.categories[catBtn.index])
+  SkinButtonAccent(catBtn)
+  catBtn:SetScript("OnClick", function()
+    this.index = (tonumber(this.index) or 1) + 1
+    if this.index > table.getn(this.categories or {}) then this.index = 1 end
+    this:SetText(this.categories[this.index] or "LFG")
+  end)
+  panel.bannerDutyCategoryButton = catBtn
+
+  local taskLabel = postCard:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  taskLabel:SetPoint("TOPLEFT", postCard, "TOPLEFT", 184, -12)
+  taskLabel:SetText("|cFFD8A24ATask Name|r")
+
+  local taskBox = CreateFrame("EditBox", nil, postCard, "InputBoxTemplate")
+  taskBox:SetPoint("TOPLEFT", taskLabel, "BOTTOMLEFT", 0, -6)
+  taskBox:SetWidth(390)
+  taskBox:SetHeight(22)
+  taskBox:SetAutoFocus(false)
+  taskBox:SetMaxLetters(BANNER_DUTY_MAX_TEXT)
+  panel.bannerDutyTextBox = taskBox
+
+  local postBtn = CreateFrame("Button", nil, postCard, "UIPanelButtonTemplate")
+  postBtn:SetWidth(90)
+  postBtn:SetHeight(22)
+  postBtn:SetPoint("TOPRIGHT", postCard, "TOPRIGHT", -14, -34)
+  postBtn:SetText("Post Task")
+  SkinButtonAccent(postBtn)
+  postBtn:SetScript("OnClick", function()
+    local category = panel.bannerDutyCategoryButton and panel.bannerDutyCategoryButton:GetText() or "General"
+    local text = panel.bannerDutyTextBox and panel.bannerDutyTextBox:GetText() or ""
+    if LeafVE:PostBannerDuty(category, text) and panel.bannerDutyTextBox then
+      panel.bannerDutyTextBox:SetText("")
+    end
+  end)
+
+  local hint = postCard:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  hint:SetPoint("BOTTOMLEFT", postCard, "BOTTOMLEFT", 14, 12)
+  hint:SetWidth(690)
+  hint:SetJustifyH("LEFT")
+  hint:SetText("|cFF888888Only new postings send a chatline. Joins, leaves, completion, and rep awards appear under Banner Duties > Live Updates.|r")
+
+  local listCard = CreateInset(panel)
+  listCard:SetPoint("TOPLEFT", postCard, "BOTTOMLEFT", 0, -12)
+  listCard:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -18, 18)
+  panel.bannerDutyListCard = listCard
+
+  local boardTitle = listCard:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  boardTitle:SetPoint("TOPLEFT", listCard, "TOPLEFT", 14, -12)
+  boardTitle:SetText("|cFFD8A24ABulletin Board|r")
+
+  local empty = listCard:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  empty:SetPoint("TOP", listCard, "TOP", 0, -70)
+  empty:SetText("|cFF888888No open Banner Duties yet. Post one above.|r")
+  panel.bannerDutyEmptyText = empty
+
+  panel.bannerDutyRows = {}
+  for i = 1, 6 do
+    local row = CreateFrame("Frame", nil, listCard)
+    row:SetPoint("TOPLEFT", listCard, "TOPLEFT", 14, -30 - ((i - 1) * 68))
+    row:SetPoint("TOPRIGHT", listCard, "TOPRIGHT", -14, -30 - ((i - 1) * 68))
+    row:SetHeight(62)
+    row:SetBackdrop({bgFile="Interface\\Tooltips\\UI-Tooltip-Background", edgeFile="Interface\\Tooltips\\UI-Tooltip-Border", tile=true, tileSize=16, edgeSize=10, insets={left=3,right=3,top=3,bottom=3}})
+    row:SetBackdropColor(0.06, 0.055, 0.05, 0.88)
+    row:SetBackdropBorderColor(0.28, 0.24, 0.18, 0.9)
+
+    local titleText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    titleText:SetPoint("TOPLEFT", row, "TOPLEFT", 10, -6)
+    titleText:SetWidth(470)
+    titleText:SetJustifyH("LEFT")
+    row.titleText = titleText
+
+    local bodyText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    bodyText:SetPoint("TOPLEFT", titleText, "BOTTOMLEFT", 0, -3)
+    bodyText:SetWidth(520)
+    bodyText:SetJustifyH("LEFT")
+    row.bodyText = bodyText
+
+    local membersText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    membersText:SetPoint("TOPLEFT", bodyText, "BOTTOMLEFT", 0, -3)
+    membersText:SetWidth(520)
+    membersText:SetJustifyH("LEFT")
+    row.membersText = membersText
+
+    local metaText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    metaText:SetPoint("TOPRIGHT", row, "TOPRIGHT", -188, -6)
+    metaText:SetWidth(160)
+    metaText:SetJustifyH("RIGHT")
+    row.metaText = metaText
+
+    local roleBox = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
+    roleBox:SetPoint("RIGHT", row, "RIGHT", -194, -14)
+    roleBox:SetWidth(58)
+    roleBox:SetHeight(20)
+    roleBox:SetAutoFocus(false)
+    roleBox:SetMaxLetters(12)
+    roleBox:SetText("DPS")
+    row.roleBox = roleBox
+
+    local joinBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    joinBtn:SetWidth(52)
+    joinBtn:SetHeight(20)
+    joinBtn:SetPoint("RIGHT", row, "RIGHT", -138, -14)
+    joinBtn:SetText("Join")
+    SkinButtonAccent(joinBtn)
+    joinBtn:SetScript("OnClick", function()
+      if row.entryId then
+        local role = row.roleBox and row.roleBox:GetText() or "Helper"
+        LeafVE:JoinBannerDuty(row.entryId, role)
+      end
+    end)
+    row.joinBtn = joinBtn
+
+    local leaveBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    leaveBtn:SetWidth(52)
+    leaveBtn:SetHeight(20)
+    leaveBtn:SetPoint("RIGHT", row, "RIGHT", -82, -14)
+    leaveBtn:SetText("Leave")
+    SkinButtonAccent(leaveBtn)
+    leaveBtn:SetScript("OnClick", function()
+      if row.entryId then LeafVE:LeaveBannerDuty(row.entryId) end
+    end)
+    row.leaveBtn = leaveBtn
+
+    local completeBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    completeBtn:SetWidth(70)
+    completeBtn:SetHeight(20)
+    completeBtn:SetPoint("RIGHT", row, "RIGHT", -8, -14)
+    completeBtn:SetText("Complete")
+    SkinButtonAccent(completeBtn)
+    completeBtn:SetScript("OnClick", function()
+      if row.entryId then LeafVE:CompleteBannerDuty(row.entryId) end
+    end)
+    row.completeBtn = completeBtn
+
+    panel.bannerDutyRows[i] = row
+    row:Hide()
+  end
+
+  LeafVE.UI:RefreshBannerDutyBoard()
+end
+
+function LeafVE.UI:RefreshBannerDutyLivePanel()
+  local panel = self.panels and self.panels.bannerDutyLive
+  if not panel or not panel.liveRows then return end
+  local live = LeafVE:EnsureBannerDutyLiveDB()
+  if panel.emptyText then
+    if table.getn(live) == 0 then panel.emptyText:Show() else panel.emptyText:Hide() end
+  end
+  for i = 1, table.getn(panel.liveRows) do
+    local row = panel.liveRows[i]
+    local ev = live[i]
+    if row and ev then
+      local typeText = tostring(ev.type or "update")
+      local actor = tostring(ev.actor or "?")
+      local detail = tostring(ev.detail or "")
+      local task = tostring(ev.task or "")
+      if string.len(task) > 58 then task = string.sub(task, 1, 55) .. "..." end
+      row.timeText:SetText("|cFF777777" .. FormatCompactCountdownText(Now() - (tonumber(ev.at) or Now())) .. " ago|r")
+      row.bodyText:SetText("|cFFFFD700" .. actor .. "|r |cFFFFFFFF" .. typeText .. "|r |cFFCCCCCC" .. task .. "|r")
+      row.detailText:SetText("|cFF88CC88" .. detail .. "|r")
+      row:Show()
+    elseif row then
+      row:Hide()
+    end
+  end
+end
+
 function BuildShinobiDutiesPanel(panel)
   if not panel or panel.isShinobiDutiesBuilt then return end
   panel.isShinobiDutiesBuilt = true
@@ -28198,17 +28921,15 @@ function BuildShinobiDutiesPanel(panel)
   accentTop:SetPoint("TOPRIGHT", headerBG, "TOPRIGHT", 0, 0)
   accentTop:SetHeight(3)
   accentTop:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
-  accentTop:SetVertexColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 0)
+  accentTop:SetVertexColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 1)
 
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  h:SetPoint("TOP", headerBG, "TOP", 0, -10)
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
   h:SetText("|cFFFFD700Banner Duties|r")
-  h:Hide()
 
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   subtitle:SetPoint("TOP", h, "BOTTOM", 0, -4)
   subtitle:SetText("|cFF888888Five randomized weekly missions built from tracked guild activity.|r")
-  subtitle:Hide()
   panel._ashenHeaderTitle = h
   panel._ashenHeaderSubtitle = subtitle
 
@@ -28243,7 +28964,7 @@ function BuildShinobiDutiesPanel(panel)
   hintText:SetPoint("TOPLEFT", remainingText, "BOTTOMLEFT", 0, -6)
   hintText:SetPoint("RIGHT", summaryCard, "RIGHT", -14, 0)
   hintText:SetJustifyH("LEFT")
-  hintText:SetText("|cFF888888Banner duty actions, grouped play, honorable kills, and shoutouts can all feed this board.|r")
+  hintText:SetText("|cFF888888Work order actions, grouped play, honorable kills, and shoutouts can all feed this board.|r")
   panel.shinobiDutiesHintText = hintText
 
   local completedValue = summaryCard:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -28424,7 +29145,7 @@ function LeafVE.UI:RefreshShinobiDutiesPanel()
     if totalCount > 0 and completedCount >= totalCount then
       panel.shinobiDutiesHintText:SetText("|cFF88CC88All weekly duties complete. A new mission board arrives after the weekly reset.|r")
     else
-      panel.shinobiDutiesHintText:SetText("|cFF888888Progress comes from tracked kills with guildies, grouped hours, shoutouts, quests, and banner duties.|r")
+      panel.shinobiDutiesHintText:SetText("|cFF888888Progress comes from tracked kills with guildies, grouped hours, shoutouts, quests, and work orders.|r")
     end
   end
 
@@ -28467,6 +29188,78 @@ function LeafVE.UI:RefreshShinobiDutiesPanel()
       row:Hide()
     end
   end
+end
+
+function BuildBannerDutyLivePanel(panel)
+  if not panel or panel.isBannerDutyLiveBuilt then return end
+  panel.isBannerDutyLiveBuilt = true
+
+  local headerBG = panel:CreateTexture(nil, "BACKGROUND")
+  headerBG:SetPoint("TOP", panel, "TOP", 0, -10)
+  headerBG:SetWidth(760)
+  headerBG:SetHeight(56)
+  headerBG:SetTexture("Interface\\AddOns\\LeafVillageLegends\\Textures\\ph")
+  headerBG:SetTexCoord(0, 1, 0, 0.1171875)
+  panel._ashenHeaderBG = headerBG
+  if LeafVE_AshenDossierSkin and LeafVE_AshenDossierSkin.ApplyPageHeaderToPanel then
+    LeafVE_AshenDossierSkin:ApplyPageHeaderToPanel(panel)
+  end
+  headerBG:SetVertexColor(1, 1, 1, 1)
+
+  local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
+  h:SetText("|cFFFFD700Banner Duty Live Updates|r")
+
+  local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  subtitle:SetPoint("TOP", h, "BOTTOM", 0, -4)
+  subtitle:SetText("|cFF888888Joins, leaves, completions, and automatic Banner Rep awards appear here instead of chat spam.|r")
+
+  local card = CreateInset(panel)
+  card:SetPoint("TOPLEFT", panel, "TOPLEFT", 18, -76)
+  card:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -18, 18)
+
+  local title = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  title:SetPoint("TOPLEFT", card, "TOPLEFT", 14, -12)
+  title:SetText("|cFFD8A24ALive Feed|r")
+
+  local empty = card:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  empty:SetPoint("TOP", card, "TOP", 0, -70)
+  empty:SetText("|cFF888888No Banner Duty updates yet.|r")
+  panel.emptyText = empty
+
+  panel.liveRows = {}
+  for i = 1, 10 do
+    local row = CreateFrame("Frame", nil, card)
+    row:SetPoint("TOPLEFT", card, "TOPLEFT", 14, -34 - ((i - 1) * 42))
+    row:SetPoint("TOPRIGHT", card, "TOPRIGHT", -14, -34 - ((i - 1) * 42))
+    row:SetHeight(36)
+    row:SetBackdrop({bgFile="Interface\\Tooltips\\UI-Tooltip-Background", edgeFile="Interface\\Tooltips\\UI-Tooltip-Border", tile=true, tileSize=16, edgeSize=8, insets={left=2,right=2,top=2,bottom=2}})
+    row:SetBackdropColor(0.05, 0.045, 0.04, 0.82)
+    row:SetBackdropBorderColor(0.24, 0.20, 0.15, 0.8)
+
+    local timeText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    timeText:SetPoint("TOPLEFT", row, "TOPLEFT", 8, -6)
+    timeText:SetWidth(90)
+    timeText:SetJustifyH("LEFT")
+    row.timeText = timeText
+
+    local bodyText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    bodyText:SetPoint("TOPLEFT", row, "TOPLEFT", 104, -6)
+    bodyText:SetWidth(520)
+    bodyText:SetJustifyH("LEFT")
+    row.bodyText = bodyText
+
+    local detailText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    detailText:SetPoint("TOPLEFT", bodyText, "BOTTOMLEFT", 0, -3)
+    detailText:SetWidth(560)
+    detailText:SetJustifyH("LEFT")
+    row.detailText = detailText
+
+    panel.liveRows[i] = row
+    row:Hide()
+  end
+
+  LeafVE.UI:RefreshBannerDutyLivePanel()
 end
 
 function LeafVE.UI:EnsureEmbeddedWorkOrderView()
@@ -32208,7 +33001,7 @@ function BuildMyPanel(panel)
   
   -- Title
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  h:SetPoint("TOP", headerBG, "TOP", 0, -10)
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
   h:SetText("|cFFFFD700My Stats|r")
 
   -- Subtitle
@@ -32371,9 +33164,9 @@ end
 function BuildShoutoutsPanel(panel)
   -- Block header background
   local headerBG = panel:CreateTexture(nil, "BACKGROUND")
-  headerBG:SetPoint("TOP", panel, "TOP", -15, -10)
-  headerBG:SetWidth(420)
-  headerBG:SetHeight(50)
+  headerBG:SetPoint("TOP", panel, "TOP", -15, -6)
+  headerBG:SetWidth(512)
+  headerBG:SetHeight(64)
   headerBG:SetTexture("Interface\\AddOns\\LeafVillageLegends\\Textures\\ph")
   headerBG:SetTexCoord(0, 1, 0, 0.1171875)
   panel._ashenHeaderBG = headerBG
@@ -32391,7 +33184,7 @@ function BuildShoutoutsPanel(panel)
   accentTop:SetVertexColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0)
   
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  h:SetPoint("TOP", headerBG, "TOP", 0, -10)
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
   h:SetText("|cFFFFD700Shoutouts|r")
 
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -32776,28 +33569,10 @@ function CreateScrollablePanel(panel, title, desc)
 end
 
 function BuildLeaderboardPanel(panel, isWeekly)
-  -- Block header background
-  local headerBG = panel:CreateTexture(nil, "BACKGROUND")
-  headerBG:SetPoint("TOP", panel, "TOP", -15, -10)
-  headerBG:SetWidth(420)
-  headerBG:SetHeight(50)
-  -- Old page-header art was showing as a random black box on the leaderboard.
-  -- Keep the title text, but hide the texture background entirely.
-  headerBG:SetTexture(nil)
-  headerBG:SetAlpha(0)
-  headerBG:Hide()
-  panel._ashenHeaderBG = nil
-  
-  -- Top accent stripe
-  local accentTop = panel:CreateTexture(nil, "BORDER")
-  accentTop:SetPoint("TOPLEFT", headerBG, "TOPLEFT", 0, 0)
-  accentTop:SetPoint("TOPRIGHT", headerBG, "TOPRIGHT", 0, 0)
-  accentTop:SetHeight(3)
-  accentTop:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
-  accentTop:SetVertexColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0)
-  
+  -- Text-only leaderboard header. Custom .tga headers were removed because
+  -- they were not reliably rendering in the 1.12 client.
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  h:SetPoint("TOP", headerBG, "TOP", 0, -10)
+  h:SetPoint("TOP", panel, "TOP", -15, -18)
   h:SetText(isWeekly and "|cFFFFD700Weekly Leaderboard|r" or "|cFFFFD700Lifetime Leaderboard|r")
   
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -32805,12 +33580,12 @@ function BuildLeaderboardPanel(panel, isWeekly)
   subtitle:SetText(isWeekly and "|cFF888888Top performers ranked by achievement points|r" or "|cFF888888Top performers ranked by achievement points|r")
   panel._ashenHeaderTitle = h
   panel._ashenHeaderSubtitle = subtitle
-  -- Show text title since the black header texture is removed.
+  -- Keep readable text over the header art in case a texture fails to load.
   if h and h.Show then h:Show() end
   if subtitle and subtitle.Show then subtitle:Show() end
   
   local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
-  scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -45)
+  scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -64)
   scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 12)
   scrollFrame:EnableMouse(true)
   scrollFrame:EnableMouseWheel(true)
@@ -33149,9 +33924,9 @@ end
 function BuildRosterPanel(panel)
   -- Block header background
   local headerBG = panel:CreateTexture(nil, "BACKGROUND")
-  headerBG:SetPoint("TOP", panel, "TOP", -15, -10)
-  headerBG:SetWidth(420)
-  headerBG:SetHeight(50)
+  headerBG:SetPoint("TOP", panel, "TOP", -15, -6)
+  headerBG:SetWidth(512)
+  headerBG:SetHeight(64)
   headerBG:SetTexture("Interface\\AddOns\\LeafVillageLegends\\Textures\\ph")
   headerBG:SetTexCoord(0, 1, 0, 0.1171875)
   panel._ashenHeaderBG = headerBG
@@ -33169,7 +33944,7 @@ function BuildRosterPanel(panel)
   accentTop:SetVertexColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0)
   
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  h:SetPoint("TOP", headerBG, "TOP", 0, -10)
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
   h:SetText("|cFFFFD700Guild Roster|r")
   
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -33427,9 +34202,9 @@ end
 function BuildLiveHistoryPanel(panel)
   -- Block header background
   local headerBG = panel:CreateTexture(nil, "BACKGROUND")
-  headerBG:SetPoint("TOP", panel, "TOP", -15, -10)
-  headerBG:SetWidth(420)
-  headerBG:SetHeight(50)
+  headerBG:SetPoint("TOP", panel, "TOP", -15, -6)
+  headerBG:SetWidth(512)
+  headerBG:SetHeight(64)
   headerBG:SetTexture("Interface\\AddOns\\LeafVillageLegends\\Textures\\ph")
   headerBG:SetTexCoord(0, 1, 0, 0.1171875)
   panel._ashenHeaderBG = headerBG
@@ -33446,7 +34221,7 @@ function BuildLiveHistoryPanel(panel)
   accentTop:SetVertexColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0)
 
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  h:SetPoint("TOP", headerBG, "TOP", 0, -10)
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
   h:SetText("|cFFFFD700Guild Point History|r")
 
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -33522,9 +34297,9 @@ end
 function BuildHistoryPanel(panel)
   -- Block header background
   local headerBG = panel:CreateTexture(nil, "BACKGROUND")
-  headerBG:SetPoint("TOP", panel, "TOP", -15, -10)
-  headerBG:SetWidth(420)
-  headerBG:SetHeight(50)
+  headerBG:SetPoint("TOP", panel, "TOP", -15, -6)
+  headerBG:SetWidth(512)
+  headerBG:SetHeight(64)
   headerBG:SetTexture("Interface\\AddOns\\LeafVillageLegends\\Textures\\ph")
   headerBG:SetTexCoord(0, 1, 0, 0.1171875)
   panel._ashenHeaderBG = headerBG
@@ -33542,7 +34317,7 @@ function BuildHistoryPanel(panel)
   accentTop:SetVertexColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0)
   
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  h:SetPoint("TOP", headerBG, "TOP", 0, -10)
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
   h:SetText("|cFFFFD700Point History|r")
   
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -33618,9 +34393,9 @@ end
 function BuildBadgesPanel(panel)
   -- Block header background
   local headerBG = panel:CreateTexture(nil, "BACKGROUND")
-  headerBG:SetPoint("TOP", panel, "TOP", -15, -10)
-  headerBG:SetWidth(420)
-  headerBG:SetHeight(50)
+  headerBG:SetPoint("TOP", panel, "TOP", -15, -6)
+  headerBG:SetWidth(512)
+  headerBG:SetHeight(64)
   headerBG:SetTexture("Interface\\AddOns\\LeafVillageLegends\\Textures\\ph")
   headerBG:SetTexCoord(0, 1, 0, 0.1171875)
   panel._ashenHeaderBG = headerBG
@@ -33728,9 +34503,9 @@ end
 function BuildAchievementsPanel(panel)
   -- Block header background
   local headerBG = panel:CreateTexture(nil, "BACKGROUND")
-  headerBG:SetPoint("TOP", panel, "TOP", -15, -10)
-  headerBG:SetWidth(420)
-  headerBG:SetHeight(50)
+  headerBG:SetPoint("TOP", panel, "TOP", -15, -6)
+  headerBG:SetWidth(512)
+  headerBG:SetHeight(64)
   headerBG:SetTexture("Interface\\AddOns\\LeafVillageLegends\\Textures\\ph")
   headerBG:SetTexCoord(0, 1, 0, 0.1171875)
   panel._ashenHeaderBG = headerBG
@@ -33748,7 +34523,7 @@ function BuildAchievementsPanel(panel)
   accentTop:SetVertexColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0)
   
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  h:SetPoint("TOP", headerBG, "TOP", 0, -10)
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
   h:SetText("|cFFFFD700Achievements|r")
   
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -33760,7 +34535,7 @@ function BuildAchievementsPanel(panel)
   if subtitle and subtitle.Hide then subtitle:Hide() end
   
   local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
-  scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -45)
+  scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -64)
   scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 12)
   scrollFrame:EnableMouse(true)
   scrollFrame:EnableMouseWheel(true)
@@ -33827,9 +34602,9 @@ end
 
 function BuildShinobiReputationPanel(panel)
   local headerBG = panel:CreateTexture(nil, "BACKGROUND")
-  headerBG:SetPoint("TOP", panel, "TOP", -15, -10)
-  headerBG:SetWidth(420)
-  headerBG:SetHeight(50)
+  headerBG:SetPoint("TOP", panel, "TOP", -15, -6)
+  headerBG:SetWidth(512)
+  headerBG:SetHeight(64)
   headerBG:SetTexture("Interface\\AddOns\\LeafVillageLegends\\Textures\\ph")
   headerBG:SetTexCoord(0, 1, 0, 0.1171875)
   panel._ashenHeaderBG = headerBG
@@ -33846,7 +34621,7 @@ function BuildShinobiReputationPanel(panel)
   accentTop:SetVertexColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0)
 
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  h:SetPoint("TOP", headerBG, "TOP", 0, -10)
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
   h:SetText("|cFFFFD700Banner Reputation|r")
 
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -33858,7 +34633,7 @@ function BuildShinobiReputationPanel(panel)
   if subtitle and subtitle.Hide then subtitle:Hide() end
 
   local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
-  scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -45)
+  scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -64)
   scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 12)
   scrollFrame:EnableMouse(true)
   scrollFrame:EnableMouseWheel(true)
@@ -33925,9 +34700,9 @@ end
 
 function BuildTitlesPanel(panel)
   local headerBG = panel:CreateTexture(nil, "BACKGROUND")
-  headerBG:SetPoint("TOP", panel, "TOP", -15, -10)
-  headerBG:SetWidth(420)
-  headerBG:SetHeight(50)
+  headerBG:SetPoint("TOP", panel, "TOP", -15, -6)
+  headerBG:SetWidth(512)
+  headerBG:SetHeight(64)
   headerBG:SetTexture("Interface\\AddOns\\LeafVillageLegends\\Textures\\ph")
   headerBG:SetTexCoord(0, 1, 0, 0.1171875)
   panel._ashenHeaderBG = headerBG
@@ -33944,7 +34719,7 @@ function BuildTitlesPanel(panel)
   accentTop:SetVertexColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0)
 
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  h:SetPoint("TOP", headerBG, "TOP", 0, -10)
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
   h:SetText("|cFFFFD700Titles of the Leaf|r")
 
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -34083,9 +34858,9 @@ end
 
 function BuildOptionsPanel(panel)
   local headerBG = panel:CreateTexture(nil, "BACKGROUND")
-  headerBG:SetPoint("TOP", panel, "TOP", -15, -10)
-  headerBG:SetWidth(420)
-  headerBG:SetHeight(50)
+  headerBG:SetPoint("TOP", panel, "TOP", -15, -6)
+  headerBG:SetWidth(512)
+  headerBG:SetHeight(64)
   headerBG:SetTexture("Interface\\AddOns\\LeafVillageLegends\\Textures\\ph")
   headerBG:SetTexCoord(0, 1, 0, 0.1171875)
   panel._ashenHeaderBG = headerBG
@@ -34102,7 +34877,7 @@ function BuildOptionsPanel(panel)
   accentTop:SetVertexColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0)
 
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  h:SetPoint("TOP", headerBG, "TOP", 0, -10)
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
   h:SetText("|cFFFFD700Options|r")
 
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -34142,6 +34917,21 @@ function BuildOptionsPanel(panel)
     yBase,
     function() return LeafVE_DB.options.notificationSound ~= false end,
     function(v) LeafVE_DB.options.notificationSound = v end)
+  yBase = yBase - gap + 8
+
+  MakeToggleButton(subFrame, "Banner Duty Chat Messages",
+    yBase,
+    function() return LeafVE_DB.options.enableBannerDutyNotifications ~= false end,
+    function(v) LeafVE_DB.options.enableBannerDutyNotifications = v end)
+  yBase = yBase - gap + 8
+
+  MakeToggleButton(subFrame, "Ashen Banner Music (.wav)",
+    yBase,
+    function() return LeafVE_DB.options.addonMusicEnabled ~= false end,
+    function(v)
+      LeafVE_DB.options.addonMusicEnabled = v
+      if not v and LeafVE.StopAddonMusic then LeafVE:StopAddonMusic() end
+    end)
   yBase = yBase - gap + 8
 
   MakeToggleButton(subFrame, "Work Order Chat Messages",
@@ -34358,9 +35148,9 @@ end
 
 function BuildAdminPanel(panel)
   local headerBG = panel:CreateTexture(nil, "BACKGROUND")
-  headerBG:SetPoint("TOP", panel, "TOP", -15, -10)
-  headerBG:SetWidth(420)
-  headerBG:SetHeight(50)
+  headerBG:SetPoint("TOP", panel, "TOP", -15, -6)
+  headerBG:SetWidth(512)
+  headerBG:SetHeight(64)
   headerBG:SetTexture("Interface\\AddOns\\LeafVillageLegends\\Textures\\ph")
   headerBG:SetTexCoord(0, 1, 0, 0.1171875)
   panel._ashenHeaderBG = headerBG
@@ -34377,7 +35167,7 @@ function BuildAdminPanel(panel)
   accentTop:SetVertexColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0)
 
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  h:SetPoint("TOP", headerBG, "TOP", 0, -10)
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
   h:SetText("|cFFFFD700Admin Settings|r")
 
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -34658,7 +35448,7 @@ function BuildWorkOrderReputationPanel(panel)
   accentTop:SetVertexColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 0)
 
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  h:SetPoint("TOP", headerBG, "TOP", 0, -10)
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
   h:SetText("|cFFFFD700Banner Reputation|r")
   h:Hide()
 
@@ -35255,9 +36045,9 @@ end
 
 function BuildUpdatePanel(panel)
   local headerBG = panel:CreateTexture(nil, "BACKGROUND")
-  headerBG:SetPoint("TOP", panel, "TOP", -15, -10)
-  headerBG:SetWidth(420)
-  headerBG:SetHeight(50)
+  headerBG:SetPoint("TOP", panel, "TOP", -15, -6)
+  headerBG:SetWidth(512)
+  headerBG:SetHeight(64)
   headerBG:SetTexture("Interface\\AddOns\\LeafVillageLegends\\Textures\\ph")
   headerBG:SetTexCoord(0, 1, 0, 0.1171875)
   panel._ashenHeaderBG = headerBG
@@ -35274,7 +36064,7 @@ function BuildUpdatePanel(panel)
   accentTop:SetVertexColor(1, 0.3, 0.3, 1)
 
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  h:SetPoint("TOP", headerBG, "TOP", 0, -10)
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
   h:SetText("|cFFFF4444Update Required|r")
 
   local sub = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -35881,9 +36671,9 @@ end
 function BuildWelcomePanel(panel)
   -- Header
   local headerBG = panel:CreateTexture(nil, "BACKGROUND")
-  headerBG:SetPoint("TOP", panel, "TOP", -15, -10)
-  headerBG:SetWidth(420)
-  headerBG:SetHeight(50)
+  headerBG:SetPoint("TOP", panel, "TOP", -15, -6)
+  headerBG:SetWidth(512)
+  headerBG:SetHeight(64)
   headerBG:SetTexture("Interface\\AddOns\\LeafVillageLegends\\Textures\\ph")
   headerBG:SetTexCoord(0, 1, 0, 0.1171875)
   panel._ashenHeaderBG = headerBG
@@ -35900,7 +36690,7 @@ function BuildWelcomePanel(panel)
   accentTop:SetVertexColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 0)
 
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  h:SetPoint("TOP", headerBG, "TOP", 0, -10)
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
   h:SetText("|cFFD8A24AThe Ashen Banner|r")
 
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -36143,7 +36933,7 @@ function BuildWelcomePanel(panel)
   AddSection("Your Banner Dashboard", "Interface\\Icons\\INV_Misc_Map_01")
   AddBullet("Welcome", "Read this guide and check the Daily Banner Briefing for the guild's latest status.")
   AddBullet("Character", "View your banner dossier, weekly and lifetime leaderboards, achievements, badges, titles, roster, and shoutout history.")
-  AddBullet("Orders", "Manage live banner duties, sign up as a crafter, climb banner duty reputation, and complete weekly Banner Duties.")
+  AddBullet("Banner Duties", "Manage live banner duties, sign up as a crafter, climb banner duty reputation, and complete weekly Banner Duties.")
   AddBullet("Calendar", "Review guild events, RSVP to upcoming missions, and keep pace with the Banner's schedule.")
   AddBullet("Options", "Adjust width, height, and scale, review point history, inspect live history, and access admin tools if you are Flame or Flame Keeper.")
   yOffset = yOffset - 4
@@ -38215,6 +39005,18 @@ function LeafVE.UI:Build()
   SkinPrimaryPanel(self.panels.shinobiDuties)
   BuildShinobiDutiesPanel(self.panels.shinobiDuties)
 
+  self.panels.bannerDutyBoard = CreateFrame("Frame", nil, self.inset)
+  self.panels.bannerDutyBoard:SetAllPoints(self.inset)
+  self.panels.bannerDutyBoard._ashenHeaderKey = "bannerDutyBoard"
+  SkinPrimaryPanel(self.panels.bannerDutyBoard)
+  BuildBannerDutyBoardPanel(self.panels.bannerDutyBoard)
+
+  self.panels.bannerDutyLive = CreateFrame("Frame", nil, self.inset)
+  self.panels.bannerDutyLive:SetAllPoints(self.inset)
+  self.panels.bannerDutyLive._ashenHeaderKey = "bannerDutyLive"
+  SkinPrimaryPanel(self.panels.bannerDutyLive)
+  BuildBannerDutyLivePanel(self.panels.bannerDutyLive)
+
   self.panels.workOrderRep = CreateFrame("Frame", nil, self.inset)
   self.panels.workOrderRep:SetAllPoints(self.inset)
   self.panels.workOrderRep._ashenHeaderKey = "workOrderRep"
@@ -38438,7 +39240,7 @@ function LeafVE.UI:Refresh()
   self:RefreshGroupedNavigation(hasAccess)
 
   if self.card then
-    if hasAccess and self.activeTab ~= "guildEvents" and self.activeTab ~= "workOrderRep" and self.activeTab ~= "shinobiDuties" and self.activeTab ~= "welcome" then
+    if hasAccess and self.activeTab ~= "guildEvents" and self.activeTab ~= "workOrderRep" and self.activeTab ~= "shinobiDuties" and self.activeTab ~= "bannerDutyBoard" and self.activeTab ~= "bannerDutyLive" and self.activeTab ~= "welcome" then
       self.card:Show()
     else
       self.card:Hide()
@@ -38767,6 +39569,18 @@ function LeafVE.UI:Refresh()
     ShowPanelWithTransition(self.panels.shinobiDuties)
     if self.RefreshShinobiDutiesPanel then
       self:RefreshShinobiDutiesPanel()
+    end
+
+  elseif self.activeTab == "bannerDutyBoard" and self.panels.bannerDutyBoard then
+    ShowPanelWithTransition(self.panels.bannerDutyBoard)
+    if self.RefreshBannerDutyBoard then
+      self:RefreshBannerDutyBoard()
+    end
+
+  elseif self.activeTab == "bannerDutyLive" and self.panels.bannerDutyLive then
+    ShowPanelWithTransition(self.panels.bannerDutyLive)
+    if self.RefreshBannerDutyLivePanel then
+      self:RefreshBannerDutyLivePanel()
     end
 
   elseif self.activeTab == "workOrderRep" and self.panels.workOrderRep then
@@ -39126,9 +39940,9 @@ function LeafVE.UI:CreateLoginBriefingPopup()
       end
       LeafVE.UI.activeCategory = "orders"
       LeafVE.UI.activeNavSubTab = nil
-      LeafVE.UI.activeTab = "shinobiDuties"
+      LeafVE.UI.activeTab = "bannerDutyBoard"
       if LeafVE.UI.navLastTabByCategory then
-        LeafVE.UI.navLastTabByCategory.orders = "shinobiDuties"
+        LeafVE.UI.navLastTabByCategory.orders = "bannerDutyBoard"
       end
       if LeafVE.UI.Refresh then
         LeafVE.UI:Refresh()
@@ -39908,6 +40722,8 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
     LeafVE:ScheduleDeferred("player_login_sync_phase_6", 20, function()
       if InGuild() then
         LeafVE:RequestWorkOrderSync(true)
+        if SendAddonMessage then SendAddonMessage("LeafVE", "BANNERDUTYREQ_FORCE", "GUILD") end
+        LeafVE:BroadcastBannerDutySnapshot(true)
       end
     end)
     LeafVE:ScheduleDeferred("weekly_recap_popup", 24, function()
