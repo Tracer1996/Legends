@@ -98,22 +98,7 @@ LeafVE_AshenDossierSkin.PAGE_HEADER_LAYOUT_KEYS = {
   bannerDutyLive = "headerRoster",
 }
 
-LeafVE_AshenDossierSkin.PAGE_HEADER_TEXTURES = {
-  me = "th_01",
-  leaderWeek = "weekly_leaderboard_header",
-  leaderLife = "lifetime_leaderboard_header",
-  achievements = "th_04",
-  shinobiReputation = "th_05",
-  badges = "th_06",
-  titles = "th_07",
-  roster = "th_08",
-  shoutouts = "th_09",
-  welcome = "th_10",
-  workOrderRep = "th_11",
-  shinobiDuties = "th_11",
-  bannerDutyBoard = "th_11",
-  bannerDutyLive = "th_08",
-}
+LeafVE_AshenDossierSkin.PAGE_HEADER_TEXTURES = {}
 
 LeafVE_AshenDossierSkin.PAGE_HEADER_EDITOR_PIECES = {
   "headerMe", "headerWeek", "headerLife", "headerAch", "headerRep",
@@ -1144,15 +1129,24 @@ function LeafVE_AshenDossierSkin:GetCropRect(name)
 end
 
 function LeafVE_AshenDossierSkin:ApplyPageHeaderToPanel(panel)
-  -- v17.1: all page headers are text-only again.
+  -- v17.4: all page headers are text-only; no custom TGA header art.
   -- The old custom .tga header art could fail to render or cover the UI on Vanilla/Turtle.
   -- Keep the font strings visible and keep the header texture hidden for every panel.
   if not panel then return end
   local headerBG = panel._ashenHeaderBG
   if headerBG then
-    headerBG:Hide()
     if headerBG.SetTexture then headerBG:SetTexture(nil) end
     if headerBG.SetAlpha then headerBG:SetAlpha(0) end
+    if headerBG.Hide then headerBG:Hide() end
+  end
+  -- Defensive cleanup for any older header art texture fields left on rebuilt panels.
+  local names = {"_ashenHeaderBG", "_abPageHeader", "_abHeaderArt", "_abDossierHeader", "_abDossierTitleArt"}
+  local i
+  for i = 1, table.getn(names) do
+    local t = panel[names[i]]
+    if t and t.SetTexture then t:SetTexture(nil) end
+    if t and t.SetAlpha then t:SetAlpha(0) end
+    if t and t.Hide then t:Hide() end
   end
   if panel._ashenHeaderTitle and panel._ashenHeaderTitle.Show then panel._ashenHeaderTitle:Show() end
   if panel._ashenHeaderSubtitle and panel._ashenHeaderSubtitle.Show then panel._ashenHeaderSubtitle:Show() end
@@ -1162,7 +1156,7 @@ function LeafVE_AshenDossierSkin:ApplyPageHeaderToAllPanels()
   if not LeafVE or not LeafVE.UI or not LeafVE.UI.panels then return end
   local k, panel
   for k, panel in pairs(LeafVE.UI.panels) do
-    if panel and panel._ashenHeaderBG then
+    if panel then
       self:ApplyPageHeaderToPanel(panel)
     end
   end

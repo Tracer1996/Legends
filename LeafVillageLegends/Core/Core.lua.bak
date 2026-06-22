@@ -16715,8 +16715,8 @@ end)
     GameTooltip:SetText("Work Order Reputation", THEME.gold[1], THEME.gold[2], THEME.gold[3], 1, true)
     GameTooltip:AddLine("Tier: " .. tostring(tierInfo.current and tierInfo.current.name or "Leaf Apprentice"), 0.88, 0.88, 0.88)
     GameTooltip:AddLine("Total Rep: " .. tostring(entry and entry.totalRep or 0), 0.75, 0.95, 0.75)
-    GameTooltip:AddLine("Crafter Rep: " .. tostring(entry and entry.crafterRep or 0), 0.75, 0.85, 1.0)
-    GameTooltip:AddLine("Requester Rep: " .. tostring(entry and entry.requesterRep or 0), 0.9, 0.82, 0.45)
+    GameTooltip:AddLine("Banner Duty Rep: " .. tostring(entry and entry.crafterRep or 0), 0.75, 0.85, 1.0)
+    GameTooltip:AddLine("Poster Rep: " .. tostring(entry and entry.requesterRep or 0), 0.9, 0.82, 0.45)
     GameTooltip:Show()
   end)
   self.cardWorkOrderRepBadge:SetScript("OnLeave", function()
@@ -16747,7 +16747,7 @@ end)
   self.cardWorkOrderCrafterRankBadgeText:SetPoint("LEFT", self.cardWorkOrderCrafterRankBadgeIcon, "RIGHT", 6, 0)
   self.cardWorkOrderCrafterRankBadgeText:SetPoint("RIGHT", self.cardWorkOrderCrafterRankBadge, "RIGHT", -8, 0)
   self.cardWorkOrderCrafterRankBadgeText:SetJustifyH("CENTER")
-  self.cardWorkOrderCrafterRankBadgeText:SetText("|cFFFFD700#1 Ranked Crafter|r")
+  self.cardWorkOrderCrafterRankBadgeText:SetText("|cFFFFD700#1 Banner Bearer|r")
 
   self.cardWorkOrderCrafterRankBadge:SetScript("OnEnter", function()
     if not LeafVE or not LeafVE.UI or not LeafVE.UI.cardCurrentPlayer then return end
@@ -16758,9 +16758,10 @@ end)
 
     GameTooltip:SetOwner(this, "ANCHOR_TOP")
     GameTooltip:ClearLines()
-    GameTooltip:SetText("Top Crafter Rank", THEME.gold[1], THEME.gold[2], THEME.gold[3], 1, true)
+    GameTooltip:SetText("Top Banner Bearer", THEME.gold[1], THEME.gold[2], THEME.gold[3], 1, true)
     GameTooltip:AddLine(tostring(GetWorkOrderCrafterRankLabel(rank) or ""), 1.0, 0.82, 0.2)
-    GameTooltip:AddLine("Crafter Rep: " .. tostring(entry and entry.crafterRep or 0), 0.75, 0.95, 0.75)
+    GameTooltip:AddLine("This position is earned through Banner Duty reputation from helping guild members complete Bulletin Board tasks.", 0.88, 0.88, 0.88, 1)
+    GameTooltip:AddLine("Banner Duty Rep: " .. tostring(entry and entry.crafterRep or 0), 0.75, 0.95, 0.75)
     GameTooltip:AddLine("Total Rep: " .. tostring(entry and entry.totalRep or 0), 0.75, 0.85, 1.0)
     GameTooltip:Show()
   end)
@@ -22154,7 +22155,7 @@ function GetWorkOrderCrafterRankLabel(rank)
   if rank < 1 or rank > 5 then
     return nil
   end
-  return "#" .. tostring(rank) .. " Ranked Crafter"
+  return "#" .. tostring(rank) .. " Banner Bearer"
 end
 
 function GetWeeklyCharacterRankLabel(rank)
@@ -24899,6 +24900,7 @@ function CreateWorkOrderCrafterRowButton(parent)
     GameTooltip:AddLine("Work Order Rep: " .. tostring(this.group.repTotal or 0) .. "  |  Tier: " .. tostring(this.group.repTierName or "Leaf Apprentice"), 0.75, 0.95, 0.75)
     if this.group.crafterRank then
       GameTooltip:AddLine(tostring(GetWorkOrderCrafterRankLabel(this.group.crafterRank) or ""), 1.0, 0.82, 0.2)
+      GameTooltip:AddLine("Banner Bearer rank is based on Banner Duty reputation from completed Bulletin Board help.", 0.88, 0.88, 0.88, 1)
     end
     GameTooltip:AddLine("Recipes Selected: " .. tostring(this.group.totalRecipes or 0), 0.75, 0.95, 0.75)
     if this.group.summaryText and this.group.summaryText ~= "" then
@@ -33772,10 +33774,10 @@ function BuildWorkOrderReputationPanel(panel)
 
   local statWidth = 166
   local statY = -212
-  panel.repCrafterCard, panel.repCrafterValue = CreateRepStatCard(panel, statWidth, "TOPLEFT", panel, "TOPLEFT", 18, statY, "Crafter Rep")
-  panel.repRequesterCard, panel.repRequesterValue = CreateRepStatCard(panel, statWidth, "LEFT", panel.repCrafterCard, "RIGHT", 10, 0, "Requester Rep")
-  panel.repVerifiedCard, panel.repVerifiedValue = CreateRepStatCard(panel, statWidth, "LEFT", panel.repRequesterCard, "RIGHT", 10, 0, "Orders Verified")
-  panel.repCompletedCard, panel.repCompletedValue = CreateRepStatCard(panel, statWidth, "LEFT", panel.repVerifiedCard, "RIGHT", 10, 0, "Orders Completed")
+  panel.repCrafterCard, panel.repCrafterValue = CreateRepStatCard(panel, statWidth, "TOPLEFT", panel, "TOPLEFT", 18, statY, "Banner Duty Rep")
+  panel.repRequesterCard, panel.repRequesterValue = CreateRepStatCard(panel, statWidth, "LEFT", panel.repCrafterCard, "RIGHT", 10, 0, "Poster Rep")
+  panel.repVerifiedCard, panel.repVerifiedValue = CreateRepStatCard(panel, statWidth, "LEFT", panel.repRequesterCard, "RIGHT", 10, 0, "Tasks Verified")
+  panel.repCompletedCard, panel.repCompletedValue = CreateRepStatCard(panel, statWidth, "LEFT", panel.repVerifiedCard, "RIGHT", 10, 0, "Tasks Completed")
   panel.repTurnaroundCard, panel.repTurnaroundValue = CreateRepStatCard(panel, statWidth, "LEFT", panel.repCompletedCard, "RIGHT", 10, 0, "Avg Turnaround (hrs)")
 
   local tiersPane = CreateInset(panel)
@@ -33888,15 +33890,15 @@ function BuildWorkOrderReputationPanel(panel)
 
   local leadersSubtitle = leadersPane:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   leadersSubtitle:SetPoint("TOPLEFT", leadersTitle, "BOTTOMLEFT", 0, -4)
-  leadersSubtitle:SetText("|cFF888888Guild crafter and requester standings.|r")
+  leadersSubtitle:SetText("|cFF888888Banner Duty reputation standings.|r")
 
   local crafterHeader = leadersPane:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   crafterHeader:SetPoint("TOPLEFT", leadersPane, "TOPLEFT", 12, -42)
-  crafterHeader:SetText("|cFFFFD700Top Crafters|r")
+  crafterHeader:SetText("|cFFFFD700Top Banner Bearers|r")
 
   local requesterHeader = leadersPane:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   requesterHeader:SetPoint("TOPRIGHT", leadersPane, "TOPRIGHT", -12, -42)
-  requesterHeader:SetText("|cFFFFD700Top Requesters|r")
+  requesterHeader:SetText("|cFFFFD700Top Task Posters|r")
 
   panel.repCrafterLeaderRows = {}
   panel.repRequesterLeaderRows = {}
@@ -33955,7 +33957,7 @@ function BuildWorkOrderReputationPanel(panel)
   SkinButtonAccent(breakdownInfoBtn)
   breakdownInfoBtn:SetScript("OnClick", function()
     LeafVE:ShowInfoPopup(
-      "Base Crafter Rep comes from verified craft completions. Base Requester Rep comes from the requester closing the order with Verify. Crafter Mats Bonus adds +3 when the crafter supplies the materials. Fast Craft Bonus adds +5 when the order is completed within 12 hours, or +3 within 24 hours."
+      "Banner Duty Rep is earned by helping guild members complete Bulletin Board tasks. Banner Bearer rank is based on this helping reputation. Posters/owners do not earn rep from their own task by default."
     )
   end)
   panel.repBreakdownInfoBtn = breakdownInfoBtn
@@ -33980,8 +33982,8 @@ function BuildWorkOrderReputationPanel(panel)
     panel.repBreakdownRows[i] = row
   end
 
-  panel.repBreakdownRows[1].labelText:SetText("|cFFAAAAAABase Crafter Rep|r")
-  panel.repBreakdownRows[2].labelText:SetText("|cFFAAAAAABase Requester Rep|r")
+  panel.repBreakdownRows[1].labelText:SetText("|cFFAAAAAABanner Duty Rep|r")
+  panel.repBreakdownRows[2].labelText:SetText("|cFFAAAAAABase Poster Rep|r")
   panel.repBreakdownRows[3].labelText:SetText("|cFFAAAAAACrafter Mats Bonus|r")
   panel.repBreakdownRows[4].labelText:SetText("|cFFAAAAAAFast Craft Bonus|r")
   panel.repBreakdownRows[5].labelText:SetText("|cFFAAAAAADuty Bonus Rep|r")

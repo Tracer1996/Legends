@@ -3154,9 +3154,10 @@ local BOSS_ACHIEVEMENTS = {
   ["Mephistroth"] = "raid_ukh_mephistroth",
 }
 
--- Reduce spam: do not show/award low-value loot achievements, low kill milestones,
--- or individual raid boss achievements. Raid bosses still track progress toward
--- the raid-clear achievement and only the clear announces.
+-- Reduce spam: do not show/award low-value loot achievements or low kill milestones.
+-- Most raid bosses now award individual achievements again. Lower Karazhan Halls
+-- and Zul'Gurub stay clear-only: their bosses only track criteria toward the
+-- raid-clear achievement and do not award individual boss achievements.
 local DISABLED_SPAM_ACHIEVEMENTS = {
   casual_loot_100 = true, casual_loot_1000 = true, casual_loot_5000 = true,
   kill_100 = true, kill_500 = true,
@@ -3167,12 +3168,19 @@ for disabledAchId in pairs(DISABLED_SPAM_ACHIEVEMENTS) do
     ACHIEVEMENTS[disabledAchId].disabled = true
   end
 end
+local RAID_CLEAR_ONLY_RAIDS = { lkh = true, zg = true }
 local RAID_BOSS_ACHIEVEMENT_IDS = {}
 for bossName, bossAchId in pairs(BOSS_ACHIEVEMENTS) do
-  if BOSS_TO_RAID[bossName] and ACHIEVEMENTS[bossAchId] then
+  local raidId = BOSS_TO_RAID[bossName]
+  if raidId and ACHIEVEMENTS[bossAchId] then
     RAID_BOSS_ACHIEVEMENT_IDS[bossAchId] = true
-    ACHIEVEMENTS[bossAchId].hidden = true
-    ACHIEVEMENTS[bossAchId].disabled = true
+    if RAID_CLEAR_ONLY_RAIDS[raidId] then
+      ACHIEVEMENTS[bossAchId].hidden = true
+      ACHIEVEMENTS[bossAchId].disabled = true
+    else
+      ACHIEVEMENTS[bossAchId].hidden = nil
+      ACHIEVEMENTS[bossAchId].disabled = nil
+    end
   end
 end
 
@@ -3423,9 +3431,10 @@ function LeafVE_AchTest:CheckBossKill(bossName)
   local resolvedBossName = ResolveBossName(bossName)
   -- Ignore regular elite mobs that are not tracked bosses
   if not resolvedBossName then return end
-  -- Award only non-raid standalone boss achievements. Raid bosses are tracked
-  -- as criteria and only award when the whole raid is cleared.
-  if BOSS_ACHIEVEMENTS[resolvedBossName] and not BOSS_TO_RAID[resolvedBossName] then
+  -- Award standalone boss achievements. Most raid bosses award individually again;
+  -- clear-only raids still track boss criteria but wait for the full raid clear.
+  local raidIdForBoss = BOSS_TO_RAID[resolvedBossName]
+  if BOSS_ACHIEVEMENTS[resolvedBossName] and not RAID_CLEAR_ONLY_RAIDS[raidIdForBoss] then
     Debug("Boss kill: "..resolvedBossName)
     self:AwardAchievement(BOSS_ACHIEVEMENTS[resolvedBossName])
   end
@@ -3894,8 +3903,9 @@ function LeafVE_AchTest.UI:Build()
   header:SetBackdrop(nil)
   local headerArt = header:CreateTexture(nil, "BACKGROUND")
   headerArt:SetAllPoints(header)
-  headerArt:SetTexture(TEX.ashenHeaderPanel)
-  headerArt:SetVertexColor(1, 1, 1, 1)
+  headerArt:SetTexture(nil)
+  if headerArt.SetAlpha then headerArt:SetAlpha(0) end
+  if headerArt.Hide then headerArt:Hide() end
 
   local title = header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("CENTER", header, "CENTER", 0, 0)

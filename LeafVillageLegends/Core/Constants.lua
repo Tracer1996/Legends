@@ -1,6 +1,6 @@
 _G = _G or (getfenv and getfenv(0)) or {}
 
-LATEST_VERSION = "17.1"
+LATEST_VERSION = "18.8"
 LEAFVE_STYLE = _G.LeafVE_Styles or {}
 LEAFVE_UI_MODERN = _G.LeafVE_UIModernization or {}
 
