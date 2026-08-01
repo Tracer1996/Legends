@@ -77,7 +77,7 @@ local QUEST_CHAINS = {
     desc   = "Complete the Onyxia's Lair attunement quest chain (Alliance).",
     points = 100,
     icon   = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
-    title  = {id="title_onyxia_bane", name="Onyxia's Bane", prefix=false},
+    title  = {id="title_onyxia_bane", name="Onyxbane", prefix=false},
     steps  = {
       "Dragonkin Menace",
       "The True Masters",
@@ -100,7 +100,7 @@ local QUEST_CHAINS = {
     desc   = "Complete the Onyxia's Lair attunement quest chain (Horde).",
     points = 100,
     icon   = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
-    title  = {id="title_bloodbound", name="the Bloodbound", prefix=false},
+    title  = {id="title_bloodbound", name="Bloodbound", prefix=false},
     steps  = {
       "Warlord's Command",
       "Eitrigg's Wisdom",
@@ -125,7 +125,7 @@ local QUEST_CHAINS = {
     desc   = "Forge Thunderfury by completing the elemental weapon quest chain.",
     points = 150,
     icon   = "Interface\\Icons\\INV_Sword_39",
-    title  = {id="title_windseeker", name="the Windseeker", prefix=false},
+    title  = {id="title_windseeker", name="Windseeker", prefix=false},
     steps  = {
       "Vessel of Rebirth",
       "Thunderaan's Oculus",
@@ -142,7 +142,7 @@ local QUEST_CHAINS = {
     desc   = "Help Linken recover his memory and complete his epic adventure chain.",
     points = 50,
     icon   = "Interface\\Icons\\INV_Misc_Note_06",
-    title  = {id="title_ungoro_adventurer", name="the Un'Goro Adventurer", prefix=false},
+    title  = {id="title_ungoro_adventurer", name="Un'Goro", prefix=false},
     steps  = {
       "It's a Secret to Everybody",
       "The Videre Elixir",
@@ -164,7 +164,7 @@ local QUEST_CHAINS = {
     desc   = "Unravel the disappearance of King Varian Wrynn across Azeroth.",
     points = 75,
     icon   = "Interface\\Icons\\INV_Misc_Map_02",
-    title  = {id="title_kingfinder", name="the Kingfinder", prefix=false},
+    title  = {id="title_kingfinder", name="Kingfinder", prefix=false},
     steps  = {
       "A Fishy Peril",
       "Further Concerns",
@@ -189,7 +189,7 @@ local QUEST_CHAINS = {
     desc   = "Slay four ancient demons and claim Rhok'delar from the demigod Remulos.",
     points = 75,
     icon   = "Interface\\Icons\\INV_Weapon_Bow_13",
-    title  = {id="title_beastmaster", name="the Beastmaster", prefix=false},
+    title  = {id="title_beastmaster", name="Beastlord", prefix=false},
     steps  = {
       "The Ancient Leaf",
       "Stave of the Ancients",
@@ -204,7 +204,7 @@ local QUEST_CHAINS = {
     desc   = "Balance Light and Shadow to forge Benediction (or Anathema).",
     points = 75,
     icon   = "Interface\\Icons\\INV_Staff_30",
-    title  = {id="title_lightbringer", name="the Lightbringer", prefix=false},
+    title  = {id="title_lightbringer", name="Lightborn", prefix=false},
     steps  = {
       "Redemption",
       "The Balance of Light and Shadow",
@@ -219,7 +219,7 @@ local QUEST_CHAINS = {
     desc   = "Relive the tragic Battle of Darrowshire and lay its ghosts to rest.",
     points = 75,
     icon   = "Interface\\Icons\\Spell_Shadow_RaiseDead",
-    title  = {id="title_darrowshire_hero", name="the Darrowshire Hero", prefix=false},
+    title  = {id="title_darrowshire_hero", name="Darrow", prefix=false},
     steps  = {
       "Little Pamela",
       "Pamela's Doll",
@@ -238,7 +238,7 @@ local QUEST_CHAINS = {
     desc   = "Complete Attunement to the Core, or enter Molten Core while already attuned from an earlier era.",
     points = 75,
     icon   = "Interface\\Icons\\Spell_Fire_LavaSpawn",
-    title  = {id="title_core_seeker", name="Core Seeker", prefix=false},
+    title  = {id="title_core_seeker", name="Coreseeker", prefix=false},
     steps  = {
       "Attunement to the Core",
     },
@@ -280,7 +280,7 @@ local QUEST_CHAINS = {
     desc   = "Complete the Warlock epic mount quest chain, or summon your Dreadsteed if the rite was finished before the addon ever knew your name.",
     points = 100,
     icon   = "Interface\\Icons\\Ability_Mount_Nightmarehorse",
-    title  = {id="title_dreadlord", name="the Dreadlord", prefix=false},
+    title  = {id="title_dreadlord", name="Dreadlord", prefix=false},
     steps  = {
       "Seeking Stinky and Smelly",
       "Klinfran the Crazed",
@@ -298,7 +298,7 @@ local QUEST_CHAINS = {
     desc   = "Complete the Paladin epic mount quest chain, or summon your Charger if the blessing was earned long before the addon was installed.",
     points = 100,
     icon   = "Interface\\Icons\\Spell_Holy_SealOfWrath",
-    title  = {id="title_lightsworn", name="the Lightsworn", prefix=false},
+    title  = {id="title_lightsworn", name="Lightsworn", prefix=false},
     steps  = {
       "Emphasis on Effort",
       "The Work of Grimand Elmore",
@@ -318,7 +318,7 @@ local QUEST_CHAINS = {
     desc   = "Reforge Quel'Serrar by completing its legendary quest chain.",
     points = 100,
     icon   = "Interface\\Icons\\INV_Sword_39",
-    title  = {id="title_blade_of_lore", name="Blade of Lore", prefix=false},
+    title  = {id="title_blade_of_lore", name="Loreblade", prefix=false},
     steps  = {
       "The Highborne's Token",
       "A Worthy Vessel",
@@ -427,7 +427,7 @@ local QUEST_CHAINS = {
     desc   = "Complete Tirion's late Plaguelands chain through In Dreams.",
     points = 120,
     icon   = "Interface\\Icons\\INV_Misc_Book_11",
-    title  = {id="title_dreamward", name="the Dreamward", prefix=false},
+    title  = {id="title_dreamward", name="Dreamward", prefix=false},
     steps  = {
       "Demon Dogs",
       "Blood Tinged Skies",
@@ -445,7 +445,7 @@ local QUEST_CHAINS = {
     desc   = "Complete the Scholomance key progression quests.",
     points = 90,
     icon   = "Interface\\Icons\\INV_Key_03",
-    title  = {id="title_keywarden", name="the Keywarden", prefix=false},
+    title  = {id="title_keywarden", name="Keywarden", prefix=false},
     steps  = {
       "Doctor Theolen Krastinov, the Butcher",
       "Kirtonos the Herald",
@@ -459,7 +459,7 @@ local QUEST_CHAINS = {
     desc   = "Reclaim and purify Atiesh, Greatstaff of the Guardian.",
     points = 150,
     icon   = "Interface\\Icons\\INV_Staff_Medivh",
-    title  = {id="title_guardians_heir", name="the Guardian's Heir", prefix=false},
+    title  = {id="title_guardians_heir", name="the Heir", prefix=false},
     steps  = {
       "Frame of Atiesh",
       "Atiesh, the Befouled Greatstaff",
@@ -809,7 +809,7 @@ local QUEST_CHAINS = {
     desc   = "Complete Kheyna's long campaign through Black Morass timeways.",
     points = 140,
     icon   = "Interface\\Icons\\INV_Misc_PocketWatch_02",
-    title  = {id="title_chronomechanic", name="the Chronomechanic", prefix=false},
+    title  = {id="title_chronomechanic", name="Timewright", prefix=false},
     steps  = {
       "A Glittering Opportunity",
       "A Bloody Good Deed",
@@ -836,7 +836,7 @@ local QUEST_CHAINS = {
     desc   = "Complete the SI:7 infiltration line.",
     points = 130,
     icon   = "Interface\\Icons\\INV_Misc_Cape_18",
-    title  = {id="title_scarlet_shadow", name="the Scarlet Shadow", prefix=false},
+    title  = {id="title_scarlet_shadow", name="Scarlet", prefix=false},
     steps  = {
       "A Particular Letter",
       "The Elusive SI:7",
@@ -858,7 +858,7 @@ local QUEST_CHAINS = {
     desc   = "Complete the Forsaken anti-Scarlet intelligence chain.",
     points = 130,
     icon   = "Interface\\Icons\\Spell_Shadow_RaiseDead",
-    title  = {id="title_banshees_hand", name="the Banshee's Hand", prefix=false},
+    title  = {id="title_banshees_hand", name="Banshee", prefix=false},
     steps  = {
       "A Dreadful Summon",
       "Grim News",

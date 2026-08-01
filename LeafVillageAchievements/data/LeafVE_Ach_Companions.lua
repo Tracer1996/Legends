@@ -247,7 +247,7 @@ end
 
 local COMPANION_TOTAL=table.getn(COMPANION_IDS)
 table.insert(COMPANION_MILESTONES,{id="companion_collector_all",name="A Complete Menagerie",desc="Collect all "..COMPANION_TOTAL.." Turtle WoW companions.",goal=COMPANION_TOTAL,points=500})
-table.insert(COMPANION_TITLE_DEFS,{id="title_companion_master",name="Companionmaster",achievement="companion_collector_all",desc="Awarded for collecting every Turtle WoW companion."})
+table.insert(COMPANION_TITLE_DEFS,{id="title_companion_master",name="Petmaster",achievement="companion_collector_all",desc="Awarded for collecting every Turtle WoW companion."})
 
 function LeafVE_AchTest:GetCompanionPointValue(name)
   local id=COMPANION_LOOKUP[Slugify(name)]

@@ -138,7 +138,7 @@ local RP_META_ACHIEVEMENTS = {
 local RP_TITLE_REWARDS = {
   {
     id = "title_emperor_of_the_depths",
-    name = "the Emperor of the Depths",
+    name = "Deep King",
     achievement = "rp_emperor_of_the_depths",
     prefix = false,
     category = "Roleplay",
@@ -146,7 +146,7 @@ local RP_TITLE_REWARDS = {
   },
   {
     id = "title_court_envoy",
-    name = "the Court Envoy",
+    name = "Envoy",
     achievement = "rp_courts_of_azeroth",
     prefix = false,
     category = "Roleplay",
@@ -154,7 +154,7 @@ local RP_TITLE_REWARDS = {
   },
   {
     id = "title_shadowforge_sovereign",
-    name = "Shadowforge Sovereign",
+    name = "Forge Lord",
     achievement = "rp_sovereign_of_shadowforge",
     prefix = false,
     category = "Roleplay",

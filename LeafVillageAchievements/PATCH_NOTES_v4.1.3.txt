@@ -1,0 +1,14 @@
+Ashen Banner Achievements v4.1.3
+
+- Re-audited all 134 selectable titles.
+- Every non-rank title is now limited to one word or two short words.
+- Every non-rank chat title is 10 characters or fewer, including spaces.
+- Shortened the remaining long dungeon titles:
+  - the Dungeoneer -> Delver
+  - Dungeon Master -> Keymaster
+  - Undead Slayer -> Deathbane
+  - Shadow Hunter -> Shadebane
+- Shortened long raid, quest, profession, exploration, PvP, elite, companion, roleplay, and legendary titles using the same strict rule.
+- One-Man Army is now One Army.
+- Guild rank achievements, rank requirements, rank title display names, and rank chat names were not changed.
+- Existing equipped titles retain their saved title IDs and automatically display the new compact names.

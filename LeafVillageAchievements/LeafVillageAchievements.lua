@@ -1,4 +1,4 @@
--- LeafVillageAchievements - v3.0 - More Titles + Title Search Bar
+-- LeafVillageAchievements - v4.1.3 - Strict Compact Titles
 -- Guild message: [Title] has earned the achievement [Achievement]
 
 LeafVE_AchTest = LeafVE_AchTest or {}
@@ -10,7 +10,7 @@ LeafVE_AchTest.DEBUG = false -- Set to true for debug messages
 LeafVE_AchTest.initialized = false -- Set to true after PLAYER_ENTERING_WORLD backlog scan
 
 local ADDON_COMM_PREFIX = "LeafVEAch"
-local LEAFVE_RELEASE_VERSION = "4.1.1"
+local LEAFVE_RELEASE_VERSION = "4.1.3"
 local VERSION_REMINDER_INTERVAL = 24 * 60 * 60
 local LEAFVE_ANNOUNCEMENT_ITEM_ID = 6948
 
@@ -905,7 +905,7 @@ local TITLES = {
   {id="title_flame",name="Flame",chatName="Flame",achievement="guild_rank_flame",prefix=true,category="Guild",icon="Interface\\Icons\\Spell_Fire_Fire",guild=true,desc="The living spark of the guild, guiding The Ashen Banner's purpose, direction, and legacy."},
   
   -- Methl-only color test title
-  {id="title_methl_color_test",name="Crimson Test",chatName="Crimson Test",testCharacter="Methl",prefix=true,category="Milestones",icon="Interface\\Icons\\Spell_Fire_Immolation",legendary=true,colorHex="ffe99595",desc="Private light-red chat title used by Methl to test title coloring."},
+  {id="title_methl_color_test",name="Crimson",chatName="Crimson",testCharacter="Methl",prefix=true,category="Milestones",icon="Interface\\Icons\\Spell_Fire_Immolation",legendary=true,colorHex="ffe99595",desc="Private light-red chat title used by Methl to test title coloring."},
 
   -- Ashen Banner milestone titles (unlocked from LeafVillageLegends badges)
   {id="title_banner_paragon",name="Paragon",chatName="Paragon",externalBadgeId="total_10000",prefix=true,category="Milestones",icon="Interface\\Icons\\INV_Crown_02",legendary=true,colorHex="ffe99595",desc="Awarded for reaching the Banner Legend milestone."},
@@ -915,127 +915,127 @@ local TITLES = {
   {id="title_firelord",name="Firelord",achievement="raid_mc_ragnaros",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Fire_LavaSpawn"},
   {id="title_flamewaker",name="Flamewaker",achievement="raid_mc_sulfuron",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Fire_FireArmor"},
   {id="title_core_hound",name="Core Hound",achievement="raid_mc_magmadar",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_Head_Dragon_01"},
-  {id="title_molten_destroyer",name="Molten Destroyer",achievement="raid_mc_golemagg",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_MonsterScales_15"},
+  {id="title_molten_destroyer",name="Golembane",achievement="raid_mc_golemagg",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_MonsterScales_15"},
   
   -- Onyxia/Dragons
-  {id="title_dragonslayer",name="Dragonslayer",achievement="raid_onyxia",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_Head_Dragon_01"},
-  {id="title_dragon_hunter",name="Dragon Hunter",achievement="raid_onyxia",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_Head_Dragon_01"},
+  {id="title_dragonslayer",name="Wyrmslayer",achievement="raid_onyxia",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_Head_Dragon_01"},
+  {id="title_dragon_hunter",name="Wyrmhunt",achievement="raid_onyxia",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_Head_Dragon_01"},
   
   -- Blackwing Lair Titles
-  {id="title_blackwing_slayer",name="Blackwing Slayer",achievement="raid_bwl_nefarian",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_Head_Dragon_Black"},
-  {id="title_dragonkin_slayer",name="Dragonkin Slayer",achievement="raid_bwl_razorgore",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_Head_Dragon_Black"},
-  {id="title_chromatic",name="the Chromatic",achievement="raid_bwl_chromaggus",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_Head_Dragon_Bronze"},
-  {id="title_vaels_bane",name="Vael's Bane",achievement="raid_bwl_vaelastrasz",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_ShadowWordDominate"},
-  {id="title_broodlord_slayer",name="Broodlord Slayer",achievement="raid_bwl_broodlord",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Bracer_18"},
+  {id="title_blackwing_slayer",name="Blackbane",achievement="raid_bwl_nefarian",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_Head_Dragon_Black"},
+  {id="title_dragonkin_slayer",name="Drakebane",achievement="raid_bwl_razorgore",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_Head_Dragon_Black"},
+  {id="title_chromatic",name="Chromatic",achievement="raid_bwl_chromaggus",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_Head_Dragon_Bronze"},
+  {id="title_vaels_bane",name="Vaelbane",achievement="raid_bwl_vaelastrasz",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_ShadowWordDominate"},
+  {id="title_broodlord_slayer",name="Broodbane",achievement="raid_bwl_broodlord",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Bracer_18"},
   
   -- Zul'Gurub Titles
-  {id="title_zandalar",name="of Zandalar",achievement="raid_zg_hakkar",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_PainSpike"},
+  {id="title_zandalar",name="Zandalar",achievement="raid_zg_hakkar",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_PainSpike"},
   {id="title_bloodlord",name="Bloodlord",achievement="raid_zg_hakkar",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_PainSpike"},
-  {id="title_troll_slayer",name="Troll Slayer",achievement="raid_zg_thekal",prefix=false,category="Raids",icon="Interface\\Icons\\Ability_Druid_Mangle2"},
-  {id="title_snake_handler",name="Snake Handler",achievement="raid_zg_venoxis",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Nature_NullifyPoison"},
+  {id="title_troll_slayer",name="Trollbane",achievement="raid_zg_thekal",prefix=false,category="Raids",icon="Interface\\Icons\\Ability_Druid_Mangle2"},
+  {id="title_snake_handler",name="Snakehand",achievement="raid_zg_venoxis",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Nature_NullifyPoison"},
   
   -- AQ20 Titles
-  {id="title_silithid_slayer",name="Silithid Slayer",achievement="raid_aq20_ossirian",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Qiraj_JewelGlowing"},
-  {id="title_scarab_hunter",name="Scarab Hunter",achievement="raid_aq20_kurinnaxx",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Qiraj_JewelBlessed"},
+  {id="title_silithid_slayer",name="Silithbane",achievement="raid_aq20_ossirian",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Qiraj_JewelGlowing"},
+  {id="title_scarab_hunter",name="Scarabhunt",achievement="raid_aq20_kurinnaxx",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Qiraj_JewelBlessed"},
   
   -- AQ40 Titles
-  {id="title_scarab_lord",name="Scarab Lord",achievement="raid_aq40_cthun",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_Charm"},
-  {id="title_qiraji_slayer",name="Qiraji Slayer",achievement="raid_aq40_cthun",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_Charm"},
-  {id="title_bug_squasher",name="Bug Squasher",achievement="raid_aq40_bug_trio",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_AhnQirajTrinket_02"},
-  {id="title_twin_emperor",name="Twin Emperor",achievement="raid_aq40_twins",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Jewelry_Ring_AhnQiraj_04"},
-  {id="title_viscidus_slayer",name="Viscidus Slayer",achievement="raid_aq40_viscidus",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Nature_Acid_01"},
-  {id="title_the_prophet",name="the Prophet",achievement="raid_aq40_skeram",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_MindSteal"},
+  {id="title_scarab_lord",name="Bug Lord",achievement="raid_aq40_cthun",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_Charm"},
+  {id="title_qiraji_slayer",name="Qirajbane",achievement="raid_aq40_cthun",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_Charm"},
+  {id="title_bug_squasher",name="Bugbane",achievement="raid_aq40_bug_trio",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_AhnQirajTrinket_02"},
+  {id="title_twin_emperor",name="Twin King",achievement="raid_aq40_twins",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Jewelry_Ring_AhnQiraj_04"},
+  {id="title_viscidus_slayer",name="Slimebane",achievement="raid_aq40_viscidus",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Nature_Acid_01"},
+  {id="title_the_prophet",name="Prophet",achievement="raid_aq40_skeram",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_MindSteal"},
   
   -- Naxxramas Titles
-  {id="title_death_demise",name="of the Ashen Verdict",achievement="raid_naxx_kelthuzad",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_SoulGem"},
-  {id="title_lich_hunter",name="Lich Hunter",achievement="raid_naxx_kelthuzad",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_SoulGem"},
-  {id="title_plaguebearer",name="Plaguebearer",achievement="raid_naxx_loatheb",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_CallofBone"},
+  {id="title_death_demise",name="Verdict",achievement="raid_naxx_kelthuzad",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_SoulGem"},
+  {id="title_lich_hunter",name="Lichbane",achievement="raid_naxx_kelthuzad",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_SoulGem"},
+  {id="title_plaguebearer",name="Plagueborn",achievement="raid_naxx_loatheb",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_CallofBone"},
   {id="title_spore_bane",name="Spore Bane",achievement="raid_naxx_loatheb",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_CallofBone"},
-  {id="title_frost_wyrm",name="Frost Wyrm Slayer",achievement="raid_naxx_sapphiron",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_Head_Dragon_Blue"},
-  {id="title_arachnid_slayer",name="Arachnid Slayer",achievement="raid_naxx_maexxna",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_MonsterSpiderCarapace_01"},
-  {id="title_four_horsemen",name="of the Four Horsemen",achievement="raid_naxx_four_horsemen",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_RaiseDead"},
-  {id="title_death_knight",name="Death Knight",achievement="raid_naxx_four_horsemen",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_RaiseDead"},
+  {id="title_frost_wyrm",name="Frostbane",achievement="raid_naxx_sapphiron",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_Head_Dragon_Blue"},
+  {id="title_arachnid_slayer",name="Webbane",achievement="raid_naxx_maexxna",prefix=false,category="Raids",icon="Interface\\Icons\\INV_Misc_MonsterSpiderCarapace_01"},
+  {id="title_four_horsemen",name="Horsebane",achievement="raid_naxx_four_horsemen",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_RaiseDead"},
+  {id="title_death_knight",name="Dreadguard",achievement="raid_naxx_four_horsemen",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Shadow_RaiseDead"},
   
   -- Elite Achievement Titles
-  {id="title_epochbreaker",name="the Epochbreaker",achievement="elite_epochbreaker",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Misc_Head_Dragon_Black"},
-  {id="title_trophy_reaper",name="the Trophy Reaper",achievement="elite_100_unique_bosses",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Misc_Head_Dragon_Black"},
-  {id="title_endless",name="the Endless",achievement="kill_100000",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Sword_27"},
-  {id="title_unfaltering",name="the Unfaltering",achievement="casual_quest_streak_200",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Misc_Book_09"},
-  {id="title_farstrider",name="the Farstrider",achievement="explore_world_pathfinder",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Misc_Map_01"},
-  {id="title_goldbound",name="the Goldbound",achievement="gold_50000",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Misc_Coin_17"},
-  {id="title_warbanner",name="the Warbanner",achievement="pvp_bg_all_100",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Banner_02"},
-  {id="title_unbroken",name="the Unbroken",achievement="pvp_duel_streak_25",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Sword_62"},
-  {id="title_grand_battlemaster",name="the Battlemaster",achievement="pvp_bg_win_250",prefix=false,category="Elite",icon="Interface\\Icons\\INV_BannerPVP_02"},
-  {id="title_ironfoe",name="the Ironfoe",achievement="item_ironfoe_weilder",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Hammer_11"},
-  {id="title_flamebearer",name="the Flamebearer",achievement="item_sulfuras_weilder",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Hammer_Unique_Sulfuras"},
-  {id="title_windforged",name="the Windforged",achievement="item_thunderfury_weilder",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Sword_39"},
-  {id="title_guardians_successor",name="the Guardian's Successor",achievement="item_atiesh_weilder",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Staff_Medivh"},
+  {id="title_epochbreaker",name="Timebane",achievement="elite_epochbreaker",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Misc_Head_Dragon_Black"},
+  {id="title_trophy_reaper",name="Reaper",achievement="elite_100_unique_bosses",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Misc_Head_Dragon_Black"},
+  {id="title_endless",name="Endless",achievement="kill_100000",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Sword_27"},
+  {id="title_unfaltering",name="Steadfast",achievement="casual_quest_streak_200",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Misc_Book_09"},
+  {id="title_farstrider",name="Farstrider",achievement="explore_world_pathfinder",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Misc_Map_01"},
+  {id="title_goldbound",name="Goldbound",achievement="gold_50000",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Misc_Coin_17"},
+  {id="title_warbanner",name="Warbanner",achievement="pvp_bg_all_100",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Banner_02"},
+  {id="title_unbroken",name="Unbroken",achievement="pvp_duel_streak_25",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Sword_62"},
+  {id="title_grand_battlemaster",name="Warmaster",achievement="pvp_bg_win_250",prefix=false,category="Elite",icon="Interface\\Icons\\INV_BannerPVP_02"},
+  {id="title_ironfoe",name="Ironfoe",achievement="item_ironfoe_weilder",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Hammer_11"},
+  {id="title_flamebearer",name="Flameborn",achievement="item_sulfuras_weilder",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Hammer_Unique_Sulfuras"},
+  {id="title_windforged",name="Windforged",achievement="item_thunderfury_weilder",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Sword_39"},
+  {id="title_guardians_successor",name="Guardian",achievement="item_atiesh_weilder",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Staff_Medivh"},
   {id="title_ashen",name="the Ashen",achievement="item_ashbringer_weilder",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Sword_2H_Ashbringer"},
-  {id="title_mountains_heart",name="the Mountain's Heart",achievement="item_modragzan_heart_of_the_mountain",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Hammer_19"},
-  {id="title_big_bonker",name="the Big Bonker",achievement="item_arms_of_thaurissan_big_bonkers",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Hammer_25"},
+  {id="title_mountains_heart",name="Stoneheart",achievement="item_modragzan_heart_of_the_mountain",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Hammer_19"},
+  {id="title_big_bonker",name="Big Bonker",achievement="item_arms_of_thaurissan_big_bonkers",prefix=false,category="Elite",icon="Interface\\Icons\\INV_Hammer_25"},
 
   
   -- PvP Titles
   {id="title_warlord",name="Warlord",achievement="pvp_hk_5000",prefix=true,category="PvP",icon="Interface\\Icons\\INV_Sword_62"},
-  {id="title_grand_marshal",name="Grand Marshal",achievement="elite_pvp_rank_14",prefix=true,category="PvP",icon="Interface\\Icons\\INV_Sword_39"},
-  {id="title_bloodthirsty",name="the Bloodthirsty",achievement="pvp_hk_10000",prefix=false,category="PvP",icon="Interface\\Icons\\Spell_Shadow_ShadowWordPain"},
-  {id="title_arena_master",name="Arena Master",achievement="pvp_duel_100",prefix=false,category="PvP",icon="Interface\\Icons\\INV_Sword_62"},
+  {id="title_grand_marshal",name="Marshal",achievement="elite_pvp_rank_14",prefix=true,category="PvP",icon="Interface\\Icons\\INV_Sword_39"},
+  {id="title_bloodthirsty",name="Bloodmad",achievement="pvp_hk_10000",prefix=false,category="PvP",icon="Interface\\Icons\\Spell_Shadow_ShadowWordPain"},
+  {id="title_arena_master",name="Pit Master",achievement="pvp_duel_100",prefix=false,category="PvP",icon="Interface\\Icons\\INV_Sword_62"},
   {id="title_gladiator",name="Gladiator",achievement="pvp_hk_1000",prefix=false,category="PvP",icon="Interface\\Icons\\INV_Sword_48"},
-  {id="title_duelist",name="the Duelist",achievement="pvp_duel_50",prefix=false,category="PvP",icon="Interface\\Icons\\INV_Sword_39"},
-  {id="title_high_warlord",name="High Warlord",achievement="pvp_hk_10000",prefix=true,category="PvP",icon="Interface\\Icons\\INV_Sword_39"},
+  {id="title_duelist",name="Duelist",achievement="pvp_duel_50",prefix=false,category="PvP",icon="Interface\\Icons\\INV_Sword_39"},
+  {id="title_high_warlord",name="Highlord",achievement="pvp_hk_10000",prefix=true,category="PvP",icon="Interface\\Icons\\INV_Sword_39"},
   
   -- Profession Titles
-  {id="title_master_alchemist",name="Master Alchemist",achievement="prof_alchemy_300",prefix=false,category="Professions",icon="Interface\\Icons\\Trade_Alchemy"},
-  {id="title_master_blacksmith",name="Master Blacksmith",achievement="prof_blacksmithing_300",prefix=false,category="Professions",icon="Interface\\Icons\\Trade_BlackSmithing"},
-  {id="title_master_enchanter",name="Master Enchanter",achievement="prof_enchanting_300",prefix=false,category="Professions",icon="Interface\\Icons\\Trade_Engraving"},
-  {id="title_master_engineer",name="Master Engineer",achievement="prof_engineering_300",prefix=false,category="Professions",icon="Interface\\Icons\\Trade_Engineering"},
-  {id="title_artisan",name="the Artisan",achievement="prof_dual_artisan",prefix=false,category="Professions",icon="Interface\\Icons\\INV_Misc_Note_06"},
+  {id="title_master_alchemist",name="Alchemist",achievement="prof_alchemy_300",prefix=false,category="Professions",icon="Interface\\Icons\\Trade_Alchemy"},
+  {id="title_master_blacksmith",name="Smith",achievement="prof_blacksmithing_300",prefix=false,category="Professions",icon="Interface\\Icons\\Trade_BlackSmithing"},
+  {id="title_master_enchanter",name="Enchanter",achievement="prof_enchanting_300",prefix=false,category="Professions",icon="Interface\\Icons\\Trade_Engraving"},
+  {id="title_master_engineer",name="Engineer",achievement="prof_engineering_300",prefix=false,category="Professions",icon="Interface\\Icons\\Trade_Engineering"},
+  {id="title_artisan",name="Artisan",achievement="prof_dual_artisan",prefix=false,category="Professions",icon="Interface\\Icons\\INV_Misc_Note_06"},
   
   -- Exploration Titles
-  {id="title_explorer",name="the Explorer",achievement="explore_wanderer",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Misc_Map_01"},
-  {id="title_world_explorer",name="the World Explorer",achievement="explore_world_explorer",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Misc_Map_02"},
-  {id="title_kalimdor_cartographer",name="Cartographer of Kalimdor",achievement="explore_kalimdor",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Misc_Map_01"},
-  {id="title_eastern_pathfinder",name="Pathfinder of the East",achievement="explore_eastern_kingdoms",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_BannerPVP_02"},
-  {id="title_balor_wayfinder",name="Wayfinder of Balor",achievement="explore_tw_balor",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Misc_Platnumdisks"},
-  {id="title_gilneas_trailblazer",name="Gilnean Trailblazer",achievement="explore_tw_gilneas",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Shield_06"},
-  {id="title_northwind_scout",name="Northwind Scout",achievement="explore_tw_northwind",prefix=false,category="Exploration",icon="Interface\\Icons\\Spell_Frost_FrostShock"},
-  {id="title_lapidis_navigator",name="Navigator of Lapidis",achievement="explore_tw_lapidis",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Misc_Gem_Sapphire_02"},
-  {id="title_isle_rover",name="the Isle Rover",achievement="explore_tw_gillijim",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Misc_Gem_Pearl_01"},
-  {id="title_hyjal_stargazer",name="Hyjal Stargazer",achievement="explore_tw_hyjal",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Misc_Head_Dragon_Green"},
-  {id="title_grim_wanderer",name="the Grim Wanderer",achievement="explore_tw_grim_reaches",prefix=false,category="Exploration",icon="Interface\\Icons\\Spell_Shadow_RaiseDead"},
-  {id="title_telabim_horizons",name="of Tel'Abim Horizons",achievement="explore_tw_telabim",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Misc_Herb_BlackLotus"},
-  {id="title_uplands_ranger",name="Tirisfal Ranger",achievement="explore_tw_tirisfal_uplands",prefix=false,category="Exploration",icon="Interface\\Icons\\Spell_Shadow_RagingScream"},  
+  {id="title_explorer",name="Explorer",achievement="explore_wanderer",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Misc_Map_01"},
+  {id="title_world_explorer",name="Worldwise",achievement="explore_world_explorer",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Misc_Map_02"},
+  {id="title_kalimdor_cartographer",name="Kalimdor",achievement="explore_kalimdor",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Misc_Map_01"},
+  {id="title_eastern_pathfinder",name="East Scout",achievement="explore_eastern_kingdoms",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_BannerPVP_02"},
+  {id="title_balor_wayfinder",name="Balor",achievement="explore_tw_balor",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Misc_Platnumdisks"},
+  {id="title_gilneas_trailblazer",name="Gilneas",achievement="explore_tw_gilneas",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Shield_06"},
+  {id="title_northwind_scout",name="Northwind",achievement="explore_tw_northwind",prefix=false,category="Exploration",icon="Interface\\Icons\\Spell_Frost_FrostShock"},
+  {id="title_lapidis_navigator",name="Lapidis",achievement="explore_tw_lapidis",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Misc_Gem_Sapphire_02"},
+  {id="title_isle_rover",name="Isle Rover",achievement="explore_tw_gillijim",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Misc_Gem_Pearl_01"},
+  {id="title_hyjal_stargazer",name="Hyjal",achievement="explore_tw_hyjal",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Misc_Head_Dragon_Green"},
+  {id="title_grim_wanderer",name="Grimwalker",achievement="explore_tw_grim_reaches",prefix=false,category="Exploration",icon="Interface\\Icons\\Spell_Shadow_RaiseDead"},
+  {id="title_telabim_horizons",name="Tel'Abim",achievement="explore_tw_telabim",prefix=false,category="Exploration",icon="Interface\\Icons\\INV_Misc_Herb_BlackLotus"},
+  {id="title_uplands_ranger",name="Tirisfal",achievement="explore_tw_tirisfal_uplands",prefix=false,category="Exploration",icon="Interface\\Icons\\Spell_Shadow_RagingScream"},  
   -- Casual Titles
   {id="title_loremaster",name="Loremaster",achievement="casual_quest_1000",prefix=false,category="Casual",icon="Interface\\Icons\\INV_Misc_Book_09"},
-  {id="title_angler",name="the Master Angler",achievement="casual_fish_1000",prefix=false,category="Casual",icon="Interface\\Icons\\Trade_Fishing"},
+  {id="title_angler",name="Angler",achievement="casual_fish_1000",prefix=false,category="Casual",icon="Interface\\Icons\\Trade_Fishing"},
   {id="title_pet_collector",name="Handler",chatName="Handler",achievement="casual_pet_fanatic",prefix=false,category="Companions",icon="Interface\\Icons\\INV_Misc_Toy_07",desc="Awarded for collecting 25 Turtle WoW companions."},
   {id="title_banker",name="the Banker",achievement="gold_5000",prefix=false,category="Casual",icon="Interface\\Icons\\INV_Misc_Coin_17"},
-  {id="title_death_prone",name="Death-Prone",achievement="casual_deaths_100",prefix=false,category="Casual",icon="Interface\\Icons\\Spell_Shadow_DeathScream"},
+  {id="title_death_prone",name="Doomed",achievement="casual_deaths_100",prefix=false,category="Casual",icon="Interface\\Icons\\Spell_Shadow_DeathScream"},
   {id="title_clumsy",name="the Clumsy",achievement="casual_fall_death",prefix=false,category="Casual",icon="Interface\\Icons\\Ability_Rogue_FeintedStrike"},
   
   -- Gold Titles
-  {id="title_wealthy",name="the Wealthy",achievement="gold_1000",prefix=false,category="Gold",icon="Interface\\Icons\\INV_Misc_Coin_06"},
-  {id="title_fortune_builder",name="Fortune Builder",achievement="gold_5000",prefix=false,category="Gold",icon="Interface\\Icons\\INV_Misc_Coin_17"},
+  {id="title_wealthy",name="Wealthy",achievement="gold_1000",prefix=false,category="Gold",icon="Interface\\Icons\\INV_Misc_Coin_06"},
+  {id="title_fortune_builder",name="Goldmaker",achievement="gold_5000",prefix=false,category="Gold",icon="Interface\\Icons\\INV_Misc_Coin_17"},
   {id="title_tycoon",name="the Tycoon",achievement="gold_5000",prefix=false,category="Gold",icon="Interface\\Icons\\INV_Misc_Coin_17"},
   
   -- Dungeon Titles (updated to new completion IDs)
-  {id="title_dungeoneer",name="the Dungeoneer",achievement="dung_ubrs_complete",prefix=false,category="Dungeons",icon="Interface\\Icons\\INV_Misc_Head_Dragon_01"},
-  {id="title_undead_slayer",name="Undead Slayer",achievement="dung_strat_complete",prefix=false,category="Dungeons",icon="Interface\\Icons\\Spell_Shadow_RaiseDead"},
-  {id="title_shadow_hunter",name="Shadow Hunter",achievement="dung_scholo_complete",prefix=false,category="Dungeons",icon="Interface\\Icons\\Spell_Shadow_Charm"},
-  {id="title_dungeon_master",name="Dungeon Master",achievement="dung_dmn_complete",prefix=false,category="Dungeons",icon="Interface\\Icons\\INV_Misc_Key_14"},
+  {id="title_dungeoneer",name="Delver",achievement="dung_ubrs_complete",prefix=false,category="Dungeons",icon="Interface\\Icons\\INV_Misc_Head_Dragon_01"},
+  {id="title_undead_slayer",name="Deathbane",achievement="dung_strat_complete",prefix=false,category="Dungeons",icon="Interface\\Icons\\Spell_Shadow_RaiseDead"},
+  {id="title_shadow_hunter",name="Shadebane",achievement="dung_scholo_complete",prefix=false,category="Dungeons",icon="Interface\\Icons\\Spell_Shadow_Charm"},
+  {id="title_dungeon_master",name="Keymaster",achievement="dung_dmn_complete",prefix=false,category="Dungeons",icon="Interface\\Icons\\INV_Misc_Key_14"},
 
   -- Legendary Titles (RED - require officer approval)
-  {id="title_the_unsupported",name="the Unsupported",achievement="legendary_solo_raid_boss",prefix=false,category="Legendary",icon="Interface\\Icons\\Spell_Holy_BlessingOfStrength",legendary=true},
+  {id="title_the_unsupported",name="Soloist",achievement="legendary_solo_raid_boss",prefix=false,category="Legendary",icon="Interface\\Icons\\Spell_Holy_BlessingOfStrength",legendary=true},
   {id="title_bare_bones",name="Bare Bones",achievement="legendary_naked_dungeon",prefix=false,category="Legendary",icon="Interface\\Icons\\INV_Misc_Pelt_Wolf_01",legendary=true},
-  {id="title_undying",name="the Undying",achievement="legendary_ironman_60",prefix=false,category="Legendary",icon="Interface\\Icons\\INV_Helmet_74",legendary=true},
-  {id="title_undefeated",name="the Undefeated",achievement="legendary_duel_streak_100",prefix=false,category="Legendary",icon="Interface\\Icons\\INV_Sword_62",legendary=true},
-  {id="title_conqueror_of_all",name="Conqueror of All",achievement="legendary_full_clear_week",prefix=false,category="Legendary",icon="Interface\\Icons\\Spell_Shadow_SoulGem",legendary=true},
-  {id="title_the_immortal_leg",name="the Immortal",achievement="legendary_flawless_naxx",prefix=false,category="Legendary",icon="Interface\\Icons\\Spell_Shadow_RaiseDead",legendary=true},
-  {id="title_speed_demon",name="Speed Demon",achievement="legendary_speed_run_brd",prefix=false,category="Legendary",icon="Interface\\Icons\\Spell_Fire_LavaSpawn",legendary=true},
-  {id="title_dragonslayer_leg",name="Dragonslayer",achievement="legendary_onyxia_10",prefix=false,category="Legendary",icon="Interface\\Icons\\INV_Misc_Head_Dragon_Black",legendary=true},
+  {id="title_undying",name="Undying",achievement="legendary_ironman_60",prefix=false,category="Legendary",icon="Interface\\Icons\\INV_Helmet_74",legendary=true},
+  {id="title_undefeated",name="Unbeaten",achievement="legendary_duel_streak_100",prefix=false,category="Legendary",icon="Interface\\Icons\\INV_Sword_62",legendary=true},
+  {id="title_conqueror_of_all",name="Worldbane",achievement="legendary_full_clear_week",prefix=false,category="Legendary",icon="Interface\\Icons\\Spell_Shadow_SoulGem",legendary=true},
+  {id="title_the_immortal_leg",name="Immortal",achievement="legendary_flawless_naxx",prefix=false,category="Legendary",icon="Interface\\Icons\\Spell_Shadow_RaiseDead",legendary=true},
+  {id="title_speed_demon",name="Speedster",achievement="legendary_speed_run_brd",prefix=false,category="Legendary",icon="Interface\\Icons\\Spell_Fire_LavaSpawn",legendary=true},
+  {id="title_dragonslayer_leg",name="Dragonbane",achievement="legendary_onyxia_10",prefix=false,category="Legendary",icon="Interface\\Icons\\INV_Misc_Head_Dragon_Black",legendary=true},
   {id="title_wyrmbane",name="Wyrmbane",achievement="legendary_onyxia_5",prefix=false,category="Legendary",icon="Interface\\Icons\\INV_Misc_Head_Dragon_Black",legendary=true},
-  {id="title_one_man_army",name="the One-Man Army",achievement="legendary_solo_60_boss",prefix=false,category="Legendary",icon="Interface\\Icons\\Spell_Holy_BlessingOfStrength",legendary=true},
-  {id="title_pure_mortal",name="the Pure Mortal",achievement="legendary_no_consumes_t2plus",prefix=false,category="Legendary",icon="Interface\\Icons\\INV_Potion_01",legendary=true},
+  {id="title_one_man_army",name="One Army",achievement="legendary_solo_60_boss",prefix=false,category="Legendary",icon="Interface\\Icons\\Spell_Holy_BlessingOfStrength",legendary=true},
+  {id="title_pure_mortal",name="Mortal",achievement="legendary_no_consumes_t2plus",prefix=false,category="Legendary",icon="Interface\\Icons\\INV_Potion_01",legendary=true},
 }
 
 local TRACKED_GUILD_RANKS = {
@@ -2161,9 +2161,6 @@ function LeafVE_AchTest:CaptureReputationSnapshot(recordGains)
     stats.week = (tonumber(stats.week) or 0) + gained
     stats.season = (tonumber(stats.season) or 0) + gained
     stats.allTime = (tonumber(stats.allTime) or 0) + gained
-    if self.UI and self.UI.currentView == "stats" and self.UI.RefreshStatsPanel then
-      self.UI:RefreshStatsPanel()
-    end
   end
   return gained
 end
@@ -2188,7 +2185,6 @@ function LeafVE_AchTest:StartNewReputationSeason()
   stats.season = 0
   stats.seasonNumber = (tonumber(stats.seasonNumber) or 1) + 1
   stats.seasonStartedAt = time() or 0
-  if self.UI and self.UI.RefreshStatsPanel then self.UI:RefreshStatsPanel() end
   return stats.seasonNumber
 end
 
@@ -4718,19 +4714,8 @@ function LeafVE_AchTest.UI:Build()
   end)
   self.titlesTab = titlesTab
 
-  local statsTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  statsTab:SetPoint("LEFT", titlesTab, "RIGHT", 5, 0)
-  statsTab:SetWidth(75)
-  statsTab:SetHeight(28)
-  statsTab:SetText("My Stats")
-  statsTab:SetScript("OnClick", function()
-    LeafVE_AchTest.UI.currentView = "stats"
-    LeafVE_AchTest.UI:Refresh()
-  end)
-  self.statsTab = statsTab
-
   local adminTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  adminTab:SetPoint("LEFT", statsTab, "RIGHT", 5, 0)
+  adminTab:SetPoint("LEFT", titlesTab, "RIGHT", 5, 0)
   adminTab:SetWidth(60)
   adminTab:SetHeight(28)
   adminTab:SetText("Admin")
@@ -4808,111 +4793,7 @@ function LeafVE_AchTest.UI:Build()
   self.resetBtn = resetBtn
 
   -- â”€â”€ Admin Panel (hidden by default) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  -- My Stats panel
-  local statsFrame = CreateFrame("Frame", nil, f)
-  statsFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -124)
-  statsFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 18)
-  statsFrame:SetBackdrop({
-    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 12,
-    insets = {left=4, right=4, top=4, bottom=4}
-  })
-  statsFrame:SetBackdropColor(0.035, 0.025, 0.018, 0.93)
-  statsFrame:SetBackdropBorderColor(0.48, 0.31, 0.10, 0.95)
-  statsFrame:Hide()
-  self.statsFrame = statsFrame
-
-  local statsTitle = statsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  statsTitle:SetPoint("TOP", statsFrame, "TOP", 0, -26)
-  statsTitle:SetText("My Stats")
-  statsTitle:SetTextColor(THEME.gold[1], THEME.gold[2], THEME.gold[3])
-
-  local repTitle = statsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  repTitle:SetPoint("TOP", statsTitle, "BOTTOM", 0, -12)
-  repTitle:SetText("Reputation Gained")
-  repTitle:SetTextColor(THEME.orange[1], THEME.orange[2], THEME.orange[3])
-
-  local repSubtitle = statsFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  repSubtitle:SetPoint("TOP", repTitle, "BOTTOM", 0, -6)
-  repSubtitle:SetWidth(760)
-  repSubtitle:SetText("Tracks positive reputation earned by this character after the first login snapshot.")
-  repSubtitle:SetTextColor(0.72, 0.69, 0.64)
-
-  local function CreateRepStatCard(parent, x, y, label)
-    local card = CreateFrame("Frame", nil, parent)
-    card:SetWidth(340)
-    card:SetHeight(135)
-    card:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-    card:SetBackdrop({
-      bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-      edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-      tile = true, tileSize = 16, edgeSize = 10,
-      insets = {left=3, right=3, top=3, bottom=3}
-    })
-    card:SetBackdropColor(0.06, 0.035, 0.02, 0.96)
-    card:SetBackdropBorderColor(0.55, 0.36, 0.12, 0.94)
-
-    local cardLabel = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    cardLabel:SetPoint("TOP", card, "TOP", 0, -18)
-    cardLabel:SetText(label)
-    cardLabel:SetTextColor(0.93, 0.76, 0.20)
-
-    local cardValue = card:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    cardValue:SetPoint("CENTER", card, "CENTER", 0, 4)
-    cardValue:SetText("0")
-    cardValue:SetTextColor(1.0, 0.50, 0.00)
-
-    local cardDetail = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    cardDetail:SetPoint("BOTTOM", card, "BOTTOM", 0, 14)
-    cardDetail:SetWidth(310)
-    cardDetail:SetJustifyH("CENTER")
-    cardDetail:SetText("")
-    cardDetail:SetTextColor(0.68, 0.66, 0.62)
-    return {frame=card, value=cardValue, detail=cardDetail}
-  end
-
-  self.repStatCards = {
-    today = CreateRepStatCard(statsFrame, 70, -128, "Today"),
-    week = CreateRepStatCard(statsFrame, 450, -128, "This Week"),
-    season = CreateRepStatCard(statsFrame, 70, -292, "Season"),
-    allTime = CreateRepStatCard(statsFrame, 450, -292, "All Time"),
-  }
-
-  local newSeasonBtn = CreateFrame("Button", nil, statsFrame, "UIPanelButtonTemplate")
-  newSeasonBtn:SetWidth(130)
-  newSeasonBtn:SetHeight(26)
-  newSeasonBtn:SetPoint("BOTTOMRIGHT", statsFrame, "BOTTOMRIGHT", -24, 20)
-  newSeasonBtn:SetText("Start New Season")
-  newSeasonBtn:SetScript("OnClick", function()
-    local _, rankName = GetGuildInfo("player")
-    if not IsOfficerRank(rankName) then
-      Print("Only guild officers may start a new reputation season.")
-      return
-    end
-    local seasonNumber = LeafVE_AchTest:StartNewReputationSeason()
-    Print("Reputation Season "..tostring(seasonNumber).." started.")
-  end)
-  self.newRepSeasonBtn = newSeasonBtn
-
-  function LeafVE_AchTest.UI:RefreshStatsPanel()
-    if not self.repStatCards then return end
-    local stats = LeafVE_AchTest:GetReputationStats()
-    self.repStatCards.today.value:SetText(tostring(stats.today or 0))
-    self.repStatCards.week.value:SetText(tostring(stats.week or 0))
-    self.repStatCards.season.value:SetText(tostring(stats.season or 0))
-    self.repStatCards.allTime.value:SetText(tostring(stats.allTime or 0))
-    self.repStatCards.today.detail:SetText(tostring(stats.dayKey or "Current day"))
-    self.repStatCards.week.detail:SetText("Monday through Sunday")
-    self.repStatCards.season.detail:SetText(LeafVE_AchTest:GetReputationSeasonLabel())
-    self.repStatCards.allTime.detail:SetText("Since reputation tracking began")
-
-    local _, rankName = GetGuildInfo("player")
-    if self.newRepSeasonBtn then
-      if IsOfficerRank(rankName) then self.newRepSeasonBtn:Show() else self.newRepSeasonBtn:Hide() end
-    end
-  end
-
+  -- Reputation tracking remains internal; the former My Stats panel has been removed.
   local adminFrame = CreateFrame("Frame", nil, f)
   adminFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -110)
   adminFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 10)
@@ -5768,6 +5649,9 @@ function LeafVE_AchTest.UI:Refresh()
   local _, rankName = GetGuildInfo("player")
   local hasAdminAccess = IsOfficerRank(rankName)
 
+  if self.currentView == "stats" then
+    self.currentView = "achievements"
+  end
   if not hasAdminAccess and self.currentView == "admin" then
     self.currentView = "achievements"
   end
@@ -5814,9 +5698,6 @@ function LeafVE_AchTest.UI:Refresh()
       if self.titleFrames[i] then self.titleFrames[i]:Hide() end
     end
   end
-  
-  if self.statsFrame then self.statsFrame:Hide() end
-  if self.statsTab then self.statsTab:Enable() end
   
   if self.scrollFrame then self.scrollFrame:SetVerticalScroll(0) end
   if self.scrollbar then self.scrollbar:SetValue(0) end
@@ -5952,32 +5833,6 @@ function LeafVE_AchTest.UI:Refresh()
       LeafVE_AchTest:ScanMountCollection(true)
     end
     self:RefreshMounts()
-  elseif self.currentView == "stats" then
-    if self.achTab then self.achTab:Enable() end
-    if self.companionTab then self.companionTab:Enable() end
-    if self.mountsTab then self.mountsTab:Enable() end
-    if self.titlesTab then self.titlesTab:Enable() end
-    if self.statsTab then self.statsTab:Disable() end
-    if self.adminTab and hasAdminAccess then self.adminTab:Enable() end
-    if self.awardBtn then self.awardBtn:Hide() end
-    if self.searchLabel then self.searchLabel:Hide() end
-    if self.searchBox then self.searchBox:Hide() end
-    if self.clearBtn then self.clearBtn:Hide() end
-    if self.titleSearchLabel then self.titleSearchLabel:Hide() end
-    if self.titleSearchBox then self.titleSearchBox:Hide() end
-    if self.titleClearBtn then self.titleClearBtn:Hide() end
-    if self.sidebarFrame then self.sidebarFrame:Hide() end
-    if self.companionSidebarFrame then self.companionSidebarFrame:Hide() end
-    if self.mountSidebarFrame then self.mountSidebarFrame:Hide() end
-    if self.titleSidebarFrame then self.titleSidebarFrame:Hide() end
-    if self.adminFrame then self.adminFrame:Hide() end
-    if self.statsFrame then self.statsFrame:Show() end
-    if self.scrollFrame then self.scrollFrame:Hide() end
-    if self.scrollbar then self.scrollbar:Hide() end
-    if self.scrollUp then self.scrollUp:Hide() end
-    if self.scrollDown then self.scrollDown:Hide() end
-    if self.contentArt then self.contentArt:Hide() end
-    self:RefreshStatsPanel()
   elseif self.currentView == "admin" then
     if self.achTab then self.achTab:Enable() end
     if self.companionTab then self.companionTab:Enable() end

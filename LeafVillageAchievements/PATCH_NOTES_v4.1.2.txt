@@ -1,0 +1,8 @@
+Ashen Banner Achievements v4.1.2
+
+- Removed the My Stats tab and panel from the achievement window.
+- Admin now sits directly after Titles.
+- Old UI state pointing at My Stats safely returns to Achievements.
+- Shortened long earned-title names to one or two compact words.
+- Guild rank achievements and their requirements were not changed.
+- Reputation tracking data is preserved internally; only its panel was removed.
