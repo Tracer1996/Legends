@@ -46,12 +46,12 @@ LeafVE_AshenDossierSkin.DEFAULT_LAYOUT = {
   recentView   = { x = 2,   y = -190, w = 178, h = 24,  bleed = 0, align = "CENTER" },
   recentGear   = { x = 2,   y = -222, w = 178, h = 24,  bleed = 0, align = "CENTER" },
   recentProf   = { x = 2,   y = -256, w = 178, h = 24,  bleed = 0, align = "CENTER" },
-  achPoints    = { x = 0,   y = -26,  w = 188, h = 0,   bleed = 0, align = "LEFT" },
-  achSummary   = { x = 20,  y = -42,  w = 188, h = 0,   bleed = 0, align = "LEFT" },
-  achList      = { x = -20, y = -64,  w = 188, h = 118, bleed = 0  },
+  achPoints    = { x = 27,  y = -40,  w = 188, h = 0,   bleed = 0, align = "LEFT" },
+  achSummary   = { x = 24,  y = -59,  w = 188, h = 0,   bleed = 0, align = "LEFT" },
+  achList      = { x = 24,  y = -81,  w = 188, h = 118, bleed = 0  },
   achView      = { x = 28,  y = -212, w = 178, h = 26,  bleed = 0, align = "CENTER" },
-  achTalent    = { x = -28, y = -244, w = 178, h = 26,  bleed = 0, align = "CENTER" },
-  achWork      = { x = 28,  y = -280, w = 178, h = 24,  bleed = 0, align = "CENTER" },
+  achTalent    = { x = 28,  y = -244, w = 178, h = 26,  bleed = 0, align = "CENTER" },
+  achWork      = { x = 28,  y = -280, w = 178, h = 26,  bleed = 0, align = "CENTER" },
   pageHeader   = { x = -1,  y = -32,  w = 134, h = 56,  bleed = 0, align = "CENTER" },
   headerMe         = { x = -9,  y = -30, w = 510, h = 126, bleed = 0, align = "CENTER" },
   headerWeek       = { x = 15,  y = 28,  w = 510, h = 112, bleed = 0, align = "CENTER" },
@@ -119,7 +119,7 @@ LeafVE_AshenDossierSkin.PAGE_HEADER_EDITOR_LABELS = {
 }
 
 -- Hardcode the approved layout once so older SavedVariables from the live editor do not override it.
-LeafVE_AshenDossierSkin.LAYOUT_VERSION = 35
+LeafVE_AshenDossierSkin.LAYOUT_VERSION = 37
 if LeafVE_AshenDossierLayout.__layoutVersion ~= LeafVE_AshenDossierSkin.LAYOUT_VERSION then
   local k, v
   for k, v in pairs(LeafVE_AshenDossierSkin.DEFAULT_LAYOUT) do
@@ -139,6 +139,17 @@ end
 
 function LeafVE_AshenDossierSkin:Print(msg)
   if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700AshenLayout:|r " .. tostring(msg)) end
+end
+
+-- Dossier placement tools are intentionally restricted to the two guild admin ranks.
+function LeafVE_AshenDossierSkin:IsLayoutAdmin()
+  return LeafVE and LeafVE.IsAdminRank and LeafVE:IsAdminRank() and true or false
+end
+
+function LeafVE_AshenDossierSkin:RequireLayoutAdmin()
+  if self:IsLayoutAdmin() then return true end
+  self:Print("Access denied: only Flame / Flame Keeper can use dossier layout tools.")
+  return false
 end
 
 function LeafVE_AshenDossierSkin:GetLayout(piece)
@@ -762,8 +773,7 @@ function LeafVE_AshenDossierSkin:ApplyLayout(ui)
   if rank then
     self:SetFrameSize(rank, "rank")
     rank:ClearAllPoints()
-    rank:SetPoint("TOPLEFT", hero, "TOPLEFT", self:GetVal("rank", "x") or 18, self:GetVal("rank", "y") or -226)
-    rank:SetPoint("TOPRIGHT", hero, "TOPRIGHT", -(self:GetVal("rank", "x") or 18), self:GetVal("rank", "y") or -226)
+    rank:SetPoint("TOP", hero, "TOP", self:GetVal("rank", "x") or 0, self:GetVal("rank", "y") or -226)
   end
 
   local recent = ui.cardRecentBadgesPanel
@@ -845,32 +855,20 @@ function LeafVE_AshenDossierSkin:FixDynamicHeader(ui)
   end
 
   if ui.cardName then
-    ui.cardName:ClearAllPoints()
     ui.cardName:SetParent(hero)
-    ui.cardName:SetPoint("TOP", hero, "TOP", -4, -14)
-    ui.cardName:SetWidth(380)
-    if ui.cardName.SetHeight then ui.cardName:SetHeight(22) end
-    if ui.cardName.SetJustifyH then ui.cardName:SetJustifyH("CENTER") end
+    self:ApplyTopCenterLayout(ui.cardName, "name", hero)
     if ui.cardName.SetDrawLayer then ui.cardName:SetDrawLayer("OVERLAY", 7) end
   end
 
   if ui.cardClassLevelRank then
-    ui.cardClassLevelRank:ClearAllPoints()
     ui.cardClassLevelRank:SetParent(hero)
-    ui.cardClassLevelRank:SetPoint("TOP", hero, "TOP", -4, -42)
-    ui.cardClassLevelRank:SetWidth(360)
-    if ui.cardClassLevelRank.SetHeight then ui.cardClassLevelRank:SetHeight(34) end
-    if ui.cardClassLevelRank.SetJustifyH then ui.cardClassLevelRank:SetJustifyH("CENTER") end
+    self:ApplyTopCenterLayout(ui.cardClassLevelRank, "classText", hero)
     if ui.cardClassLevelRank.SetDrawLayer then ui.cardClassLevelRank:SetDrawLayer("OVERLAY", 7) end
   end
 
   if ui.cardTopSpecText then
-    ui.cardTopSpecText:ClearAllPoints()
     ui.cardTopSpecText:SetParent(hero)
-    ui.cardTopSpecText:SetPoint("TOP", hero, "TOP", 0, -80)
-    ui.cardTopSpecText:SetWidth(220)
-    if ui.cardTopSpecText.SetHeight then ui.cardTopSpecText:SetHeight(16) end
-    if ui.cardTopSpecText.SetJustifyH then ui.cardTopSpecText:SetJustifyH("CENTER") end
+    self:ApplyTopCenterLayout(ui.cardTopSpecText, "topSpec", hero)
     if ui.cardTopSpecText.SetDrawLayer then ui.cardTopSpecText:SetDrawLayer("OVERLAY", 7) end
   end
 
@@ -893,9 +891,10 @@ function LeafVE_AshenDossierSkin:FixDynamicHeader(ui)
   end
 
   if ui.cardPortraitContainer then
-    -- Keep portrait controlled by the dossier layout instead of shifting down when another player's spec/rank text has extra lines.
+    -- Keep portrait controlled by the saved dossier layout for every player card.
+    self:SetFrameSize(ui.cardPortraitContainer, "portrait")
     ui.cardPortraitContainer:ClearAllPoints()
-    ui.cardPortraitContainer:SetPoint("TOP", hero, "TOP", 0, -102)
+    ui.cardPortraitContainer:SetPoint("TOP", hero, "TOP", self:GetVal("portrait", "x") or 0, self:GetVal("portrait", "y") or -102)
   end
 end
 
@@ -912,6 +911,7 @@ function LeafVE_AshenDossierSkin:Apply(ui)
   self:ApplyLayout(ui)
   self:FixDynamicHeader(ui)
   self:CreateLayoutEditorButton()
+  if self.configMode then self:RefreshConfigHandles() end
 end
 
 function LeafVE_AshenDossierSkin:DebugSwatches()
@@ -1162,12 +1162,273 @@ function LeafVE_AshenDossierSkin:ApplyPageHeaderToAllPanels()
   end
 end
 
+
+-- Direct on-panel configuration mode. Every editable dossier element receives a
+-- labelled drag box; dragging updates the same saved layout table used by /abdump.
+LeafVE_AshenDossierSkin.CONFIG_TARGETS = {
+  hero = "cardHeroPanel",
+  note = "cardNotesBox",
+  wisdom = "cardWisdomBox",
+  portrait = "cardPortraitContainer",
+  rank = "cardStatusPanel",
+  recent = "cardRecentBadgesPanel",
+  achievements = "cardAchievementsPanel",
+  name = "cardName",
+  classText = "cardClassLevelRank",
+  topSpec = "cardTopSpecText",
+  specBtn = "cardSpecCycleBtn",
+  wisdomTitle = "cardWisdomLabel",
+  wisdomQuote = "cardWisdomQuoteText",
+  wisdomAuthor = "cardWisdomAttribution",
+  recentText = "cardRecentBadgesSummary",
+  recentBadges = "cardRecentBadgesFrame",
+  recentView = "viewAllBadgesBtn",
+  recentGear = "cardGearBtn",
+  recentProf = "cardProfessionBtn",
+  achPoints = "cardAchPoints",
+  achSummary = "cardAchSummary",
+  achList = "cardRecentAchFrame",
+  achView = "cardViewAllBtn",
+  achTalent = "cardTalentBtn",
+  achWork = "cardWorkOrderBtn",
+}
+
+function LeafVE_AshenDossierSkin:GetConfigTarget(piece)
+  local ui = LeafVE and LeafVE.UI
+  if not ui then return nil end
+  -- Individual tab headers use their own editor pieces in the full Layout Editor.
+  -- The legacy shared pageHeader value is intentionally not exposed as a drag box.
+  if piece == "pageHeader" then return nil end
+  local key = self.CONFIG_TARGETS and self.CONFIG_TARGETS[piece]
+  return key and ui[key] or nil
+end
+
+function LeafVE_AshenDossierSkin:GetConfigRegionSize(target)
+  if not target then return 60, 20 end
+  local w = target.GetWidth and target:GetWidth() or 0
+  local h = target.GetHeight and target:GetHeight() or 0
+  if (not w or w < 1) and target.GetStringWidth then w = target:GetStringWidth() end
+  if (not h or h < 1) and target.GetStringHeight then h = target:GetStringHeight() end
+  w = tonumber(w) or 0
+  h = tonumber(h) or 0
+  if w < 54 then w = 54 end
+  if h < 18 then h = 18 end
+  return w, h
+end
+
+function LeafVE_AshenDossierSkin:StyleConfigHandle(handle, selected)
+  if not handle then return end
+  if selected then
+    handle:SetBackdropColor(0.75, 0.42, 0.02, 0.34)
+    handle:SetBackdropBorderColor(1, 0.82, 0.18, 1)
+    if handle.label then handle.label:SetTextColor(1, 0.9, 0.35) end
+  else
+    handle:SetBackdropColor(0.02, 0.38, 0.55, 0.18)
+    handle:SetBackdropBorderColor(0.15, 0.75, 1, 0.9)
+    if handle.label then handle.label:SetTextColor(0.55, 0.9, 1) end
+  end
+end
+
+function LeafVE_AshenDossierSkin:CreateConfigHandle(piece, index)
+  self.configHandles = self.configHandles or {}
+  local handle = self.configHandles[piece]
+  if handle then return handle end
+
+  handle = CreateFrame("Frame", nil, UIParent)
+  self.configHandles[piece] = handle
+  handle.piece = piece
+  handle:SetFrameStrata("TOOLTIP")
+  handle:SetFrameLevel(120 + (index or 0))
+  handle:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 8, edgeSize = 10,
+    insets = {left = 2, right = 2, top = 2, bottom = 2},
+  })
+  handle:EnableMouse(true)
+  handle:RegisterForDrag("LeftButton")
+
+  local label = handle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  label:SetPoint("CENTER", handle, "CENTER", 0, 0)
+  label:SetText((self.EDITOR_LABELS and self.EDITOR_LABELS[piece]) or piece)
+  label:SetShadowColor(0, 0, 0, 1)
+  label:SetShadowOffset(1, -1)
+  handle.label = label
+
+  handle:SetScript("OnMouseDown", function()
+    LeafVE_AshenDossierSkin:SelectPiece(this.piece)
+    LeafVE_AshenDossierSkin:RefreshConfigHandles()
+  end)
+  handle:SetScript("OnDragStart", function()
+    local target = LeafVE_AshenDossierSkin:GetConfigTarget(this.piece)
+    if not target then return end
+    local cx, cy = GetCursorPosition()
+    local parent = target.GetParent and target:GetParent() or UIParent
+    this._dragScale = (parent and parent.GetEffectiveScale and parent:GetEffectiveScale()) or 1
+    if not this._dragScale or this._dragScale <= 0 then this._dragScale = 1 end
+    this._dragCursorX = cx or 0
+    this._dragCursorY = cy or 0
+    this._dragLayoutX = LeafVE_AshenDossierSkin:GetVal(this.piece, "x") or 0
+    this._dragLayoutY = LeafVE_AshenDossierSkin:GetVal(this.piece, "y") or 0
+    this._dragging = true
+    LeafVE_AshenDossierSkin:SelectPiece(this.piece)
+  end)
+  handle:SetScript("OnUpdate", function()
+    if not this._dragging then return end
+    local cx, cy = GetCursorPosition()
+    local scale = this._dragScale or 1
+    local dx = ((cx or 0) - (this._dragCursorX or 0)) / scale
+    local dy = ((cy or 0) - (this._dragCursorY or 0)) / scale
+    local nx = math.floor((this._dragLayoutX or 0) + dx + (dx >= 0 and 0.5 or -0.5))
+    local ny = math.floor((this._dragLayoutY or 0) + dy + (dy >= 0 and 0.5 or -0.5))
+    LeafVE_AshenDossierSkin:SetVal(this.piece, "x", nx)
+    LeafVE_AshenDossierSkin:SetVal(this.piece, "y", ny)
+    if LeafVE and LeafVE.UI then
+      LeafVE_AshenDossierSkin:ApplyLayout(LeafVE.UI)
+    end
+    LeafVE_AshenDossierSkin:UpdateEditorInfo()
+    LeafVE_AshenDossierSkin:RefreshConfigHandles()
+  end)
+  handle:SetScript("OnDragStop", function()
+    if not this._dragging then return end
+    this._dragging = nil
+    LeafVE_AshenDossierSkin:RefreshFromEditor()
+    LeafVE_AshenDossierSkin:RefreshConfigHandles()
+    local x = LeafVE_AshenDossierSkin:GetVal(this.piece, "x") or 0
+    local y = LeafVE_AshenDossierSkin:GetVal(this.piece, "y") or 0
+    LeafVE_AshenDossierSkin:Print(this.piece .. " moved to x=" .. tostring(x) .. " y=" .. tostring(y))
+  end)
+  handle:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Drag: " .. tostring(this.piece), 1, 0.82, 0.25)
+    GameTooltip:AddLine("Use the Layout Editor buttons to resize this element.", 0.8, 0.8, 0.8, true)
+    GameTooltip:Show()
+  end)
+  handle:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  return handle
+end
+
+function LeafVE_AshenDossierSkin:RefreshConfigHandles()
+  if not self.configMode then return end
+  self.configHandles = self.configHandles or {}
+  local card = LeafVE and LeafVE.UI and LeafVE.UI.card
+  if not card or (card.IsVisible and not card:IsVisible()) then
+    self:HideConfigHandles()
+    return
+  end
+  local selected = self:GetSelectedPiece()
+  local i
+  for i = 1, table.getn(self.EDITOR_PIECES or {}) do
+    local piece = self.EDITOR_PIECES[i]
+    local target = self:GetConfigTarget(piece)
+    local handle = self:CreateConfigHandle(piece, i)
+    local targetVisible = target and ((target.IsVisible and target:IsVisible()) or (not target.IsVisible and (not target.IsShown or target:IsShown())))
+    if targetVisible and target.GetCenter then
+      local tx, ty = target:GetCenter()
+      if tx and ty then
+        local w, h = self:GetConfigRegionSize(target)
+        handle:ClearAllPoints()
+        handle:SetPoint("CENTER", target, "CENTER", 0, 0)
+        handle:SetWidth(w)
+        handle:SetHeight(h)
+        self:StyleConfigHandle(handle, piece == selected)
+        handle:Show()
+      else
+        handle:Hide()
+      end
+    else
+      handle:Hide()
+    end
+  end
+end
+
+function LeafVE_AshenDossierSkin:HideConfigHandles()
+  if not self.configHandles then return end
+  local _, handle
+  for _, handle in pairs(self.configHandles) do
+    handle._dragging = nil
+    handle:Hide()
+  end
+end
+
+function LeafVE_AshenDossierSkin:CreateConfigToolbar()
+  if LeafVE_AshenConfigToolbar then return LeafVE_AshenConfigToolbar end
+  local f = CreateFrame("Frame", "LeafVE_AshenConfigToolbar", UIParent)
+  LeafVE_AshenConfigToolbar = f
+  f:SetWidth(410)
+  f:SetHeight(54)
+  f:SetPoint("TOP", UIParent, "TOP", 0, -18)
+  f:SetFrameStrata("TOOLTIP")
+  f:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 14,
+    insets = {left = 4, right = 4, top = 4, bottom = 4},
+  })
+  f:SetBackdropColor(0.02, 0.02, 0.018, 0.96)
+  f:SetBackdropBorderColor(1, 0.62, 0.12, 1)
+
+  local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  title:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -9)
+  title:SetText("Ashen Config Mode: drag the labelled boxes")
+
+  local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  hint:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 9)
+  hint:SetText("Dump prints every saved coordinate to chat.")
+  hint:SetTextColor(0.8, 0.8, 0.8)
+
+  self:CreateSmallButton(f, "Editor", 62, 20, "TOPRIGHT", f, "TOPRIGHT", -146, -8, function()
+    LeafVE_AshenDossierSkin:ToggleLayoutEditor()
+  end)
+  self:CreateSmallButton(f, "Dump", 58, 20, "TOPRIGHT", f, "TOPRIGHT", -84, -8, function()
+    LeafVE_AshenDossierSkin:DumpLayout()
+  end)
+  self:CreateSmallButton(f, "Done", 54, 20, "TOPRIGHT", f, "TOPRIGHT", -26, -8, function()
+    LeafVE_AshenDossierSkin:ToggleConfigMode(false)
+  end)
+  f:SetScript("OnUpdate", function()
+    if not LeafVE_AshenDossierSkin.configMode then return end
+    this._refreshElapsed = (this._refreshElapsed or 0) + (arg1 or 0)
+    if this._refreshElapsed >= 0.15 then
+      this._refreshElapsed = 0
+      LeafVE_AshenDossierSkin:RefreshConfigHandles()
+    end
+  end)
+  return f
+end
+
+function LeafVE_AshenDossierSkin:ToggleConfigMode(forceState)
+  local enabled
+  if forceState == nil then enabled = not self.configMode else enabled = forceState and true or false end
+  if enabled and not self:RequireLayoutAdmin() then
+    if LeafVE_AshenLayoutButton then LeafVE_AshenLayoutButton:Hide() end
+    return
+  end
+  self.configMode = enabled
+  if enabled then
+    if LeafVE and LeafVE.UI and LeafVE.UI.card and not LeafVE.UI.card:IsShown() then
+      self:Print("Open a Banner Dossier player card to place its elements.")
+    end
+    local toolbar = self:CreateConfigToolbar()
+    toolbar:Show()
+    self:RefreshConfigHandles()
+    if LeafVE_AshenLayoutButton then LeafVE_AshenLayoutButton:SetText("Done") end
+    self:Print("Config mode ON. Drag boxes, then click Dump.")
+  else
+    self:HideConfigHandles()
+    if LeafVE_AshenConfigToolbar then LeafVE_AshenConfigToolbar:Hide() end
+    if LeafVE_AshenLayoutButton then LeafVE_AshenLayoutButton:SetText("Config") end
+    self:Print("Config mode OFF. Layout remains saved for /abdump.")
+  end
+end
+
 function LeafVE_AshenDossierSkin:RefreshFromEditor()
   if LeafVE and LeafVE.UI then
     self:Apply(LeafVE.UI)
     self:ApplyPageHeaderToAllPanels()
   end
   self:UpdateEditorInfo()
+  if self.configMode then self:RefreshConfigHandles() end
 end
 
 function LeafVE_AshenDossierSkin:EditorMove(dx, dy)
@@ -1216,6 +1477,7 @@ function LeafVE_AshenDossierSkin:EditorAlign(align)
 end
 
 function LeafVE_AshenDossierSkin:DumpLayout()
+  if not self:RequireLayoutAdmin() then return end
   local pieces = {}
   local seen = {}
   local i, pc
@@ -1243,9 +1505,6 @@ function LeafVE_AshenDossierSkin:DumpLayout()
     local line = pc .. " x=" .. x .. " y=" .. y .. " w=" .. w .. " h=" .. h .. " bleed=" .. b
     if a then line = line .. " align=" .. a end
     self:Print(line)
-  end
-  if LeafVE_AshenDossierLayout and LeafVE_AshenDossierLayout.editorButton then
-    self:Print("editorButton x=" .. (LeafVE_AshenDossierLayout.editorButton.x or 0) .. " y=" .. (LeafVE_AshenDossierLayout.editorButton.y or 250))
   end
   if LeafVE_AshenDossierLayout and LeafVE_AshenDossierLayout.editorFrame then
     self:Print("editorFrame x=" .. (LeafVE_AshenDossierLayout.editorFrame.x or 260) .. " y=" .. (LeafVE_AshenDossierLayout.editorFrame.y or 20))
@@ -1280,13 +1539,38 @@ function LeafVE_AshenDossierSkin:CreateSmallButton(parent, text, width, height, 
 end
 
 function LeafVE_AshenDossierSkin:CreateLayoutEditorButton()
-  -- Layout editor button removed from the live UI.
-  if LeafVE_AshenLayoutButton then
-    LeafVE_AshenLayoutButton:Hide()
+  if not self:IsLayoutAdmin() then
+    if LeafVE_AshenLayoutButton then LeafVE_AshenLayoutButton:Hide() end
+    return
   end
+  local parent = LeafVE and LeafVE.UI and (LeafVE.UI.frame or LeafVE.UI.card) or UIParent
+  if not parent then return end
+  local b = LeafVE_AshenLayoutButton
+  if not b then
+    b = CreateFrame("Button", "LeafVE_AshenLayoutButton", parent, "UIPanelButtonTemplate")
+    LeafVE_AshenLayoutButton = b
+    b:SetWidth(68)
+    b:SetHeight(20)
+    b:SetText("Config")
+    b:SetScript("OnClick", function() LeafVE_AshenDossierSkin:ToggleConfigMode() end)
+    b:SetScript("OnEnter", function()
+      GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+      GameTooltip:SetText("Dossier Config Mode", 1, 0.82, 0.25)
+      GameTooltip:AddLine("Drag every dossier element directly, then dump its coordinates.", 0.85, 0.85, 0.85, true)
+      GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  elseif b:GetParent() ~= parent then
+    b:SetParent(parent)
+  end
+  b:ClearAllPoints()
+  b:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -12, 10)
+  b:SetFrameLevel((parent.GetFrameLevel and parent:GetFrameLevel() or 1) + 80)
+  b:Show()
 end
 
 function LeafVE_AshenDossierSkin:ToggleLayoutEditor()
+  if not self:RequireLayoutAdmin() then return end
   if LeafVE_AshenLayoutEditor and LeafVE_AshenLayoutEditor:IsVisible() then
     LeafVE_AshenLayoutEditor:Hide()
     return
@@ -1297,6 +1581,7 @@ function LeafVE_AshenDossierSkin:ToggleLayoutEditor()
 end
 
 function LeafVE_AshenDossierSkin:CreateLayoutEditor()
+  if not self:IsLayoutAdmin() then return end
   if LeafVE_AshenLayoutEditor then return end
 
   local f = CreateFrame("Frame", "LeafVE_AshenLayoutEditor", UIParent)
@@ -1362,6 +1647,9 @@ function LeafVE_AshenDossierSkin:CreateLayoutEditor()
   end)
   self:CreateSmallButton(f, "Move Current Header", 128, 20, "TOPRIGHT", f, "TOPRIGHT", -42, -72, function()
     LeafVE_AshenDossierSkin:SelectActivePageHeader()
+  end)
+  self:CreateSmallButton(f, "Toggle Drag Config", 128, 20, "TOPRIGHT", f, "TOPRIGHT", -42, -96, function()
+    LeafVE_AshenDossierSkin:ToggleConfigMode()
   end)
 
   local headerLbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1456,9 +1744,16 @@ function LeafVE_AshenDossierSkin:CreateLayoutEditor()
   self:SelectPiece("recent")
 end
 
+SLASH_ABCONFIG1 = "/abconfig"
+SlashCmdList["ABCONFIG"] = function()
+  if LeafVE_AshenDossierSkin and LeafVE_AshenDossierSkin:RequireLayoutAdmin() then
+    LeafVE_AshenDossierSkin:ToggleConfigMode()
+  end
+end
+
 SLASH_ABEDITOR1 = "/abeditor"
 SlashCmdList["ABEDITOR"] = function()
-  if LeafVE_AshenDossierSkin then
+  if LeafVE_AshenDossierSkin and LeafVE_AshenDossierSkin:RequireLayoutAdmin() then
     LeafVE_AshenDossierSkin:CreateLayoutEditorButton()
     LeafVE_AshenDossierSkin:ToggleLayoutEditor()
   end
@@ -1505,7 +1800,9 @@ end
 
 SLASH_ABLIST1 = "/ablist"
 SlashCmdList["ABLIST"] = function()
-  if LeafVE_AshenDossierSkin then LeafVE_AshenDossierSkin:Print("Pieces: " .. LeafVE_AshenDossierSkin:PieceList()) end
+  if LeafVE_AshenDossierSkin and LeafVE_AshenDossierSkin:RequireLayoutAdmin() then
+    LeafVE_AshenDossierSkin:Print("Pieces: " .. LeafVE_AshenDossierSkin:PieceList())
+  end
 end
 
 local function AB_ParseWords(msg)
@@ -1523,6 +1820,7 @@ end
 
 SLASH_ABMOVE1 = "/abmove"
 SlashCmdList["ABMOVE"] = function(msg)
+  if not LeafVE_AshenDossierSkin:RequireLayoutAdmin() then return end
   local a = AB_ParseWords(msg)
   local piece, dx, dy = a[1], tonumber(a[2]), tonumber(a[3])
   if not piece or not dx or not dy then
@@ -1539,6 +1837,7 @@ end
 
 SLASH_ABSIZE1 = "/absize"
 SlashCmdList["ABSIZE"] = function(msg)
+  if not LeafVE_AshenDossierSkin:RequireLayoutAdmin() then return end
   local a = AB_ParseWords(msg)
   local piece, w, h = a[1], tonumber(a[2]), tonumber(a[3])
   if not piece or not w or not h then
@@ -1553,6 +1852,7 @@ end
 
 SLASH_ABBLEED1 = "/abbleed"
 SlashCmdList["ABBLEED"] = function(msg)
+  if not LeafVE_AshenDossierSkin:RequireLayoutAdmin() then return end
   local a = AB_ParseWords(msg)
   local piece, b = a[1], tonumber(a[2])
   if not piece or not b then
@@ -1566,6 +1866,7 @@ end
 
 SLASH_ABALIGN1 = "/abalign"
 SlashCmdList["ABALIGN"] = function(msg)
+  if not LeafVE_AshenDossierSkin:RequireLayoutAdmin() then return end
   local a = AB_ParseWords(msg)
   local piece, align = a[1], a[2]
   if not piece or not align then
@@ -1584,12 +1885,15 @@ end
 
 SLASH_ABDUMP1 = "/abdump"
 SlashCmdList["ABDUMP"] = function()
-  if LeafVE_AshenDossierSkin then LeafVE_AshenDossierSkin:DumpLayout() end
+  if LeafVE_AshenDossierSkin and LeafVE_AshenDossierSkin:RequireLayoutAdmin() then
+    LeafVE_AshenDossierSkin:DumpLayout()
+  end
 end
 
 SLASH_ABRESETLAYOUT1 = "/abresetlayout"
 SlashCmdList["ABRESETLAYOUT"] = function()
+  if not LeafVE_AshenDossierSkin:RequireLayoutAdmin() then return end
   LeafVE_AshenDossierLayout = {}
   AB_Refresh()
-  LeafVE_AshenDossierSkin:Print("Layout reset to v21 defaults.")
+  LeafVE_AshenDossierSkin:Print("Layout reset to approved defaults.")
 end

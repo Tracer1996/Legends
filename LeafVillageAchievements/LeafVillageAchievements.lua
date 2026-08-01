@@ -10,7 +10,7 @@ LeafVE_AchTest.DEBUG = false -- Set to true for debug messages
 LeafVE_AchTest.initialized = false -- Set to true after PLAYER_ENTERING_WORLD backlog scan
 
 local ADDON_COMM_PREFIX = "LeafVEAch"
-local LEAFVE_RELEASE_VERSION = "3.0"
+local LEAFVE_RELEASE_VERSION = "4.1.1"
 local VERSION_REMINDER_INTERVAL = 24 * 60 * 60
 local LEAFVE_ANNOUNCEMENT_ITEM_ID = 6948
 
@@ -187,6 +187,8 @@ local function EnsureDB()
   if not LeafVE_AchTest_DB.peakGold then LeafVE_AchTest_DB.peakGold = {} end
   if not LeafVE_AchTest_DB.goldEarnedTotal then LeafVE_AchTest_DB.goldEarnedTotal = {} end
   if not LeafVE_AchTest_DB.goldLastSeen then LeafVE_AchTest_DB.goldLastSeen = {} end
+  if type(LeafVE_AchTest_DB.reputationStats) ~= "table" then LeafVE_AchTest_DB.reputationStats = {} end
+  if type(LeafVE_AchTest_DB.reputationSnapshot) ~= "table" then LeafVE_AchTest_DB.reputationSnapshot = {} end
   if type(LeafVE_AchTest_DB.guildRankState) ~= "table" then LeafVE_AchTest_DB.guildRankState = {} end
   if type(LeafVE_AchTest_DB.versionInfo) ~= "table" then LeafVE_AchTest_DB.versionInfo = {} end
   if type(LeafVE_AchTest_DB.versionInfo.guildVersions) ~= "table" then LeafVE_AchTest_DB.versionInfo.guildVersions = {} end
@@ -557,40 +559,40 @@ local ACHIEVEMENTS = {
   gold_1000={id="gold_1000",name="Wealthy Elite",desc="Accumulate 1000 gold",category="Gold",points=75,icon="Interface\\Icons\\INV_Misc_Coin_17"},
 
   -- Dungeons (Completion â€” all bosses with checkmarks, awarded when all killed)
-  dung_bfd_complete={id="dung_bfd_complete",name="Blackfathom Deeps: Dungeon Clear",desc="Defeat all bosses in Blackfathom Deeps",category="Dungeons",points=25,icon="Interface\\Icons\\INV_Misc_Gem_Pearl_01",criteria_key="bfd",criteria_type="dungeon"},
-  dung_brd_complete={id="dung_brd_complete",name="Blackrock Depths: Dungeon Clear",desc="Defeat all bosses in Blackrock Depths",category="Dungeons",points=50,icon="Interface\\Icons\\Spell_Fire_LavaSpawn",criteria_key="brd",criteria_type="dungeon"},
-  dung_cotbm_complete={id="dung_cotbm_complete",name="Caverns of Time: Dungeon Clear",desc="Defeat all bosses in Caverns of Time: Black Morass",category="Dungeons",points=50,icon="Interface\\Icons\\INV_Misc_Rune_01",criteria_key="cotbm",criteria_type="dungeon"},
-  dung_dme_complete={id="dung_dme_complete",name="Dire Maul East: Dungeon Clear",desc="Defeat all bosses in Dire Maul East",category="Dungeons",points=45,icon="Interface\\Icons\\INV_Misc_Key_14",criteria_key="dme",criteria_type="dungeon"},
-  dung_dmn_complete={id="dung_dmn_complete",name="Dire Maul North: Dungeon Clear",desc="Defeat all bosses in Dire Maul North",category="Dungeons",points=50,icon="Interface\\Icons\\INV_Crown_01",criteria_key="dmn",criteria_type="dungeon"},
-  dung_dmw_complete={id="dung_dmw_complete",name="Dire Maul West: Dungeon Clear",desc="Defeat all bosses in Dire Maul West",category="Dungeons",points=45,icon="Interface\\Icons\\INV_Misc_Book_09",criteria_key="dmw",criteria_type="dungeon"},
-  dung_dmr_complete={id="dung_dmr_complete",name="Dragonmaw Retreat: Dungeon Clear",desc="Defeat all bosses in Dragonmaw Retreat",category="Dungeons",points=35,icon="Interface\\Icons\\INV_Misc_Head_Dragon_Black",criteria_key="dmr",criteria_type="dungeon"},
-  dung_gc_complete={id="dung_gc_complete",name="Gilneas City: Dungeon Clear",desc="Defeat all bosses in Gilneas City",category="Dungeons",points=35,icon="Interface\\Icons\\INV_Shield_06",criteria_key="gc",criteria_type="dungeon"},
-  dung_gnomer_complete={id="dung_gnomer_complete",name="Gnomeregan: Dungeon Clear",desc="Defeat all bosses in Gnomeregan",category="Dungeons",points=30,icon="Interface\\Icons\\INV_Misc_Gear_01",criteria_key="gnomer",criteria_type="dungeon"},
-  dung_hq_complete={id="dung_hq_complete",name="Hateforge Quarry: Dungeon Clear",desc="Defeat all bosses in Hateforge Quarry",category="Dungeons",points=40,icon="Interface\\Icons\\Trade_Mining",criteria_key="hq",criteria_type="dungeon"},
-  dung_kc_complete={id="dung_kc_complete",name="Karazhan Crypt: Dungeon Clear",desc="Defeat all bosses in Karazhan Crypt",category="Dungeons",points=50,icon="Interface\\Icons\\Spell_Shadow_SoulGem",criteria_key="kc",criteria_type="dungeon"},
-  dung_lbrs_complete={id="dung_lbrs_complete",name="Lower Blackrock Spire: Dungeon Clear",desc="Defeat all bosses in Lower Blackrock Spire",category="Dungeons",points=50,icon="Interface\\Icons\\INV_Misc_Head_Dragon_Black",criteria_key="lbrs",criteria_type="dungeon"},
-  dung_mara_complete={id="dung_mara_complete",name="Maraudon: Dungeon Clear",desc="Defeat all bosses in Maraudon",category="Dungeons",points=40,icon="Interface\\Icons\\INV_Misc_Root_02",criteria_key="mara",criteria_type="dungeon"},
+  dung_bfd_complete={id="dung_bfd_complete",name="Blackfathom Deeps: Dungeon Clear",desc="Defeat all required bosses in Blackfathom Deeps",category="Dungeons",points=25,icon="Interface\\Icons\\INV_Misc_Gem_Pearl_01",criteria_key="bfd",criteria_type="dungeon"},
+  dung_brd_complete={id="dung_brd_complete",name="Blackrock Depths: Dungeon Clear",desc="Defeat all required bosses in Blackrock Depths",category="Dungeons",points=50,icon="Interface\\Icons\\Spell_Fire_LavaSpawn",criteria_key="brd",criteria_type="dungeon"},
+  dung_cotbm_complete={id="dung_cotbm_complete",name="Caverns of Time: Dungeon Clear",desc="Defeat all required bosses in Caverns of Time: Black Morass",category="Dungeons",points=50,icon="Interface\\Icons\\INV_Misc_Rune_01",criteria_key="cotbm",criteria_type="dungeon"},
+  dung_dme_complete={id="dung_dme_complete",name="Dire Maul East: Dungeon Clear",desc="Defeat all required bosses in Dire Maul East",category="Dungeons",points=45,icon="Interface\\Icons\\INV_Misc_Key_14",criteria_key="dme",criteria_type="dungeon"},
+  dung_dmn_complete={id="dung_dmn_complete",name="Dire Maul North: Dungeon Clear",desc="Defeat all required bosses in Dire Maul North",category="Dungeons",points=50,icon="Interface\\Icons\\INV_Crown_01",criteria_key="dmn",criteria_type="dungeon"},
+  dung_dmw_complete={id="dung_dmw_complete",name="Dire Maul West: Dungeon Clear",desc="Defeat all required bosses in Dire Maul West",category="Dungeons",points=45,icon="Interface\\Icons\\INV_Misc_Book_09",criteria_key="dmw",criteria_type="dungeon"},
+  dung_dmr_complete={id="dung_dmr_complete",name="Dragonmaw Retreat: Dungeon Clear",desc="Defeat all required bosses in Dragonmaw Retreat",category="Dungeons",points=35,icon="Interface\\Icons\\INV_Misc_Head_Dragon_Black",criteria_key="dmr",criteria_type="dungeon"},
+  dung_gc_complete={id="dung_gc_complete",name="Gilneas City: Dungeon Clear",desc="Defeat all required bosses in Gilneas City",category="Dungeons",points=35,icon="Interface\\Icons\\INV_Shield_06",criteria_key="gc",criteria_type="dungeon"},
+  dung_gnomer_complete={id="dung_gnomer_complete",name="Gnomeregan: Dungeon Clear",desc="Defeat all required bosses in Gnomeregan",category="Dungeons",points=30,icon="Interface\\Icons\\INV_Misc_Gear_01",criteria_key="gnomer",criteria_type="dungeon"},
+  dung_hq_complete={id="dung_hq_complete",name="Hateforge Quarry: Dungeon Clear",desc="Defeat all required bosses in Hateforge Quarry",category="Dungeons",points=40,icon="Interface\\Icons\\Trade_Mining",criteria_key="hq",criteria_type="dungeon"},
+  dung_kc_complete={id="dung_kc_complete",name="Karazhan Crypt: Dungeon Clear",desc="Defeat all required bosses in Karazhan Crypt",category="Dungeons",points=50,icon="Interface\\Icons\\Spell_Shadow_SoulGem",criteria_key="kc",criteria_type="dungeon"},
+  dung_lbrs_complete={id="dung_lbrs_complete",name="Lower Blackrock Spire: Dungeon Clear",desc="Defeat all required bosses in Lower Blackrock Spire",category="Dungeons",points=50,icon="Interface\\Icons\\INV_Misc_Head_Dragon_Black",criteria_key="lbrs",criteria_type="dungeon"},
+  dung_mara_complete={id="dung_mara_complete",name="Maraudon: Dungeon Clear",desc="Defeat all required bosses in Maraudon",category="Dungeons",points=40,icon="Interface\\Icons\\INV_Misc_Root_02",criteria_key="mara",criteria_type="dungeon"},
   dung_mara_princess={id="dung_mara_princess",name="Maraudon: Princess Theradras",desc="Defeat Princess Theradras in Maraudon",category="Dungeons",points=25,icon="Interface\\Icons\\INV_Misc_Root_02"},
-  dung_rfc_complete={id="dung_rfc_complete",name="Ragefire Chasm: Dungeon Clear",desc="Defeat all bosses in Ragefire Chasm",category="Dungeons",points=15,icon="Interface\\Icons\\Spell_Fire_Incinerate",criteria_key="rfc",criteria_type="dungeon"},
-  dung_rfdown_complete={id="dung_rfdown_complete",name="Razorfen Downs: Dungeon Clear",desc="Defeat all bosses in Razorfen Downs",category="Dungeons",points=35,icon="Interface\\Icons\\Spell_Shadow_RaiseDead",criteria_key="rfdown",criteria_type="dungeon"},
-  dung_rfk_complete={id="dung_rfk_complete",name="Razorfen Kraul: Dungeon Clear",desc="Defeat all bosses in Razorfen Kraul",category="Dungeons",points=30,icon="Interface\\Icons\\INV_Misc_Head_Boar_01",criteria_key="rfk",criteria_type="dungeon"},
-  dung_sm_arm_complete={id="dung_sm_arm_complete",name="Scarlet Monastery - Armory: Dungeon Clear",desc="Defeat all bosses in Scarlet Monastery (Armory)",category="Dungeons",points=20,icon="Interface\\Icons\\INV_Gauntlets_17",criteria_key="sm_arm",criteria_type="dungeon"},
-  dung_sm_cat_complete={id="dung_sm_cat_complete",name="Scarlet Monastery - Cathedral: Dungeon Clear",desc="Defeat all bosses in Scarlet Monastery (Cathedral)",category="Dungeons",points=25,icon="Interface\\Icons\\Spell_Holy_Resurrection",criteria_key="sm_cat",criteria_type="dungeon"},
-  dung_sm_gy_complete={id="dung_sm_gy_complete",name="Scarlet Monastery - Graveyard: Dungeon Clear",desc="Defeat all bosses in Scarlet Monastery (Graveyard)",category="Dungeons",points=20,icon="Interface\\Icons\\Spell_Shadow_DeathScream",criteria_key="sm_gy",criteria_type="dungeon"},
-  dung_sm_lib_complete={id="dung_sm_lib_complete",name="Scarlet Monastery - Library: Dungeon Clear",desc="Defeat all bosses in Scarlet Monastery (Library)",category="Dungeons",points=20,icon="Interface\\Icons\\INV_Misc_Book_11",criteria_key="sm_lib",criteria_type="dungeon"},
-  dung_scholo_complete={id="dung_scholo_complete",name="Scholomance: Dungeon Clear",desc="Defeat all bosses in Scholomance",category="Dungeons",points=55,icon="Interface\\Icons\\INV_Misc_Bone_HumanSkull_01",criteria_key="scholo",criteria_type="dungeon"},
-  dung_sfk_complete={id="dung_sfk_complete",name="Shadowfang Keep: Dungeon Clear",desc="Defeat all bosses in Shadowfang Keep",category="Dungeons",points=25,icon="Interface\\Icons\\Spell_Shadow_Possession",criteria_key="sfk",criteria_type="dungeon"},
-  dung_swv_complete={id="dung_swv_complete",name="Stormwind Vault: Dungeon Clear",desc="Defeat all bosses in Stormwind Vault",category="Dungeons",points=50,icon="Interface\\Icons\\INV_Misc_Key_03",criteria_key="swv",criteria_type="dungeon"},
-  dung_swr_complete={id="dung_swr_complete",name="Stormwrought Ruins: Dungeon Clear",desc="Defeat all bosses in Stormwrought Ruins",category="Dungeons",points=30,icon="Interface\\Icons\\Spell_Shadow_Charm",criteria_key="swr",criteria_type="dungeon"},
-  dung_strat_complete={id="dung_strat_complete",name="Stratholme: Dungeon Clear",desc="Defeat all bosses in Stratholme",category="Dungeons",points=55,icon="Interface\\Icons\\Spell_Shadow_RaiseDead",criteria_key="strat",criteria_type="dungeon"},
-  dung_st_complete={id="dung_st_complete",name="Sunken Temple: Dungeon Clear",desc="Defeat all bosses in The Sunken Temple",category="Dungeons",points=45,icon="Interface\\Icons\\INV_Misc_Head_Dragon_Green",criteria_key="st",criteria_type="dungeon"},
-  dung_tcg_complete={id="dung_tcg_complete",name="The Crescent Grove: Dungeon Clear",desc="Defeat all bosses in The Crescent Grove",category="Dungeons",points=25,icon="Interface\\Icons\\Spell_Nature_Regeneration",criteria_key="tcg",criteria_type="dungeon"},
-  dung_dm_complete={id="dung_dm_complete",name="The Deadmines: Dungeon Clear",desc="Defeat all bosses in The Deadmines",category="Dungeons",points=20,icon="Interface\\Icons\\INV_Misc_Bandana_03",criteria_key="dm",criteria_type="dungeon"},
-  dung_stocks_complete={id="dung_stocks_complete",name="The Stockade: Dungeon Clear",desc="Defeat all bosses in The Stockade",category="Dungeons",points=25,icon="Interface\\Icons\\INV_Misc_Key_03",criteria_key="stocks",criteria_type="dungeon"},
-  dung_ulda_complete={id="dung_ulda_complete",name="Uldaman: Dungeon Clear",desc="Defeat all bosses in Uldaman",category="Dungeons",points=35,icon="Interface\\Icons\\INV_Misc_StoneTablet_11",criteria_key="ulda",criteria_type="dungeon"},
-  dung_ubrs_complete={id="dung_ubrs_complete",name="Upper Blackrock Spire: Dungeon Clear",desc="Defeat all bosses in Upper Blackrock Spire",category="Dungeons",points=55,icon="Interface\\Icons\\INV_Misc_Head_Dragon_01",criteria_key="ubrs",criteria_type="dungeon"},
-  dung_wc_complete={id="dung_wc_complete",name="Wailing Caverns: Dungeon Clear",desc="Defeat all bosses in Wailing Caverns",category="Dungeons",points=20,icon="Interface\\Icons\\Spell_Nature_NullifyDisease",criteria_key="wc",criteria_type="dungeon"},
-  dung_zf_complete={id="dung_zf_complete",name="Zul'Farrak: Dungeon Clear",desc="Defeat all bosses in Zul'Farrak",category="Dungeons",points=40,icon="Interface\\Icons\\INV_Misc_Head_Dragon_Bronze",criteria_key="zf",criteria_type="dungeon"},
+  dung_rfc_complete={id="dung_rfc_complete",name="Ragefire Chasm: Dungeon Clear",desc="Defeat all required bosses in Ragefire Chasm",category="Dungeons",points=15,icon="Interface\\Icons\\Spell_Fire_Incinerate",criteria_key="rfc",criteria_type="dungeon"},
+  dung_rfdown_complete={id="dung_rfdown_complete",name="Razorfen Downs: Dungeon Clear",desc="Defeat all required bosses in Razorfen Downs",category="Dungeons",points=35,icon="Interface\\Icons\\Spell_Shadow_RaiseDead",criteria_key="rfdown",criteria_type="dungeon"},
+  dung_rfk_complete={id="dung_rfk_complete",name="Razorfen Kraul: Dungeon Clear",desc="Defeat all required bosses in Razorfen Kraul",category="Dungeons",points=30,icon="Interface\\Icons\\INV_Misc_Head_Boar_01",criteria_key="rfk",criteria_type="dungeon"},
+  dung_sm_arm_complete={id="dung_sm_arm_complete",name="Scarlet Monastery - Armory: Dungeon Clear",desc="Defeat all required bosses in Scarlet Monastery (Armory)",category="Dungeons",points=20,icon="Interface\\Icons\\INV_Gauntlets_17",criteria_key="sm_arm",criteria_type="dungeon"},
+  dung_sm_cat_complete={id="dung_sm_cat_complete",name="Scarlet Monastery - Cathedral: Dungeon Clear",desc="Defeat all required bosses in Scarlet Monastery (Cathedral)",category="Dungeons",points=25,icon="Interface\\Icons\\Spell_Holy_Resurrection",criteria_key="sm_cat",criteria_type="dungeon"},
+  dung_sm_gy_complete={id="dung_sm_gy_complete",name="Scarlet Monastery - Graveyard: Dungeon Clear",desc="Defeat all required bosses in Scarlet Monastery (Graveyard)",category="Dungeons",points=20,icon="Interface\\Icons\\Spell_Shadow_DeathScream",criteria_key="sm_gy",criteria_type="dungeon"},
+  dung_sm_lib_complete={id="dung_sm_lib_complete",name="Scarlet Monastery - Library: Dungeon Clear",desc="Defeat all required bosses in Scarlet Monastery (Library)",category="Dungeons",points=20,icon="Interface\\Icons\\INV_Misc_Book_11",criteria_key="sm_lib",criteria_type="dungeon"},
+  dung_scholo_complete={id="dung_scholo_complete",name="Scholomance: Dungeon Clear",desc="Defeat all required bosses in Scholomance",category="Dungeons",points=55,icon="Interface\\Icons\\INV_Misc_Bone_HumanSkull_01",criteria_key="scholo",criteria_type="dungeon"},
+  dung_sfk_complete={id="dung_sfk_complete",name="Shadowfang Keep: Dungeon Clear",desc="Defeat all required bosses in Shadowfang Keep",category="Dungeons",points=25,icon="Interface\\Icons\\Spell_Shadow_Possession",criteria_key="sfk",criteria_type="dungeon"},
+  dung_swv_complete={id="dung_swv_complete",name="Stormwind Vault: Dungeon Clear",desc="Defeat all required bosses in Stormwind Vault",category="Dungeons",points=50,icon="Interface\\Icons\\INV_Misc_Key_03",criteria_key="swv",criteria_type="dungeon"},
+  dung_swr_complete={id="dung_swr_complete",name="Stormwrought Ruins: Dungeon Clear",desc="Defeat all required bosses in Stormwrought Ruins",category="Dungeons",points=30,icon="Interface\\Icons\\Spell_Shadow_Charm",criteria_key="swr",criteria_type="dungeon"},
+  dung_strat_complete={id="dung_strat_complete",name="Stratholme: Dungeon Clear",desc="Defeat all required bosses in Stratholme",category="Dungeons",points=55,icon="Interface\\Icons\\Spell_Shadow_RaiseDead",criteria_key="strat",criteria_type="dungeon"},
+  dung_st_complete={id="dung_st_complete",name="Sunken Temple: Dungeon Clear",desc="Defeat all required bosses in The Sunken Temple",category="Dungeons",points=45,icon="Interface\\Icons\\INV_Misc_Head_Dragon_Green",criteria_key="st",criteria_type="dungeon"},
+  dung_tcg_complete={id="dung_tcg_complete",name="The Crescent Grove: Dungeon Clear",desc="Defeat all required bosses in The Crescent Grove",category="Dungeons",points=25,icon="Interface\\Icons\\Spell_Nature_Regeneration",criteria_key="tcg",criteria_type="dungeon"},
+  dung_dm_complete={id="dung_dm_complete",name="The Deadmines: Dungeon Clear",desc="Defeat all required bosses in The Deadmines",category="Dungeons",points=20,icon="Interface\\Icons\\INV_Misc_Bandana_03",criteria_key="dm",criteria_type="dungeon"},
+  dung_stocks_complete={id="dung_stocks_complete",name="The Stockade: Dungeon Clear",desc="Defeat all required bosses in The Stockade",category="Dungeons",points=25,icon="Interface\\Icons\\INV_Misc_Key_03",criteria_key="stocks",criteria_type="dungeon"},
+  dung_ulda_complete={id="dung_ulda_complete",name="Uldaman: Dungeon Clear",desc="Defeat all required bosses in Uldaman",category="Dungeons",points=35,icon="Interface\\Icons\\INV_Misc_StoneTablet_11",criteria_key="ulda",criteria_type="dungeon"},
+  dung_ubrs_complete={id="dung_ubrs_complete",name="Upper Blackrock Spire: Dungeon Clear",desc="Defeat all required bosses in Upper Blackrock Spire",category="Dungeons",points=55,icon="Interface\\Icons\\INV_Misc_Head_Dragon_01",criteria_key="ubrs",criteria_type="dungeon"},
+  dung_wc_complete={id="dung_wc_complete",name="Wailing Caverns: Dungeon Clear",desc="Defeat all required bosses in Wailing Caverns",category="Dungeons",points=20,icon="Interface\\Icons\\Spell_Nature_NullifyDisease",criteria_key="wc",criteria_type="dungeon"},
+  dung_zf_complete={id="dung_zf_complete",name="Zul'Farrak: Dungeon Clear",desc="Defeat all required bosses in Zul'Farrak",category="Dungeons",points=40,icon="Interface\\Icons\\INV_Misc_Head_Dragon_Bronze",criteria_key="zf",criteria_type="dungeon"},
 
   -- Raids - Molten Core
   raid_mc_geddon={id="raid_mc_geddon",name="Molten Core: Baron Geddon",desc="Defeat Baron Geddon",category="Raids",points=30,icon="Interface\\Icons\\Spell_Fire_ElementalDevastation"},
@@ -699,16 +701,16 @@ local ACHIEVEMENTS = {
   raid_ukh_sanvtas={id="raid_ukh_sanvtas",name="Upper Karazhan Halls: Sanv Tas'dal",desc="Defeat Sanv Tas'dal",category="Raids",points=35,icon="Interface\\Icons\\Spell_Shadow_Possession"},
 
   -- Raid Completions (criteria-based â€” all bosses with checkmarks)
-  raid_bwl_complete={id="raid_bwl_complete",name="Blackwing Lair: Raid Clear",desc="Defeat all bosses in Blackwing Lair",category="Raids",points=175,icon="Interface\\Icons\\INV_Misc_Head_Dragon_Black",criteria_key="bwl",criteria_type="raid"},
-  raid_es_complete={id="raid_es_complete",name="Emerald Sanctum: Raid Clear",desc="Defeat all bosses in the Emerald Sanctum",category="Raids",points=175,icon="Interface\\Icons\\INV_Misc_Head_Dragon_Green",criteria_key="es",criteria_type="raid"},
-  raid_lkh_complete={id="raid_lkh_complete",name="Lower Karazhan Halls: Raid Clear",desc="Defeat all bosses in Lower Karazhan Halls",category="Raids",points=175,icon="Interface\\Icons\\INV_Misc_Key_14",criteria_key="lkh",criteria_type="raid"},
-  raid_mc_complete={id="raid_mc_complete",name="Molten Core: Raid Clear",desc="Defeat all bosses in Molten Core",category="Raids",points=150,icon="Interface\\Icons\\Spell_Fire_Incinerate",criteria_key="mc",criteria_type="raid"},
-  raid_naxx_complete={id="raid_naxx_complete",name="Naxxramas: Raid Clear",desc="Defeat all bosses in Naxxramas",category="Raids",points=250,icon="Interface\\Icons\\INV_Misc_Key_15",criteria_key="naxx",criteria_type="raid"},
+  raid_bwl_complete={id="raid_bwl_complete",name="Blackwing Lair: Raid Clear",desc="Defeat all required bosses in Blackwing Lair",category="Raids",points=175,icon="Interface\\Icons\\INV_Misc_Head_Dragon_Black",criteria_key="bwl",criteria_type="raid"},
+  raid_es_complete={id="raid_es_complete",name="Emerald Sanctum: Raid Clear",desc="Defeat all required bosses in the Emerald Sanctum",category="Raids",points=175,icon="Interface\\Icons\\INV_Misc_Head_Dragon_Green",criteria_key="es",criteria_type="raid"},
+  raid_lkh_complete={id="raid_lkh_complete",name="Lower Karazhan Halls: Raid Clear",desc="Defeat all required bosses in Lower Karazhan Halls",category="Raids",points=175,icon="Interface\\Icons\\INV_Misc_Key_14",criteria_key="lkh",criteria_type="raid"},
+  raid_mc_complete={id="raid_mc_complete",name="Molten Core: Raid Clear",desc="Defeat all required bosses in Molten Core",category="Raids",points=150,icon="Interface\\Icons\\Spell_Fire_Incinerate",criteria_key="mc",criteria_type="raid"},
+  raid_naxx_complete={id="raid_naxx_complete",name="Naxxramas: Raid Clear",desc="Defeat all required bosses in Naxxramas",category="Raids",points=250,icon="Interface\\Icons\\INV_Misc_Key_15",criteria_key="naxx",criteria_type="raid"},
   raid_onyxia_complete={id="raid_onyxia_complete",name="Onyxia's Lair: Raid Clear",desc="Defeat Onyxia",category="Raids",points=75,icon="Interface\\Icons\\INV_Misc_Head_Dragon_01",criteria_key="onyxia",criteria_type="raid"},
-  raid_aq20_complete={id="raid_aq20_complete",name="Ruins of Ahn'Qiraj: Raid Clear",desc="Defeat all bosses in Ruins of Ahn'Qiraj",category="Raids",points=100,icon="Interface\\Icons\\INV_Misc_AhnQirajTrinket_04",criteria_key="aq20",criteria_type="raid"},
-  raid_aq40_complete={id="raid_aq40_complete",name="Temple of Ahn'Qiraj: Raid Clear",desc="Defeat all bosses in Temple of Ahn'Qiraj",category="Raids",points=200,icon="Interface\\Icons\\INV_Misc_AhnQirajTrinket_05",criteria_key="aq40",criteria_type="raid"},
-  raid_ukh_complete={id="raid_ukh_complete",name="Upper Karazhan Halls: Raid Clear",desc="Defeat all bosses in Upper Karazhan Halls",category="Raids",points=200,icon="Interface\\Icons\\INV_Misc_Key_15",criteria_key="ukh",criteria_type="raid"},
-  raid_zg_complete={id="raid_zg_complete",name="Zul'Gurub: Raid Clear",desc="Defeat all bosses in Zul'Gurub",category="Raids",points=100,icon="Interface\\Icons\\Ability_Mount_JungleTiger",criteria_key="zg",criteria_type="raid"},
+  raid_aq20_complete={id="raid_aq20_complete",name="Ruins of Ahn'Qiraj: Raid Clear",desc="Defeat all required bosses in Ruins of Ahn'Qiraj",category="Raids",points=100,icon="Interface\\Icons\\INV_Misc_AhnQirajTrinket_04",criteria_key="aq20",criteria_type="raid"},
+  raid_aq40_complete={id="raid_aq40_complete",name="Temple of Ahn'Qiraj: Raid Clear",desc="Defeat all required bosses in Temple of Ahn'Qiraj",category="Raids",points=200,icon="Interface\\Icons\\INV_Misc_AhnQirajTrinket_05",criteria_key="aq40",criteria_type="raid"},
+  raid_ukh_complete={id="raid_ukh_complete",name="Upper Karazhan Halls: Raid Clear",desc="Defeat all required bosses in Upper Karazhan Halls",category="Raids",points=200,icon="Interface\\Icons\\INV_Misc_Key_15",criteria_key="ukh",criteria_type="raid"},
+  raid_zg_complete={id="raid_zg_complete",name="Zul'Gurub: Raid Clear",desc="Defeat all required bosses in Zul'Gurub",category="Raids",points=100,icon="Interface\\Icons\\Ability_Mount_JungleTiger",criteria_key="zg",criteria_type="raid"},
 
   -- Exploration
   explore_eastern_kingdoms={id="explore_eastern_kingdoms",name="Explore Eastern Kingdoms",desc="Discover all zones in Eastern Kingdoms",category="Exploration",points=50,icon="Interface\\Icons\\INV_BannerPVP_02",criteria_key="eastern_kingdoms",criteria_type="zone_group"},
@@ -902,6 +904,13 @@ local TITLES = {
   {id="title_flame_keeper",name="Flame Keeper",chatName="Keeper",achievement="guild_rank_flame_keeper",prefix=true,category="Guild",icon="Interface\\Icons\\Spell_Fire_FireArmor",guild=true,desc="Guardian of the Flame's will, helping lead the guild and keep its spirit burning strong."},
   {id="title_flame",name="Flame",chatName="Flame",achievement="guild_rank_flame",prefix=true,category="Guild",icon="Interface\\Icons\\Spell_Fire_Fire",guild=true,desc="The living spark of the guild, guiding The Ashen Banner's purpose, direction, and legacy."},
   
+  -- Methl-only color test title
+  {id="title_methl_color_test",name="Crimson Test",chatName="Crimson Test",testCharacter="Methl",prefix=true,category="Milestones",icon="Interface\\Icons\\Spell_Fire_Immolation",legendary=true,colorHex="ffe99595",desc="Private light-red chat title used by Methl to test title coloring."},
+
+  -- Ashen Banner milestone titles (unlocked from LeafVillageLegends badges)
+  {id="title_banner_paragon",name="Paragon",chatName="Paragon",externalBadgeId="total_10000",prefix=true,category="Milestones",icon="Interface\\Icons\\INV_Crown_02",legendary=true,colorHex="ffe99595",desc="Awarded for reaching the Banner Legend milestone."},
+  {id="title_ashen_legend",name="Legend",chatName="Legend",externalBadgeId="total_20000",prefix=true,category="Milestones",icon="Interface\\Icons\\INV_Crown_02",legendary=true,colorHex="ffe99595",desc="Awarded for reaching the Ashen Immortal milestone."},
+
   -- Molten Core Titles
   {id="title_firelord",name="Firelord",achievement="raid_mc_ragnaros",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Fire_LavaSpawn"},
   {id="title_flamewaker",name="Flamewaker",achievement="raid_mc_sulfuron",prefix=false,category="Raids",icon="Interface\\Icons\\Spell_Fire_FireArmor"},
@@ -1165,6 +1174,29 @@ local function GetTitleDefinition(titleID)
   return nil
 end
 
+local function IsTitleUnlocked(playerName, titleData)
+  if not titleData then return false end
+  playerName = ShortName(playerName or UnitName("player"))
+  if not playerName then return false end
+
+  if titleData.testCharacter then
+    return string.lower(playerName) == string.lower(tostring(titleData.testCharacter))
+  end
+
+  if titleData.externalBadgeId then
+    local badges = LeafVE_DB and LeafVE_DB.badges and LeafVE_DB.badges[playerName]
+    if not badges and LeafVE_DB and LeafVE_DB.badges then
+      badges = LeafVE_DB.badges[string.lower(playerName)]
+    end
+    return badges and badges[titleData.externalBadgeId] ~= nil
+  end
+
+  if titleData.achievement then
+    return LeafVE_AchTest:HasAchievement(playerName, titleData.achievement)
+  end
+  return false
+end
+
 local function MaybeAutoEquipGuildRankTitle(playerName, titleID)
   EnsureDB()
   playerName = ShortName(playerName or UnitName("player"))
@@ -1246,6 +1278,77 @@ local RAID_BOSSES = {
   lkh    = {"Master Blacksmith Rolfen","Brood Queen Araxxna","Grizikil","Clawlord Howlfang","Lord Blackwald II","Moroes"},
   ukh    = {"Keeper Gnarlmoon","Ley-Watcher Incantagos","Anomalus","Echo of Medivh","King","Sanv Tas'dal","Kruul","Rupturan the Broken","Mephistroth"},
 }
+
+-- Full-clear criteria deliberately exclude rare, random, summoned, and other
+-- optional encounters. Those bosses are still tracked and can still award their
+-- own achievements; they simply cannot block a dungeon or raid clear.
+local NON_REQUIRED_CLEAR_BOSSES = {
+  -- Turtle WoW optional additions to classic dungeons
+  ["Zandara Windhoof"] = true,
+  ["Vangros"] = true,
+  ["Jared Voss"] = true,
+  ["Masterpiece Harvester"] = true,
+  ["Prelate Ironmane"] = true,
+  ["Velthelaxx the Defiler"] = true,
+  ["Duke Dreadmoore"] = true,
+  ["Brother Wystan"] = true,
+  ["Armory Quartermaster Daghelm"] = true,
+  ["Rotthorn"] = true,
+  ["Death Prophet Rakameg"] = true,
+  ["Zel'jeb the Ancient"] = true,
+  ["Champion Razjal the Quick"] = true,
+
+  -- Rare/random dungeon encounters
+  ["Dark Iron Ambassador"] = true,
+  ["Anub'shiah"] = true,
+  ["Eviscerator"] = true,
+  ["Gorosh the Dervish"] = true,
+  ["Grizzle"] = true,
+  ["Hedrum the Creeper"] = true,
+  ["Ok'thor the Breaker"] = true,
+
+  -- Summoned or conditional dungeon encounters
+  ["Gahz'rilla"] = true,
+  ["Theldren"] = true,
+  ["Isalien"] = true,
+  ["Kirtonos the Herald"] = true,
+  ["Death Knight Darkreaver"] = true,
+  ["Kormok"] = true,
+  ["Postmaster Malown"] = true,
+  ["Mor Grayhoof"] = true,
+  ["Urok Doomhowl"] = true,
+  ["Father Flame"] = true,
+  ["Lord Valthalak"] = true,
+
+  -- Zul'Gurub rotating/optional encounters
+  ["Gri'lek"] = true,
+  ["Hazza'rah"] = true,
+  ["Renataki"] = true,
+  ["Wushoolay"] = true,
+  ["Gahz'ranka"] = true,
+}
+
+local function BuildRequiredClearBossList(sourceList)
+  local required = {}
+  if sourceList then
+    for _, bossName in ipairs(sourceList) do
+      if not NON_REQUIRED_CLEAR_BOSSES[bossName] then
+        table.insert(required, bossName)
+      end
+    end
+  end
+  return required
+end
+
+local DUNGEON_CLEAR_BOSSES = {}
+for dungeonId, bossList in pairs(DUNGEON_BOSSES) do
+  DUNGEON_CLEAR_BOSSES[dungeonId] = BuildRequiredClearBossList(bossList)
+end
+
+local RAID_CLEAR_BOSSES = {}
+for raidId, bossList in pairs(RAID_BOSSES) do
+  RAID_CLEAR_BOSSES[raidId] = BuildRequiredClearBossList(bossList)
+end
 
 -- Reverse lookup: boss name â†’ dungeon key
 local BOSS_TO_DUNGEON = {}
@@ -1514,8 +1617,8 @@ function LeafVE_AchTest.GetAchievementMeta(achId)
 end
 
 function LeafVE_AchTest.GetBossCriteria(criteriaKey, criteriaType)
-  if criteriaType == "dungeon" then return DUNGEON_BOSSES[criteriaKey] end
-  if criteriaType == "raid"    then return RAID_BOSSES[criteriaKey]    end
+  if criteriaType == "dungeon" then return DUNGEON_CLEAR_BOSSES[criteriaKey] end
+  if criteriaType == "raid"    then return RAID_CLEAR_BOSSES[criteriaKey]    end
   return nil
 end
 
@@ -1952,6 +2055,148 @@ function LeafVE_AchTest:CheckReputationAchievements(silent)
   if exalted >= 10 then self:AwardAchievement("reputation_exalted_10", silent) end
 end
 
+
+-- Reputation gain statistics for the current character.
+local function ReputationDayKey()
+  return date and date("%Y-%m-%d") or tostring(math.floor((time() or 0) / 86400))
+end
+
+local function ReputationWeekKey()
+  -- Monday-based calendar week. Vanilla 1.12 does not expose a server-reset API.
+  return date and date("%Y-%W") or tostring(math.floor((time() or 0) / 604800))
+end
+
+local function ReputationDateLabel(timestamp)
+  if date then return date("%b %d, %Y", timestamp or time()) end
+  return "Current period"
+end
+
+local function EnsureReputationStats()
+  EnsureDB()
+  local stats = LeafVE_AchTest_DB.reputationStats
+  local now = time() or 0
+  local dayKey = ReputationDayKey()
+  local weekKey = ReputationWeekKey()
+
+  if stats.dayKey ~= dayKey then
+    stats.dayKey = dayKey
+    stats.today = 0
+  end
+  if stats.weekKey ~= weekKey then
+    stats.weekKey = weekKey
+    stats.week = 0
+  end
+  if not stats.seasonStartedAt then stats.seasonStartedAt = now end
+  if not stats.seasonNumber then stats.seasonNumber = 1 end
+  if not stats.today then stats.today = 0 end
+  if not stats.week then stats.week = 0 end
+  if not stats.season then stats.season = 0 end
+  if not stats.allTime then stats.allTime = 0 end
+  return stats
+end
+
+local function ExpandFactionHeadersForSnapshot()
+  if not GetNumFactions or not GetFactionInfo then return {} end
+  local collapsedHeaders = {}
+  local changed = true
+  local safety = 0
+  while changed and safety < 20 do
+    changed = false
+    safety = safety + 1
+    local total = GetNumFactions() or 0
+    for i = 1, total do
+      local name, _, _, _, _, _, _, _, isHeader, isCollapsed = GetFactionInfo(i)
+      if isHeader and isCollapsed and ExpandFactionHeader then
+        table.insert(collapsedHeaders, tostring(name or ""))
+        ExpandFactionHeader(i)
+        changed = true
+      end
+    end
+  end
+  return collapsedHeaders
+end
+
+local function RestoreCollapsedFactionHeaders(collapsedHeaders)
+  if type(collapsedHeaders) ~= "table" or not CollapseFactionHeader then return end
+  for savedIndex = table.getn(collapsedHeaders), 1, -1 do
+    local wantedName = collapsedHeaders[savedIndex]
+    local total = GetNumFactions and (GetNumFactions() or 0) or 0
+    for i = 1, total do
+      local name, _, _, _, _, _, _, _, isHeader, isCollapsed = GetFactionInfo(i)
+      if isHeader and not isCollapsed and tostring(name or "") == wantedName then
+        CollapseFactionHeader(i)
+        break
+      end
+    end
+  end
+end
+
+function LeafVE_AchTest:CaptureReputationSnapshot(recordGains)
+  if not GetNumFactions or not GetFactionInfo then return 0 end
+  EnsureDB()
+  local stats = EnsureReputationStats()
+  local previous = LeafVE_AchTest_DB.reputationSnapshot
+  local current = {}
+  local gained = 0
+
+  local collapsedHeaders = ExpandFactionHeadersForSnapshot()
+  local total = GetNumFactions() or 0
+  for i = 1, total do
+    local name, _, _, _, _, barValue, _, _, isHeader = GetFactionInfo(i)
+    if name and not isHeader and barValue then
+      local key = tostring(name)
+      local value = tonumber(barValue) or 0
+      current[key] = value
+      if recordGains and previous[key] ~= nil then
+        local delta = value - (tonumber(previous[key]) or value)
+        if delta > 0 then gained = gained + delta end
+      end
+    end
+  end
+
+  RestoreCollapsedFactionHeaders(collapsedHeaders)
+  LeafVE_AchTest_DB.reputationSnapshot = current
+  if gained > 0 then
+    stats.today = (tonumber(stats.today) or 0) + gained
+    stats.week = (tonumber(stats.week) or 0) + gained
+    stats.season = (tonumber(stats.season) or 0) + gained
+    stats.allTime = (tonumber(stats.allTime) or 0) + gained
+    if self.UI and self.UI.currentView == "stats" and self.UI.RefreshStatsPanel then
+      self.UI:RefreshStatsPanel()
+    end
+  end
+  return gained
+end
+
+function LeafVE_AchTest:GetReputationStats()
+  local stats = EnsureReputationStats()
+  return {
+    today = tonumber(stats.today) or 0,
+    week = tonumber(stats.week) or 0,
+    season = tonumber(stats.season) or 0,
+    allTime = tonumber(stats.allTime) or 0,
+    seasonNumber = tonumber(stats.seasonNumber) or 1,
+    seasonStartedAt = tonumber(stats.seasonStartedAt) or (time() or 0),
+    dayKey = stats.dayKey,
+    weekKey = stats.weekKey,
+  }
+end
+
+function LeafVE_AchTest:StartNewReputationSeason()
+  EnsureDB()
+  local stats = EnsureReputationStats()
+  stats.season = 0
+  stats.seasonNumber = (tonumber(stats.seasonNumber) or 1) + 1
+  stats.seasonStartedAt = time() or 0
+  if self.UI and self.UI.RefreshStatsPanel then self.UI:RefreshStatsPanel() end
+  return stats.seasonNumber
+end
+
+function LeafVE_AchTest:GetReputationSeasonLabel()
+  local stats = EnsureReputationStats()
+  return "Season "..tostring(tonumber(stats.seasonNumber) or 1).." - since "..ReputationDateLabel(stats.seasonStartedAt)
+end
+
 local function CheckBattlegroundAchievementsForPlayer(me, silent)
   EnsureDB()
   local pc = LeafVE_AchTest_DB.progressCounters
@@ -2368,7 +2613,7 @@ function LeafVE_AchTest:ShowAchievementPopup(achievementID)
   icon:SetPoint("LEFT", popup, "LEFT", 36, -2)
   local popupIconTex = achievement.icon
   if not popupIconTex or popupIconTex == "" then
-    popupIconTex = "Interface\Icons\INV_Misc_QuestionMark"
+    popupIconTex = "Interface\\Icons\\INV_Misc_QuestionMark"
   end
   icon:SetTexture(popupIconTex)
   icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -2571,6 +2816,7 @@ local function EnsureAnnouncementLookups()
 end
 
 local function GetAnnouncementTitleColorHex(titleData)
+  if titleData and titleData.colorHex and titleData.colorHex ~= "" then return titleData.colorHex end
   if titleData and titleData.legendary then return "ffff0000" end
   return "ffffb347"
 end
@@ -2713,6 +2959,17 @@ local function BuildGuildAchievementMessage(playerName, achId, ach)
   return "has earned the achievement "..achLink
 end
 
+
+-- Individual raid-boss achievements are local-only to prevent guild-chat spam.
+-- The corresponding raid clear achievement (raid_*_complete) still announces.
+local function ShouldAnnounceAchievementInGuild(achievementID)
+  if not achievementID then return true end
+  if string.find(achievementID, "^raid_") then
+    return string.find(achievementID, "_complete$") ~= nil
+  end
+  return true
+end
+
 function LeafVE_AchTest:AdminGrantAchievement(targetInput, achInput, requireGuildMember)
   local targetText = Trim(targetInput)
   local achId = NormalizeGrantAchievementId(achInput)
@@ -2740,7 +2997,7 @@ function LeafVE_AchTest:AdminGrantAchievement(targetInput, achInput, requireGuil
   end
   achievements[achId] = {timestamp = Now(), points = ach.points}
 
-  if IsInGuild and IsInGuild() then
+  if IsInGuild and IsInGuild() and ShouldAnnounceAchievementInGuild(achId) then
     local guildMsg = BuildGuildAchievementMessage(target, achId, ach)
     if originalSendChatMessage then
       originalSendChatMessage(guildMsg, "GUILD")
@@ -2756,7 +3013,7 @@ function LeafVE_AchTest:AdminGrantAchievement(targetInput, achInput, requireGuil
   return true, target, ach
 end
 
-function LeafVE_AchTest:AwardAchievement(achievementID, silent)
+function LeafVE_AchTest:AwardAchievement(achievementID, silent, localOnly)
   local disabledCheck = ACHIEVEMENTS and ACHIEVEMENTS[achievementID]
   if disabledCheck and disabledCheck.disabled == true then return end
   local playerName = UnitName("player")
@@ -2776,7 +3033,7 @@ function LeafVE_AchTest:AwardAchievement(achievementID, silent)
     Print("Achievement earned: "..achievement.name.." (+"..achievement.points.." pts)")
 
     -- Guild announcement â€” achievement name is a clickable hyperlink
-    if IsInGuild() then
+    if not localOnly and IsInGuild() and ShouldAnnounceAchievementInGuild(achievementID) then
       local guildMsg = BuildGuildAchievementMessage(me, achievementID, achievement)
 
       -- Use original SendChatMessage to avoid adding title twice
@@ -2807,7 +3064,7 @@ function LeafVE_AchTest:AwardAchievement(achievementID, silent)
         end
         if allDone then
           -- Preserve the caller's notification mode: backlog/login scans must stay silent.
-          self:AwardAchievement(metaId, silent)
+          self:AwardAchievement(metaId, silent, localOnly)
         end
       end
     end
@@ -2860,6 +3117,9 @@ function LeafVE_AchTest:GetCurrentTitle(playerName)
       category = title.category,
       icon = title.icon,
       desc = title.desc,
+      colorHex = title.colorHex,
+      externalBadgeId = title.externalBadgeId,
+      testCharacter = title.testCharacter,
     }
   end
   return nil
@@ -2872,10 +3132,11 @@ function LeafVE_AchTest:SetTitle(playerName, titleID, usePrefix)
   if not titleID or titleID == "" then return end
   local titleData = GetTitleDefinition(titleID)
   if not titleData then return end
-  if self:HasAchievement(playerName, titleData.achievement) then
+  if IsTitleUnlocked(playerName, titleData) then
     LeafVE_AchTest_DB.selectedTitles[playerName] = {id=titleID,asPrefix=usePrefix or false}
     local displayText = usePrefix and (titleData.name.." "..playerName) or (playerName.." "..titleData.name)
-    Print("Title set to: |cFFFF7F00"..displayText.."|r")
+    local titleColorHex = titleData.colorHex or (titleData.legendary and "ffff0000" or "ffff7f00")
+    Print("Title set to: |c"..titleColorHex..displayText.."|r")
     if LeafVE_AchTest.UI and LeafVE_AchTest.UI.Refresh then
       LeafVE_AchTest.UI:Refresh()
     end
@@ -3046,9 +3307,17 @@ LeafVE_AchTest.UI.searchText = ""
 LeafVE_AchTest.UI.titleSearchText = ""
 LeafVE_AchTest.UI.titleCategoryFilter = "All"
 LeafVE_AchTest.UI.selectedCompanionFilter = "All"
+LeafVE_AchTest.UI.selectedMountFilter = "All"
 
 function LeafVE_AchTest.UI:IsAchievementListView()
-  return self.currentView == "achievements" or self.currentView == "companions"
+  -- Collection tabs use their own card renderer. Treating Companions as an
+  -- achievement list lets the recycled achievement-row pool reappear whenever
+  -- the shared scrollbar moves. Only the actual Achievements tab owns it.
+  return self.currentView == "achievements"
+end
+
+function LeafVE_AchTest.UI:IsMountListView()
+  return self.currentView == "mounts"
 end
 
 -- Boss kill tracking: raid bosses only â€” dungeon bosses are tracked via BOSS_TO_DUNGEON
@@ -3204,7 +3473,7 @@ function LeafVE_AchTest:RecordDungeonBoss(bossName)
     local achId = "dung_"..dungId.."_complete"
     if ACHIEVEMENTS[achId] and not self:HasAchievement(me, achId) then
       local allDone = true
-      for _, req in ipairs(DUNGEON_BOSSES[dungId]) do
+      for _, req in ipairs(DUNGEON_CLEAR_BOSSES[dungId] or {}) do
         if not dp[me][dungId][req] then allDone = false; break end
       end
       if allDone then
@@ -3236,18 +3505,19 @@ function LeafVE_AchTest:RecordRaidBoss(bossName)
     local achId = "raid_"..raidId.."_complete"
     if ACHIEVEMENTS[achId] and not self:HasAchievement(me, achId) then
       local allDone = true
-      for _, req in ipairs(RAID_BOSSES[raidId]) do
+      for _, req in ipairs(RAID_CLEAR_BOSSES[raidId] or {}) do
         if not rp[me][raidId][req] then allDone = false; break end
       end
       if allDone then
+        -- The full raid clear is the only achievement from this kill that posts to guild chat.
         self:AwardAchievement(achId)
-        -- Count completed raid runs for run-count achievements
+        -- Run-count and meta rewards still toast locally, but do not create extra guild messages.
     local runTotal = IncrCounter(me, "raidRuns")
-    if runTotal >= 25 then self:AwardAchievement("elite_25_raids") end
-    if runTotal >= 50 then self:AwardAchievement("elite_50_raids") end
-    if runTotal >= 100 then self:AwardAchievement("elite_100_raids") end
-    if runTotal >= 250 then self:AwardAchievement("elite_250_raids") end
-    self:CheckMetaAchievements()
+    if runTotal >= 25 then self:AwardAchievement("elite_25_raids", false, true) end
+    if runTotal >= 50 then self:AwardAchievement("elite_50_raids", false, true) end
+    if runTotal >= 100 then self:AwardAchievement("elite_100_raids", false, true) end
+    if runTotal >= 250 then self:AwardAchievement("elite_250_raids", false, true) end
+    self:CheckMetaAchievements(false, true)
       end
     end
   end
@@ -3266,7 +3536,7 @@ function LeafVE_AchTest:CheckBacklogAchievements()
     for dungId, killed in pairs(dp[me]) do
       local achId = "dung_"..dungId.."_complete"
       if ACHIEVEMENTS[achId] and not self:HasAchievement(me, achId) then
-        local bossList = DUNGEON_BOSSES[dungId]
+        local bossList = DUNGEON_CLEAR_BOSSES[dungId]
         if bossList then
           local allDone = true
           for _, b in ipairs(bossList) do
@@ -3281,7 +3551,7 @@ function LeafVE_AchTest:CheckBacklogAchievements()
     for raidId, killed in pairs(rp[me]) do
       local achId = "raid_"..raidId.."_complete"
       if ACHIEVEMENTS[achId] and not self:HasAchievement(me, achId) then
-        local bossList = RAID_BOSSES[raidId]
+        local bossList = RAID_CLEAR_BOSSES[raidId]
         if bossList then
           local allDone = true
           for _, b in ipairs(bossList) do
@@ -3381,19 +3651,19 @@ local ALL_DUNGEON_COMPLETE_IDS = {
   "dung_dmr_complete",
 }
 
-function LeafVE_AchTest:CheckMetaAchievements(silent)
+function LeafVE_AchTest:CheckMetaAchievements(silent, localOnly)
   local me = ShortName(UnitName("player"))
   if not me then return end
   local allRaids = true
   for _, id in ipairs(ALL_RAID_COMPLETE_IDS) do
     if not self:HasAchievement(me, id) then allRaids = false; break end
   end
-  if allRaids then self:AwardAchievement("elite_all_raids_complete", silent) end
+  if allRaids then self:AwardAchievement("elite_all_raids_complete", silent, localOnly) end
   local allDungeons = true
   for _, id in ipairs(ALL_DUNGEON_COMPLETE_IDS) do
     if not self:HasAchievement(me, id) then allDungeons = false; break end
   end
-  if allDungeons then self:AwardAchievement("elite_all_dungeons_complete", silent) end
+  if allDungeons then self:AwardAchievement("elite_all_dungeons_complete", silent, localOnly) end
 end
 
 -- Re-check all achievement-meta chains (criteria_type="ach_meta") from persisted data.
@@ -3434,9 +3704,13 @@ function LeafVE_AchTest:CheckBossKill(bossName)
   -- Award standalone boss achievements. Most raid bosses award individually again;
   -- clear-only raids still track boss criteria but wait for the full raid clear.
   local raidIdForBoss = BOSS_TO_RAID[resolvedBossName]
+  local raidBossLocalOnly = raidIdForBoss ~= nil
+  local function AwardBossTriggeredAchievement(achievementID)
+    self:AwardAchievement(achievementID, false, raidBossLocalOnly)
+  end
   if BOSS_ACHIEVEMENTS[resolvedBossName] and not RAID_CLEAR_ONLY_RAIDS[raidIdForBoss] then
     Debug("Boss kill: "..resolvedBossName)
-    self:AwardAchievement(BOSS_ACHIEVEMENTS[resolvedBossName])
+    AwardBossTriggeredAchievement(BOSS_ACHIEVEMENTS[resolvedBossName])
   end
   -- Track dungeon progress (awards completion when all bosses done)
   self:RecordDungeonBoss(resolvedBossName)
@@ -3450,34 +3724,34 @@ function LeafVE_AchTest:CheckBossKill(bossName)
     if bossCounter then
       local n = IncrCounter(me, bossCounter)
       if bossCounter == "boss_Ragnaros" then
-        if n >= 5  then self:AwardAchievement("elite_rag_5x")  end
-        if n >= 10 then self:AwardAchievement("elite_rag_10x") end
+        if n >= 5  then AwardBossTriggeredAchievement("elite_rag_5x")  end
+        if n >= 10 then AwardBossTriggeredAchievement("elite_rag_10x") end
       elseif bossCounter == "boss_Nefarian" then
-        if n >= 5  then self:AwardAchievement("elite_nef_5x")  end
-        if n >= 10 then self:AwardAchievement("elite_nef_10x") end
+        if n >= 5  then AwardBossTriggeredAchievement("elite_nef_5x")  end
+        if n >= 10 then AwardBossTriggeredAchievement("elite_nef_10x") end
       elseif bossCounter == "boss_KelThuzad" then
-        if n >= 3 then self:AwardAchievement("elite_kt_3x") end
-        if n >= 5 then self:AwardAchievement("elite_kt_5x") end
+        if n >= 3 then AwardBossTriggeredAchievement("elite_kt_3x") end
+        if n >= 5 then AwardBossTriggeredAchievement("elite_kt_5x") end
       elseif bossCounter == "boss_CThun" then
-        if n >= 5 then self:AwardAchievement("elite_cthun_5x") end
+        if n >= 5 then AwardBossTriggeredAchievement("elite_cthun_5x") end
       elseif bossCounter == "boss_Drakkisath" then
-        if n >= 5 then self:AwardAchievement("elite_drakkisath_5x") end
+        if n >= 5 then AwardBossTriggeredAchievement("elite_drakkisath_5x") end
       elseif bossCounter == "boss_Gandling" then
-        if n >= 5 then self:AwardAchievement("elite_gandling_5x") end
+        if n >= 5 then AwardBossTriggeredAchievement("elite_gandling_5x") end
       elseif bossCounter == "boss_BaronRiv" then
-        if n >= 5 then self:AwardAchievement("elite_baron_5x") end
+        if n >= 5 then AwardBossTriggeredAchievement("elite_baron_5x") end
       elseif bossCounter == "boss_Onyxia" then
-        if n >= 5  then self:AwardAchievement("elite_onyxia_5x")  end
-        if n >= 10 then self:AwardAchievement("elite_onyxia_10x") end
+        if n >= 5  then AwardBossTriggeredAchievement("elite_onyxia_5x")  end
+        if n >= 10 then AwardBossTriggeredAchievement("elite_onyxia_10x") end
       elseif bossCounter == "boss_Hakkar" then
-        if n >= 5 then self:AwardAchievement("elite_hakkar_5x") end
+        if n >= 5 then AwardBossTriggeredAchievement("elite_hakkar_5x") end
       end
     end
     -- Total boss kills
     local total = IncrCounter(me, "totalBossKills")
-    if total >= 100 then self:AwardAchievement("elite_100_bosses") end
-    if total >= 250 then self:AwardAchievement("elite_250_bosses") end
-    if total >= 500 then self:AwardAchievement("elite_500_bosses") end
+    if total >= 100 then AwardBossTriggeredAchievement("elite_100_bosses") end
+    if total >= 250 then AwardBossTriggeredAchievement("elite_250_bosses") end
+    if total >= 500 then AwardBossTriggeredAchievement("elite_500_bosses") end
     -- Unique boss kills (first kill of each boss name)
     EnsureDB()
     local pc = LeafVE_AchTest_DB.progressCounters
@@ -3486,9 +3760,9 @@ function LeafVE_AchTest:CheckBossKill(bossName)
     if not pc[me][killedKey] then
       pc[me][killedKey] = true
       local unique = IncrCounter(me, "uniqueBossKills")
-      if unique >= 25 then self:AwardAchievement("elite_25_unique_bosses") end
-      if unique >= 50 then self:AwardAchievement("elite_50_unique_bosses") end
-      if unique >= 100 then self:AwardAchievement("elite_100_unique_bosses") end
+      if unique >= 25 then AwardBossTriggeredAchievement("elite_25_unique_bosses") end
+      if unique >= 50 then AwardBossTriggeredAchievement("elite_50_unique_bosses") end
+      if unique >= 100 then AwardBossTriggeredAchievement("elite_100_unique_bosses") end
     end
   end
 end
@@ -3713,11 +3987,11 @@ local function CreateAchievementRow(parent)
     if ad.criteria_key and (ad.criteria_type == "dungeon" or ad.criteria_type == "raid") then
       local bossList, progress
       if ad.criteria_type == "dungeon" then
-        bossList = DUNGEON_BOSSES[ad.criteria_key]
+        bossList = DUNGEON_CLEAR_BOSSES[ad.criteria_key]
         local dp = LeafVE_AchTest_DB and LeafVE_AchTest_DB.dungeonProgress
         progress = dp and dp[me] and dp[me][ad.criteria_key]
       elseif ad.criteria_type == "raid" then
-        bossList = RAID_BOSSES[ad.criteria_key]
+        bossList = RAID_CLEAR_BOSSES[ad.criteria_key]
         local rp = LeafVE_AchTest_DB and LeafVE_AchTest_DB.raidProgress
         progress = rp and rp[me] and rp[me][ad.criteria_key]
       end
@@ -3865,6 +4139,468 @@ local function CreateAchievementRow(parent)
   return frame
 end
 
+
+-- Mount collection grid -------------------------------------------------------
+do
+-- The 1.12 client can behave badly when dozens of PlayerModel frames exist at
+-- once. This grid virtualizes the list, creates only the cards around the
+-- visible rows, and places every model in a fixed-size ScrollFrame viewport.
+-- That prevents model frames from escaping their card while keeping scrolling
+-- smooth enough for a large Turtle WoW collection.
+local MOUNT_CARD_W = 294
+local MOUNT_CARD_H = 244
+local MOUNT_CARD_GAP_X = 14
+local MOUNT_GRID_ROW_H = 258
+local MOUNT_GRID_COLS = 3
+local MOUNT_CARD_POOL = 9 -- only the visible rows; avoids the 1.12 model-frame limit
+local MOUNT_SCALE_MIN = 0.25
+local MOUNT_SCALE_MAX = 1.85
+local MOUNT_Z_MIN = -1.20
+local MOUNT_Z_MAX = 1.20
+
+local function ClampMountValue(value,minValue,maxValue)
+  local n=tonumber(value) or minValue
+  if n<minValue then return minValue end
+  if n>maxValue then return maxValue end
+  return n
+end
+
+local function ClearMountModel(model)
+  if not model then return end
+  if model.ClearModel then pcall(model.ClearModel,model) end
+  model:Hide()
+end
+
+local function EnsureMountModelOverrides()
+  if not LeafVE_AchTest_DB then return nil end
+  if not LeafVE_AchTest_DB.mountModelOverrides then LeafVE_AchTest_DB.mountModelOverrides={} end
+  return LeafVE_AchTest_DB.mountModelOverrides
+end
+
+local function CopyMountPreset(entry)
+  local source=LeafVE_AchTest.GetMountModelPreset and LeafVE_AchTest:GetMountModelPreset(entry and entry.family) or nil
+  source=source or {scale=0.86,x=0,y=0,z=-0.12,facing=0.55}
+  local result={
+    scale=tonumber(source.scale) or 0.86,
+    x=tonumber(source.x) or 0,
+    y=tonumber(source.y) or 0,
+    z=tonumber(source.z) or -0.12,
+    facing=tonumber(source.facing) or 0.55,
+  }
+  local overrides=EnsureMountModelOverrides()
+  local saved=overrides and entry and overrides[entry.id]
+  if saved then
+    if saved.scale then result.scale=tonumber(saved.scale) or result.scale end
+    if saved.x then result.x=tonumber(saved.x) or result.x end
+    if saved.y then result.y=tonumber(saved.y) or result.y end
+    if saved.z then result.z=tonumber(saved.z) or result.z end
+    if saved.facing then result.facing=tonumber(saved.facing) or result.facing end
+  end
+  result.scale=ClampMountValue(result.scale,MOUNT_SCALE_MIN,MOUNT_SCALE_MAX)
+  result.z=ClampMountValue(result.z,MOUNT_Z_MIN,MOUNT_Z_MAX)
+  return result
+end
+
+local function SaveMountPresetOverride(entry,preset)
+  if not entry or not entry.id or not preset then return end
+  local overrides=EnsureMountModelOverrides()
+  if not overrides then return end
+  overrides[entry.id]={
+    scale=ClampMountValue(preset.scale,MOUNT_SCALE_MIN,MOUNT_SCALE_MAX),
+    x=tonumber(preset.x) or 0,
+    y=tonumber(preset.y) or 0,
+    z=ClampMountValue(preset.z,MOUNT_Z_MIN,MOUNT_Z_MAX),
+    facing=tonumber(preset.facing) or 0.55,
+  }
+end
+
+local function ResetMountPresetOverride(entry)
+  local overrides=EnsureMountModelOverrides()
+  if overrides and entry and entry.id then overrides[entry.id]=nil end
+end
+
+local function MountModelHasVisual(model)
+  if not model then return false end
+  if model.GetModel then
+    local ok,path=pcall(model.GetModel,model)
+    if ok then return path~=nil and tostring(path)~="" end
+  end
+  if model.GetModelFileID then
+    local ok,fileId=pcall(model.GetModelFileID,model)
+    if ok then return tonumber(fileId) and tonumber(fileId)>0 end
+  end
+  -- Older 1.12 builds do not expose a readable model path. Nil means the
+  -- client accepted SetCreature but cannot be queried for readiness.
+  return nil
+end
+
+local function GetMountCandidates(entry)
+  if LeafVE_AchTest.GetMountCreatureCandidates then
+    local list=LeafVE_AchTest:GetMountCreatureCandidates(entry)
+    if list and table.getn(list)>0 then return list end
+  end
+  local list={}
+  if entry and tonumber(entry.creatureId) then table.insert(list,tonumber(entry.creatureId)) end
+  if LeafVE_AchTest.GetMountFamilyFallback then
+    local fallback=LeafVE_AchTest:GetMountFamilyFallback(entry and entry.family)
+    if fallback and (table.getn(list)==0 or list[1]~=fallback) then table.insert(list,fallback) end
+  end
+  return list
+end
+
+local function CreateMountCollectionCard(parent)
+  local card=CreateFrame("Frame",nil,parent)
+  card:SetWidth(MOUNT_CARD_W)
+  card:SetHeight(MOUNT_CARD_H)
+  card:SetBackdrop({
+    bgFile="Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",
+    tile=true,tileSize=16,edgeSize=10,
+    insets={left=3,right=3,top=3,bottom=3},
+  })
+  card:SetBackdropColor(0.025,0.02,0.018,0.94)
+  card:SetBackdropBorderColor(0.30,0.27,0.23,0.95)
+  card:EnableMouse(true)
+
+  local icon=card:CreateTexture(nil,"ARTWORK")
+  icon:SetWidth(40)
+  icon:SetHeight(40)
+  icon:SetPoint("TOPLEFT",card,"TOPLEFT",10,-10)
+  icon:SetTexCoord(0.07,0.93,0.07,0.93)
+  card.icon=icon
+
+  local name=card:CreateFontString(nil,"OVERLAY","GameFontNormal")
+  name:SetPoint("TOPLEFT",icon,"TOPRIGHT",10,-1)
+  name:SetWidth(222)
+  name:SetJustifyH("LEFT")
+  name:SetTextColor(0.82,0.79,0.75)
+  card.nameText=name
+
+  local status=card:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+  status:SetPoint("TOPLEFT",name,"BOTTOMLEFT",0,-3)
+  status:SetWidth(222)
+  status:SetJustifyH("LEFT")
+  card.statusText=status
+
+  -- A fixed ScrollFrame clips the 3D render. The model is a child of a canvas
+  -- rather than the ScrollFrame itself, which is more reliable on old clients.
+  local viewport=CreateFrame("ScrollFrame",nil,card)
+  viewport:SetPoint("TOPLEFT",card,"TOPLEFT",10,-58)
+  viewport:SetWidth(274)
+  viewport:SetHeight(150)
+  viewport:SetFrameLevel(card:GetFrameLevel()+4)
+  viewport:SetBackdrop({
+    bgFile="Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",
+    tile=true,tileSize=8,edgeSize=8,
+    insets={left=2,right=2,top=2,bottom=2},
+  })
+  viewport:SetBackdropColor(0.012,0.010,0.009,1.0)
+  viewport:SetBackdropBorderColor(0.25,0.25,0.25,0.90)
+  viewport:EnableMouse(true)
+  viewport:EnableMouseWheel(true)
+  card.viewport=viewport
+
+  local canvas=CreateFrame("Frame",nil,viewport)
+  canvas:SetWidth(274)
+  canvas:SetHeight(150)
+  viewport:SetScrollChild(canvas)
+  card.modelCanvas=canvas
+
+  local model=CreateFrame("PlayerModel",nil,canvas)
+  model:SetPoint("TOPLEFT",canvas,"TOPLEFT",0,0)
+  model:SetWidth(274)
+  model:SetHeight(150)
+  model:SetFrameLevel(viewport:GetFrameLevel()+1)
+  card.model=model
+
+  local unavailable=card:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+  unavailable:SetPoint("CENTER",viewport,"CENTER",0,0)
+  unavailable:SetWidth(230)
+  unavailable:SetJustifyH("CENTER")
+  unavailable:SetTextColor(0.72,0.72,0.72)
+  if unavailable.SetDrawLayer then unavailable:SetDrawLayer("OVERLAY",7) end
+  card.unavailableText=unavailable
+
+  local source=card:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+  source:SetPoint("BOTTOMLEFT",card,"BOTTOMLEFT",12,11)
+  source:SetWidth(268)
+  source:SetJustifyH("LEFT")
+  source:SetTextColor(0.52,0.50,0.48)
+  card.sourceText=source
+
+  viewport.mountCard=card
+  viewport:SetScript("OnMouseWheel",function()
+    local c=this.mountCard
+    local entry=c and c.mountEntry
+    if not entry then return end
+    local direction=(arg1 or 0)>=0 and 1 or -1
+    local preset=CopyMountPreset(entry)
+    if IsShiftKeyDown and IsShiftKeyDown() then
+      preset.z=ClampMountValue((preset.z or 0)+(direction*0.04),MOUNT_Z_MIN,MOUNT_Z_MAX)
+    elseif IsControlKeyDown and IsControlKeyDown() then
+      preset.facing=(preset.facing or 0.55)+(direction*0.10)
+    else
+      preset.scale=ClampMountValue((preset.scale or 0.86)+(direction*0.06),MOUNT_SCALE_MIN,MOUNT_SCALE_MAX)
+    end
+    SaveMountPresetOverride(entry,preset)
+    LeafVE_AchTest.UI:ApplyMountModel(c,entry,c.mountOwned,false,c.mountCandidateIndex or 1)
+  end)
+  viewport:SetScript("OnMouseDown",function()
+    if arg1~="RightButton" then return end
+    local c=this.mountCard
+    if not c or not c.mountEntry then return end
+    ResetMountPresetOverride(c.mountEntry)
+    LeafVE_AchTest.UI:ApplyMountModel(c,c.mountEntry,c.mountOwned,false,1)
+    if PlaySound then PlaySound("igMainMenuOptionCheckBoxOn") end
+  end)
+
+  card:SetScript("OnEnter",function()
+    this:SetBackdropBorderColor(0.74,0.49,0.18,1)
+    local entry=this.mountEntry
+    if not entry then return end
+    GameTooltip:SetOwner(this,"ANCHOR_RIGHT")
+    GameTooltip:ClearLines()
+    GameTooltip:SetText(entry.name,0.95,0.78,0.28,1,true)
+    GameTooltip:AddLine(this.mountOwned and "Collected" or "Not collected",
+      this.mountOwned and 0.45 or 0.85,
+      this.mountOwned and 0.90 or 0.45,
+      this.mountOwned and 0.50 or 0.45)
+    GameTooltip:AddLine(tostring(entry.source or "Mount collection"),0.72,0.72,0.72,true)
+    if this.modelUsingFallback then
+      GameTooltip:AddLine("Using a family preview because the exact model was unavailable.",0.95,0.68,0.30,true)
+    end
+    GameTooltip:AddLine(" ",1,1,1)
+    GameTooltip:AddLine("Mouse wheel: resize model",0.62,0.78,0.95)
+    GameTooltip:AddLine("Shift + wheel: move model vertically",0.62,0.78,0.95)
+    GameTooltip:AddLine("Ctrl + wheel: rotate model",0.62,0.78,0.95)
+    GameTooltip:AddLine("Right-click preview: reset this model",0.62,0.78,0.95)
+    GameTooltip:AddLine("Model family: "..tostring(entry.family or "unknown"),0.46,0.50,0.58)
+    GameTooltip:AddLine("Creature entry: "..tostring(this.activeCreatureId or entry.creatureId or "?"),0.42,0.42,0.42)
+    GameTooltip:Show()
+  end)
+  card:SetScript("OnLeave",function()
+    this:SetBackdropBorderColor(0.30,0.27,0.23,0.95)
+    GameTooltip:Hide()
+  end)
+
+  return card
+end
+
+function LeafVE_AchTest.UI:StopMountModelRetries()
+  self.mountModelRetries={}
+  if self.mountModelDriver then self.mountModelDriver:Hide() end
+end
+
+function LeafVE_AchTest.UI:ApplyMountModel(card,entry,owned,queueRetry,candidateIndex)
+  if not card or not card.model or not entry then return end
+  local model=card.model
+  local preset=CopyMountPreset(entry)
+  local candidates=GetMountCandidates(entry)
+  local chosenIndex=tonumber(candidateIndex) or 1
+  if chosenIndex<1 then chosenIndex=1 end
+  if chosenIndex>table.getn(candidates) then chosenIndex=table.getn(candidates) end
+  local creatureId=candidates[chosenIndex]
+
+  ClearMountModel(model)
+  card.mountCandidateIndex=chosenIndex
+  card.activeCreatureId=creatureId
+  card.modelUsingFallback=chosenIndex>1
+  model:Show()
+  model:SetAlpha(owned and 1.0 or 0.34)
+
+  local accepted=false
+  if creatureId and model.SetCreature then
+    accepted=pcall(model.SetCreature,model,creatureId)
+  end
+  if model.SetCamera then pcall(model.SetCamera,model,0) end
+  if model.SetPortraitZoom then pcall(model.SetPortraitZoom,model,0) end
+  if model.SetPosition then pcall(model.SetPosition,model,preset.x or 0,preset.y or 0,preset.z or 0) end
+  if model.SetFacing then pcall(model.SetFacing,model,preset.facing or 0.55) end
+  if model.SetModelScale then pcall(model.SetModelScale,model,preset.scale or 0.86) end
+  if model.SetSequence then pcall(model.SetSequence,model,0) end
+
+  if accepted then
+    card.unavailableText:SetText(owned and "" or "Not collected")
+  else
+    model:Hide()
+    card.unavailableText:SetText(owned and "Model unavailable" or "Not collected")
+  end
+
+  if queueRetry and creatureId then
+    self.mountRetrySerial=(self.mountRetrySerial or 0)+1
+    card.mountRetryToken=self.mountRetrySerial
+    if not self.mountModelRetries then self.mountModelRetries={} end
+    table.insert(self.mountModelRetries,{
+      card=card,entry=entry,owned=owned,token=card.mountRetryToken,
+      attempts=5,delay=0.40,candidateIndex=chosenIndex,candidates=candidates,
+    })
+    if not self.mountModelDriver then
+      local driver=CreateFrame("Frame",nil,UIParent)
+      driver.elapsed=0
+      driver:SetScript("OnUpdate",function()
+        this.elapsed=(this.elapsed or 0)+(arg1 or 0)
+        if this.elapsed<0.08 then return end
+        this.elapsed=0
+        local ui=LeafVE_AchTest and LeafVE_AchTest.UI
+        if not ui or ui.currentView~="mounts" or not ui.frame or not ui.frame:IsVisible() then
+          if ui then ui:StopMountModelRetries() end
+          return
+        end
+        local retries=ui.mountModelRetries or {}
+        local i
+        for i=table.getn(retries),1,-1 do
+          local r=retries[i]
+          r.delay=(r.delay or 0)-0.08
+          if r.delay<=0 then
+            local cardValid=r.card and r.card:IsVisible() and r.card.mountRetryToken==r.token
+              and r.card.mountEntry and r.card.mountEntry.id==r.entry.id
+            if cardValid then
+              local ready=MountModelHasVisual(r.card.model)
+              if ready==true then
+                -- Model is loaded; there is no reason to keep touching it.
+                r.attempts=1
+              elseif ready==false and r.candidates and r.candidateIndex<table.getn(r.candidates) then
+                r.candidateIndex=r.candidateIndex+1
+                ui:ApplyMountModel(r.card,r.entry,r.owned,false,r.candidateIndex)
+              elseif ready==false then
+                r.card.model:Hide()
+                r.card.unavailableText:SetText(r.owned and "Model unavailable" or "Not collected")
+              elseif ready==nil then
+                -- Some 1.12 builds expose SetCreature but no readable model path.
+                -- Reapply once after the frame is visible, then stop retrying.
+                ui:ApplyMountModel(r.card,r.entry,r.owned,false,r.candidateIndex)
+                r.attempts=1
+              end
+            end
+            r.attempts=(r.attempts or 1)-1
+            if r.attempts<=0 or not cardValid then
+              table.remove(retries,i)
+            else
+              r.delay=0.26
+            end
+          end
+        end
+        if table.getn(retries)==0 then this:Hide() end
+      end)
+      self.mountModelDriver=driver
+    end
+    self.mountModelDriver:Show()
+  end
+end
+
+function LeafVE_AchTest.UI:HideMountCards()
+  self:StopMountModelRetries()
+  local cards=self.mountCards or {}
+  local i
+  for i=1,table.getn(cards) do
+    local card=cards[i]
+    if card then
+      card.mountEntry=nil
+      card.mountOwned=nil
+      card.mountRetryToken=nil
+      card.activeCreatureId=nil
+      card.modelUsingFallback=nil
+      ClearMountModel(card.model)
+      card:Hide()
+    end
+  end
+end
+
+function LeafVE_AchTest.UI:UpdateVisibleMounts()
+  local list=self.currentMountList or {}
+  local total=table.getn(list)
+  self:HideMountCards()
+  if total<1 or not self.scrollFrame then return end
+
+  local scrollOff=self.scrollFrame:GetVerticalScroll() or 0
+  local firstGridRow=math.floor(scrollOff/MOUNT_GRID_ROW_H)
+  local firstIndex=(firstGridRow*MOUNT_GRID_COLS)+1
+  local state=LeafVE_AchTest.GetMountCollectionState and LeafVE_AchTest:GetMountCollectionState() or nil
+  state=state or {owned={},icons={}}
+
+  local pool=self.mountCards or {}
+  local pi
+  for pi=1,table.getn(pool) do
+    local index=firstIndex+pi-1
+    if index>total then break end
+    local entry=list[index]
+    local card=pool[pi]
+    local absoluteRow=math.floor((index-1)/MOUNT_GRID_COLS)
+    local col=(index-1)-(absoluteRow*MOUNT_GRID_COLS)
+    local x=8+(col*(MOUNT_CARD_W+MOUNT_CARD_GAP_X))
+    local y=-(absoluteRow*MOUNT_GRID_ROW_H)-4
+    local owned=state.owned and state.owned[entry.id] and true or false
+
+    card:ClearAllPoints()
+    card:SetPoint("TOPLEFT",self.scrollChild,"TOPLEFT",x,y)
+    card.mountEntry=entry
+    card.mountOwned=owned
+    local icon=(LeafVE_AchTest.GetMountDisplayIcon and LeafVE_AchTest:GetMountDisplayIcon(entry,owned)) or (state.icons and state.icons[entry.id]) or entry.icon or "Interface\\Icons\\Ability_Mount_RidingHorse"
+    card.icon:SetTexture(icon)
+    if not card.icon:GetTexture() then card.icon:SetTexture("Interface\\Icons\\Ability_Mount_RidingHorse") end
+    if card.icon.SetDesaturated then card.icon:SetDesaturated(not owned) end
+    card.icon:SetAlpha(owned and 1.0 or 0.78)
+    card.nameText:SetText(entry.name or "Unknown Mount")
+    card.nameText:SetTextColor(owned and 0.96 or 0.68,owned and 0.84 or 0.66,owned and 0.38 or 0.64)
+    card.statusText:SetText(owned and "|cFF69D878Collected|r" or "|cFFB9B6B2Not collected|r")
+    card.sourceText:SetText(tostring(entry.source or "Mount collection"))
+    card:Show()
+    self:ApplyMountModel(card,entry,owned,true,1)
+  end
+end
+
+function LeafVE_AchTest.UI:RefreshMounts()
+  if not self.scrollChild then return end
+  if not LeafVE_AchTest.GetMountCollectionEntries then return end
+
+  local entries=LeafVE_AchTest:GetMountCollectionEntries() or {}
+  local state=LeafVE_AchTest.GetMountCollectionState and LeafVE_AchTest:GetMountCollectionState() or nil
+  state=state or {owned={},icons={}}
+  local filter=self.selectedMountFilter or "All"
+  local search=string.lower(tostring(self.searchText or ""))
+  local filtered={}
+  local _,entry
+  for _,entry in ipairs(entries) do
+    local owned=state.owned and state.owned[entry.id] and true or false
+    local matches=true
+    if filter=="Collected" then matches=owned
+    elseif filter=="Missing" then matches=not owned
+    elseif filter=="Racial" then matches=string.find(string.lower(tostring(entry.source or "")),"racial",1,true)~=nil
+    elseif filter=="PvP" then matches=string.find(string.lower(tostring(entry.source or "")),"pvp",1,true)~=nil
+    elseif filter=="Raids" then matches=string.find(string.lower(tostring(entry.source or "")),"raid",1,true)~=nil
+    elseif filter=="Turtle" then matches=string.find(string.lower(tostring(entry.source or "")),"turtle",1,true)~=nil
+    end
+    if matches and search~="" then
+      local hay=string.lower(tostring(entry.name or "").." "..tostring(entry.source or "").." "..tostring(entry.family or ""))
+      matches=string.find(hay,search,1,true)~=nil
+    end
+    if matches then table.insert(filtered,entry) end
+  end
+  table.sort(filtered,function(a,b) return string.lower(tostring(a.name or ""))<string.lower(tostring(b.name or "")) end)
+  self.currentMountList=filtered
+
+  if not self.mountCards then self.mountCards={} end
+  while table.getn(self.mountCards)<MOUNT_CARD_POOL do
+    table.insert(self.mountCards,CreateMountCollectionCard(self.scrollChild))
+  end
+
+  local rows=math.ceil(table.getn(filtered)/MOUNT_GRID_COLS)
+  self.scrollChild:SetHeight(math.max(10,(rows*MOUNT_GRID_ROW_H)+8))
+  if self.scrollFrame and self.scrollFrame.UpdateScrollChildRect then
+    self.scrollFrame:UpdateScrollChildRect()
+  end
+  if self.scrollFrame and self.scrollbar then
+    local maxScroll=self.scrollFrame:GetVerticalScrollRange()
+    self.scrollbar:SetMinMaxValues(0,maxScroll>0 and maxScroll or 1)
+    local current=self.scrollbar:GetValue() or 0
+    if current>maxScroll then self.scrollbar:SetValue(maxScroll>0 and maxScroll or 0) end
+  end
+  self:UpdateVisibleMounts()
+end
+
+end -- mount collection renderer scope
+
 function LeafVE_AchTest.UI:Build()
   if self.frame then
     self.frame:Show()
@@ -3885,6 +4621,9 @@ function LeafVE_AchTest.UI:Build()
   f:RegisterForDrag("LeftButton")
   f:SetScript("OnDragStart", function() f:StartMoving() end)
   f:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
+  f:SetScript("OnHide", function()
+    if LeafVE_AchTest.UI and LeafVE_AchTest.UI.HideMountCards then LeafVE_AchTest.UI:HideMountCards() end
+  end)
   -- Border only. The full background is the Ashen Banner tiled TGA.
   f:SetBackdrop({
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -3953,9 +4692,23 @@ function LeafVE_AchTest.UI:Build()
     LeafVE_AchTest.UI:Refresh()
   end)
   self.companionTab = companionTab
-  
+
+  local mountsTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  mountsTab:SetPoint("LEFT", companionTab, "RIGHT", 5, 0)
+  mountsTab:SetWidth(80)
+  mountsTab:SetHeight(28)
+  mountsTab:SetText("Mounts")
+  mountsTab:SetScript("OnClick", function()
+    LeafVE_AchTest.UI.currentView = "mounts"
+    LeafVE_AchTest.UI:Refresh()
+  end)
+  -- Keep both names as aliases for compatibility with the integrated
+  -- collections module. They must always reference this same button.
+  self.mountsTab = mountsTab
+  self.mountTab = mountsTab
+
   local titlesTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  titlesTab:SetPoint("LEFT", companionTab, "RIGHT", 5, 0)
+  titlesTab:SetPoint("LEFT", mountsTab, "RIGHT", 5, 0)
   titlesTab:SetWidth(80)
   titlesTab:SetHeight(28)
   titlesTab:SetText("Titles")
@@ -3965,8 +4718,19 @@ function LeafVE_AchTest.UI:Build()
   end)
   self.titlesTab = titlesTab
 
+  local statsTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  statsTab:SetPoint("LEFT", titlesTab, "RIGHT", 5, 0)
+  statsTab:SetWidth(75)
+  statsTab:SetHeight(28)
+  statsTab:SetText("My Stats")
+  statsTab:SetScript("OnClick", function()
+    LeafVE_AchTest.UI.currentView = "stats"
+    LeafVE_AchTest.UI:Refresh()
+  end)
+  self.statsTab = statsTab
+
   local adminTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  adminTab:SetPoint("LEFT", titlesTab, "RIGHT", 5, 0)
+  adminTab:SetPoint("LEFT", statsTab, "RIGHT", 5, 0)
   adminTab:SetWidth(60)
   adminTab:SetHeight(28)
   adminTab:SetText("Admin")
@@ -4034,12 +4798,121 @@ function LeafVE_AchTest.UI:Build()
     LeafVE_AchTest_DB.peakGold        = {}
     LeafVE_AchTest_DB.goldEarnedTotal = {}
     LeafVE_AchTest_DB.goldLastSeen    = {}
+    LeafVE_AchTest_DB.reputationStats = {}
+    LeafVE_AchTest_DB.reputationSnapshot = {}
+    LeafVE_AchTest_DB.mountCollection = {}
+    LeafVE_AchTest_DB.mountModelOverrides = {}
     Print("Reset complete!")
     LeafVE_AchTest.UI:Refresh()
   end)
   self.resetBtn = resetBtn
 
   -- â”€â”€ Admin Panel (hidden by default) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  -- My Stats panel
+  local statsFrame = CreateFrame("Frame", nil, f)
+  statsFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -124)
+  statsFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 18)
+  statsFrame:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 12,
+    insets = {left=4, right=4, top=4, bottom=4}
+  })
+  statsFrame:SetBackdropColor(0.035, 0.025, 0.018, 0.93)
+  statsFrame:SetBackdropBorderColor(0.48, 0.31, 0.10, 0.95)
+  statsFrame:Hide()
+  self.statsFrame = statsFrame
+
+  local statsTitle = statsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  statsTitle:SetPoint("TOP", statsFrame, "TOP", 0, -26)
+  statsTitle:SetText("My Stats")
+  statsTitle:SetTextColor(THEME.gold[1], THEME.gold[2], THEME.gold[3])
+
+  local repTitle = statsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  repTitle:SetPoint("TOP", statsTitle, "BOTTOM", 0, -12)
+  repTitle:SetText("Reputation Gained")
+  repTitle:SetTextColor(THEME.orange[1], THEME.orange[2], THEME.orange[3])
+
+  local repSubtitle = statsFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  repSubtitle:SetPoint("TOP", repTitle, "BOTTOM", 0, -6)
+  repSubtitle:SetWidth(760)
+  repSubtitle:SetText("Tracks positive reputation earned by this character after the first login snapshot.")
+  repSubtitle:SetTextColor(0.72, 0.69, 0.64)
+
+  local function CreateRepStatCard(parent, x, y, label)
+    local card = CreateFrame("Frame", nil, parent)
+    card:SetWidth(340)
+    card:SetHeight(135)
+    card:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+    card:SetBackdrop({
+      bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+      edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+      tile = true, tileSize = 16, edgeSize = 10,
+      insets = {left=3, right=3, top=3, bottom=3}
+    })
+    card:SetBackdropColor(0.06, 0.035, 0.02, 0.96)
+    card:SetBackdropBorderColor(0.55, 0.36, 0.12, 0.94)
+
+    local cardLabel = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    cardLabel:SetPoint("TOP", card, "TOP", 0, -18)
+    cardLabel:SetText(label)
+    cardLabel:SetTextColor(0.93, 0.76, 0.20)
+
+    local cardValue = card:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    cardValue:SetPoint("CENTER", card, "CENTER", 0, 4)
+    cardValue:SetText("0")
+    cardValue:SetTextColor(1.0, 0.50, 0.00)
+
+    local cardDetail = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    cardDetail:SetPoint("BOTTOM", card, "BOTTOM", 0, 14)
+    cardDetail:SetWidth(310)
+    cardDetail:SetJustifyH("CENTER")
+    cardDetail:SetText("")
+    cardDetail:SetTextColor(0.68, 0.66, 0.62)
+    return {frame=card, value=cardValue, detail=cardDetail}
+  end
+
+  self.repStatCards = {
+    today = CreateRepStatCard(statsFrame, 70, -128, "Today"),
+    week = CreateRepStatCard(statsFrame, 450, -128, "This Week"),
+    season = CreateRepStatCard(statsFrame, 70, -292, "Season"),
+    allTime = CreateRepStatCard(statsFrame, 450, -292, "All Time"),
+  }
+
+  local newSeasonBtn = CreateFrame("Button", nil, statsFrame, "UIPanelButtonTemplate")
+  newSeasonBtn:SetWidth(130)
+  newSeasonBtn:SetHeight(26)
+  newSeasonBtn:SetPoint("BOTTOMRIGHT", statsFrame, "BOTTOMRIGHT", -24, 20)
+  newSeasonBtn:SetText("Start New Season")
+  newSeasonBtn:SetScript("OnClick", function()
+    local _, rankName = GetGuildInfo("player")
+    if not IsOfficerRank(rankName) then
+      Print("Only guild officers may start a new reputation season.")
+      return
+    end
+    local seasonNumber = LeafVE_AchTest:StartNewReputationSeason()
+    Print("Reputation Season "..tostring(seasonNumber).." started.")
+  end)
+  self.newRepSeasonBtn = newSeasonBtn
+
+  function LeafVE_AchTest.UI:RefreshStatsPanel()
+    if not self.repStatCards then return end
+    local stats = LeafVE_AchTest:GetReputationStats()
+    self.repStatCards.today.value:SetText(tostring(stats.today or 0))
+    self.repStatCards.week.value:SetText(tostring(stats.week or 0))
+    self.repStatCards.season.value:SetText(tostring(stats.season or 0))
+    self.repStatCards.allTime.value:SetText(tostring(stats.allTime or 0))
+    self.repStatCards.today.detail:SetText(tostring(stats.dayKey or "Current day"))
+    self.repStatCards.week.detail:SetText("Monday through Sunday")
+    self.repStatCards.season.detail:SetText(LeafVE_AchTest:GetReputationSeasonLabel())
+    self.repStatCards.allTime.detail:SetText("Since reputation tracking began")
+
+    local _, rankName = GetGuildInfo("player")
+    if self.newRepSeasonBtn then
+      if IsOfficerRank(rankName) then self.newRepSeasonBtn:Show() else self.newRepSeasonBtn:Hide() end
+    end
+  end
+
   local adminFrame = CreateFrame("Frame", nil, f)
   adminFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -110)
   adminFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 10)
@@ -4356,6 +5229,7 @@ function LeafVE_AchTest.UI:Build()
     {display="Gold",           filter="Gold"},
     {display="Elite",          filter="Elite"},
     {display="Casual",         filter="Casual"},
+    {display="Mounts",         filter="Mounts"},
     {display="Companions",     filter="Companions"},
     {display="Roleplay",       filter="Roleplay"},
     {display="Kills",          filter="Kills"},
@@ -4499,6 +5373,118 @@ function LeafVE_AchTest.UI:Build()
     table.insert(self.companionCategoryButtons, btn)
   end
   
+  local mountSidebarFrame = CreateFrame("Frame", nil, f)
+  mountSidebarFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -110)
+  mountSidebarFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 10)
+  mountSidebarFrame:SetWidth(140)
+  mountSidebarFrame:SetBackdrop({
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 8,
+    insets = {left=2, right=2, top=2, bottom=2},
+  })
+  mountSidebarFrame:SetBackdropColor(0, 0, 0, 0)
+  mountSidebarFrame:SetBackdropBorderColor(0.55, 0.42, 0.18, 1)
+  local mountSidebarBg = mountSidebarFrame:CreateTexture(nil, "BACKGROUND")
+  mountSidebarBg:SetPoint("TOPLEFT", mountSidebarFrame, "TOPLEFT", 2, -2)
+  mountSidebarBg:SetPoint("BOTTOMRIGHT", mountSidebarFrame, "BOTTOMRIGHT", -2, 2)
+  mountSidebarBg:SetTexture(TEX.ashenSidebar)
+  mountSidebarBg:SetTexCoord(0, 1, 0, 1)
+  mountSidebarBg:SetVertexColor(1, 1, 1, 1)
+  mountSidebarFrame.bg = mountSidebarBg
+  mountSidebarFrame:Hide()
+  self.mountSidebarFrame = mountSidebarFrame
+
+  local MOUNT_SIDEBAR_CATS = {
+    {display="All",       filter="All"},
+    {display="Collected", filter="Collected"},
+    {display="Missing",   filter="Missing"},
+    {display="Racial",    filter="Racial"},
+    {display="PvP",       filter="PvP"},
+    {display="Raids",     filter="Raids"},
+    {display="Turtle WoW",filter="Turtle"},
+  }
+  self.mountCategoryButtons = {}
+  for i, cat in ipairs(MOUNT_SIDEBAR_CATS) do
+    local btn = CreateFrame("Frame", nil, mountSidebarFrame)
+    btn:SetPoint("TOPLEFT", mountSidebarFrame, "TOPLEFT", 4, -(i-1)*27 - 4)
+    btn:SetWidth(132)
+    btn:SetHeight(24)
+    btn:EnableMouse(true)
+    btn:SetBackdrop({
+      bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+      tile = true, tileSize = 8,
+      insets = {left=2, right=2, top=2, bottom=2},
+    })
+    btn:SetBackdropColor(0, 0, 0, 0)
+    local lbl = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    lbl:SetAllPoints(btn)
+    lbl:SetJustifyH("CENTER")
+    lbl:SetText(cat.display)
+    lbl:SetTextColor(0.92, 0.78, 0.26)
+    btn.label = lbl
+    btn.filterValue = cat.filter
+    local hi = btn:CreateTexture(nil, "BACKGROUND")
+    hi:SetAllPoints(btn)
+    hi:SetTexture(TEX.categoryHi)
+    hi:SetVertexColor(1, 1, 1, 0.70)
+    hi:Hide()
+    btn.highlight = hi
+    btn:SetScript("OnMouseDown", function()
+      PlaySound("igMainMenuOptionCheckBoxOn")
+      LeafVE_AchTest.UI.selectedMountFilter = this.filterValue
+      LeafVE_AchTest.UI:Refresh()
+    end)
+    btn:SetScript("OnEnter", function()
+      if this.highlight then
+        this.highlight:SetVertexColor(1, 1, 1, 0.82)
+        this.highlight:Show()
+      end
+      if this.label then this.label:SetTextColor(1, 1, 1) end
+    end)
+    btn:SetScript("OnLeave", function()
+      if this.filterValue ~= LeafVE_AchTest.UI.selectedMountFilter then
+        if this.highlight then this.highlight:Hide() end
+        if this.label then this.label:SetTextColor(0.92, 0.78, 0.26) end
+      else
+        if this.highlight then
+          this.highlight:SetVertexColor(1, 1, 1, 0.88)
+          this.highlight:Show()
+        end
+        if this.label then this.label:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3]) end
+      end
+    end)
+    table.insert(self.mountCategoryButtons, btn)
+  end
+
+  local mountRescanBtn = CreateFrame("Button", nil, mountSidebarFrame, "UIPanelButtonTemplate")
+  mountRescanBtn:SetPoint("BOTTOMLEFT", mountSidebarFrame, "BOTTOMLEFT", 10, 12)
+  mountRescanBtn:SetWidth(120)
+  mountRescanBtn:SetHeight(26)
+  mountRescanBtn:SetText("Rescan Spellbook")
+  mountRescanBtn:SetScript("OnClick", function()
+    if LeafVE_AchTest and LeafVE_AchTest.ScanMountCollection then
+      LeafVE_AchTest:ScanMountCollection(true)
+      if LeafVE_AchTest.UI and LeafVE_AchTest.UI.RefreshMounts then
+        LeafVE_AchTest.UI:RefreshMounts()
+      end
+    end
+  end)
+  if LeafVE_SkinAshenButton then LeafVE_SkinAshenButton(mountRescanBtn) end
+  self.mountRescanBtn = mountRescanBtn
+
+  local mountResetModelsBtn = CreateFrame("Button", nil, mountSidebarFrame, "UIPanelButtonTemplate")
+  mountResetModelsBtn:SetPoint("BOTTOMLEFT", mountRescanBtn, "TOPLEFT", 0, 6)
+  mountResetModelsBtn:SetWidth(120)
+  mountResetModelsBtn:SetHeight(26)
+  mountResetModelsBtn:SetText("Reset Model Sizes")
+  mountResetModelsBtn:SetScript("OnClick", function()
+    if LeafVE_AchTest_DB then LeafVE_AchTest_DB.mountModelOverrides={} end
+    if LeafVE_AchTest.UI and LeafVE_AchTest.UI.RefreshMounts then LeafVE_AchTest.UI:RefreshMounts() end
+    if PlaySound then PlaySound("igMainMenuOptionCheckBoxOn") end
+  end)
+  if LeafVE_SkinAshenButton then LeafVE_SkinAshenButton(mountResetModelsBtn) end
+  self.mountResetModelsBtn = mountResetModelsBtn
+
   -- Achievement Search Bar
   local searchLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   searchLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 155, -128)
@@ -4572,6 +5558,7 @@ function LeafVE_AchTest.UI:Build()
 
   LeafVE_SkinAshenButton(achTab)
   LeafVE_SkinAshenButton(companionTab)
+  LeafVE_SkinAshenButton(mountsTab)
   LeafVE_SkinAshenButton(titlesTab)
   LeafVE_SkinAshenButton(adminTab)
   LeafVE_SkinAshenButton(awardBtn)
@@ -4697,10 +5684,10 @@ function LeafVE_AchTest.UI:Build()
   scrollbar:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -18, 34)
   scrollbar:SetWidth(16)
   scrollbar:SetOrientation("VERTICAL")
-  scrollbar:SetThumbTexture("Interface\Buttons\UI-ScrollBar-Knob")
+  scrollbar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   scrollbar:SetBackdrop({
-    bgFile = "Interface\Tooltips\UI-Tooltip-Background",
-    edgeFile = "Interface\Tooltips\UI-Tooltip-Border",
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 8,
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
@@ -4714,25 +5701,27 @@ function LeafVE_AchTest.UI:Build()
   scrollUp:SetWidth(18)
   scrollUp:SetHeight(18)
   scrollUp:SetPoint("BOTTOM", scrollbar, "TOP", 0, 4)
-  scrollUp:SetNormalTexture("Interface\Buttons\UI-ScrollBar-ScrollUpButton-Up")
-  scrollUp:SetPushedTexture("Interface\Buttons\UI-ScrollBar-ScrollUpButton-Down")
-  scrollUp:SetHighlightTexture("Interface\Buttons\UI-ScrollBar-ScrollUpButton-Highlight")
-  scrollUp:SetDisabledTexture("Interface\Buttons\UI-ScrollBar-ScrollUpButton-Disabled")
+  scrollUp:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
+  scrollUp:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
+  scrollUp:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
+  scrollUp:SetDisabledTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Disabled")
   self.scrollUp = scrollUp
 
   local scrollDown = CreateFrame("Button", nil, f)
   scrollDown:SetWidth(18)
   scrollDown:SetHeight(18)
   scrollDown:SetPoint("TOP", scrollbar, "BOTTOM", 0, -4)
-  scrollDown:SetNormalTexture("Interface\Buttons\UI-ScrollBar-ScrollDownButton-Up")
-  scrollDown:SetPushedTexture("Interface\Buttons\UI-ScrollBar-ScrollDownButton-Down")
-  scrollDown:SetHighlightTexture("Interface\Buttons\UI-ScrollBar-ScrollDownButton-Highlight")
-  scrollDown:SetDisabledTexture("Interface\Buttons\UI-ScrollBar-ScrollDownButton-Disabled")
+  scrollDown:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
+  scrollDown:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down")
+  scrollDown:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Highlight")
+  scrollDown:SetDisabledTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Disabled")
   self.scrollDown = scrollDown
   scrollbar:SetScript("OnValueChanged", function()
     if LeafVE_AchTest.UI and LeafVE_AchTest.UI.scrollFrame then
       LeafVE_AchTest.UI.scrollFrame:SetVerticalScroll(this:GetValue())
-      if LeafVE_AchTest.UI:IsAchievementListView() then
+      if LeafVE_AchTest.UI:IsMountListView() then
+        LeafVE_AchTest.UI:UpdateVisibleMounts()
+      elseif LeafVE_AchTest.UI:IsAchievementListView() then
         LeafVE_AchTest.UI:UpdateVisibleAchievements()
       end
     end
@@ -4783,6 +5772,11 @@ function LeafVE_AchTest.UI:Refresh()
     self.currentView = "achievements"
   end
 
+  local isMountView = self.currentView == "mounts"
+  if self.frame then self.frame:SetWidth(isMountView and 1130 or 930) end
+  if self.scrollChild then self.scrollChild:SetWidth(isMountView and 950 or 710) end
+  if not isMountView and self.HideMountCards then self:HideMountCards() end
+
   if self.adminTab then
     if hasAdminAccess then
       self.adminTab:Show()
@@ -4802,7 +5796,7 @@ function LeafVE_AchTest.UI:Refresh()
   if self.pointsLabel then
     if currentTitle then
       local titleText = currentTitle.prefix and (currentTitle.name.." "..me) or (me.." "..currentTitle.name)
-      local titleColor = currentTitle.legendary and "|cFFFF0000" or "|cFFFF7F00"
+      local titleColor = currentTitle.colorHex and ("|c"..currentTitle.colorHex) or (currentTitle.legendary and "|cFFFF0000" or "|cFFFF7F00")
       self.pointsLabel:SetText(titleColor..titleText.."|r | Points: |cFFFF7F00"..totalPoints.."|r")
     else
       self.pointsLabel:SetText(me.." | Points: |cFFFF7F00"..totalPoints.."|r")
@@ -4821,12 +5815,16 @@ function LeafVE_AchTest.UI:Refresh()
     end
   end
   
+  if self.statsFrame then self.statsFrame:Hide() end
+  if self.statsTab then self.statsTab:Enable() end
+  
   if self.scrollFrame then self.scrollFrame:SetVerticalScroll(0) end
   if self.scrollbar then self.scrollbar:SetValue(0) end
   
   if self.currentView == "achievements" then
     if self.achTab then self.achTab:Disable() end
     if self.companionTab then self.companionTab:Enable() end
+    if self.mountsTab then self.mountsTab:Enable() end
     if self.titlesTab then self.titlesTab:Enable() end
     if self.adminTab and hasAdminAccess then self.adminTab:Enable() end
     if self.awardBtn then
@@ -4845,6 +5843,7 @@ function LeafVE_AchTest.UI:Refresh()
     -- Show achievement sidebar, hide title sidebar and admin panel
     if self.sidebarFrame then self.sidebarFrame:Show() end
     if self.companionSidebarFrame then self.companionSidebarFrame:Hide() end
+    if self.mountSidebarFrame then self.mountSidebarFrame:Hide() end
     if self.titleSidebarFrame then self.titleSidebarFrame:Hide() end
     if self.adminFrame then self.adminFrame:Hide() end
     if self.scrollFrame then self.scrollFrame:Show() end
@@ -4870,6 +5869,7 @@ function LeafVE_AchTest.UI:Refresh()
   elseif self.currentView == "companions" then
     if self.achTab then self.achTab:Enable() end
     if self.companionTab then self.companionTab:Disable() end
+    if self.mountsTab then self.mountsTab:Enable() end
     if self.titlesTab then self.titlesTab:Enable() end
     if self.adminTab and hasAdminAccess then self.adminTab:Enable() end
     if self.awardBtn then
@@ -4887,6 +5887,7 @@ function LeafVE_AchTest.UI:Refresh()
     if self.titleClearBtn then self.titleClearBtn:Hide() end
     if self.sidebarFrame then self.sidebarFrame:Hide() end
     if self.companionSidebarFrame then self.companionSidebarFrame:Show() end
+    if self.mountSidebarFrame then self.mountSidebarFrame:Hide() end
     if self.titleSidebarFrame then self.titleSidebarFrame:Hide() end
     if self.adminFrame then self.adminFrame:Hide() end
     if self.scrollFrame then self.scrollFrame:Show() end
@@ -4909,9 +5910,78 @@ function LeafVE_AchTest.UI:Refresh()
       end
     end
     self:RefreshAchievements()
+  elseif self.currentView == "mounts" then
+    if self.achTab then self.achTab:Enable() end
+    if self.companionTab then self.companionTab:Enable() end
+    if self.mountsTab then self.mountsTab:Disable() end
+    if self.titlesTab then self.titlesTab:Enable() end
+    if self.adminTab and hasAdminAccess then self.adminTab:Enable() end
+    if self.awardBtn then self.awardBtn:Hide() end
+    if self.searchLabel then self.searchLabel:Show() end
+    if self.searchBox then self.searchBox:Show() end
+    if self.clearBtn then self.clearBtn:Show() end
+    if self.titleSearchLabel then self.titleSearchLabel:Hide() end
+    if self.titleSearchBox then self.titleSearchBox:Hide() end
+    if self.titleClearBtn then self.titleClearBtn:Hide() end
+    if self.sidebarFrame then self.sidebarFrame:Hide() end
+    if self.companionSidebarFrame then self.companionSidebarFrame:Hide() end
+    if self.mountSidebarFrame then self.mountSidebarFrame:Show() end
+    if self.titleSidebarFrame then self.titleSidebarFrame:Hide() end
+    if self.adminFrame then self.adminFrame:Hide() end
+    if self.scrollFrame then self.scrollFrame:Show() end
+    if self.scrollbar then self.scrollbar:Show() end
+    if self.scrollUp then self.scrollUp:Show() end
+    if self.scrollDown then self.scrollDown:Show() end
+    if self.contentArt then self.contentArt:Show() end
+    if self.mountCategoryButtons then
+      for _, btn in ipairs(self.mountCategoryButtons) do
+        if btn.filterValue == self.selectedMountFilter then
+          if btn.highlight then
+            btn.highlight:SetVertexColor(1,1,1,0.88)
+            btn.highlight:Show()
+          end
+          btn.label:SetTextColor(THEME.leaf[1],THEME.leaf[2],THEME.leaf[3])
+        else
+          if btn.highlight then btn.highlight:Hide() end
+          btn.label:SetTextColor(0.92,0.78,0.26)
+        end
+      end
+    end
+    local mountState=LeafVE_AchTest.GetMountCollectionState and LeafVE_AchTest:GetMountCollectionState() or nil
+    if LeafVE_AchTest.ScanMountCollection and (not mountState or not mountState.lastScan or mountState.lastScan==0) then
+      LeafVE_AchTest:ScanMountCollection(true)
+    end
+    self:RefreshMounts()
+  elseif self.currentView == "stats" then
+    if self.achTab then self.achTab:Enable() end
+    if self.companionTab then self.companionTab:Enable() end
+    if self.mountsTab then self.mountsTab:Enable() end
+    if self.titlesTab then self.titlesTab:Enable() end
+    if self.statsTab then self.statsTab:Disable() end
+    if self.adminTab and hasAdminAccess then self.adminTab:Enable() end
+    if self.awardBtn then self.awardBtn:Hide() end
+    if self.searchLabel then self.searchLabel:Hide() end
+    if self.searchBox then self.searchBox:Hide() end
+    if self.clearBtn then self.clearBtn:Hide() end
+    if self.titleSearchLabel then self.titleSearchLabel:Hide() end
+    if self.titleSearchBox then self.titleSearchBox:Hide() end
+    if self.titleClearBtn then self.titleClearBtn:Hide() end
+    if self.sidebarFrame then self.sidebarFrame:Hide() end
+    if self.companionSidebarFrame then self.companionSidebarFrame:Hide() end
+    if self.mountSidebarFrame then self.mountSidebarFrame:Hide() end
+    if self.titleSidebarFrame then self.titleSidebarFrame:Hide() end
+    if self.adminFrame then self.adminFrame:Hide() end
+    if self.statsFrame then self.statsFrame:Show() end
+    if self.scrollFrame then self.scrollFrame:Hide() end
+    if self.scrollbar then self.scrollbar:Hide() end
+    if self.scrollUp then self.scrollUp:Hide() end
+    if self.scrollDown then self.scrollDown:Hide() end
+    if self.contentArt then self.contentArt:Hide() end
+    self:RefreshStatsPanel()
   elseif self.currentView == "admin" then
     if self.achTab then self.achTab:Enable() end
     if self.companionTab then self.companionTab:Enable() end
+    if self.mountsTab then self.mountsTab:Enable() end
     if self.titlesTab then self.titlesTab:Enable() end
     if self.adminTab and hasAdminAccess then self.adminTab:Disable() end
     if self.awardBtn then self.awardBtn:Hide() end
@@ -4923,6 +5993,7 @@ function LeafVE_AchTest.UI:Refresh()
     if self.titleClearBtn then self.titleClearBtn:Hide() end
     if self.sidebarFrame then self.sidebarFrame:Hide() end
     if self.companionSidebarFrame then self.companionSidebarFrame:Hide() end
+    if self.mountSidebarFrame then self.mountSidebarFrame:Hide() end
     if self.titleSidebarFrame then self.titleSidebarFrame:Hide() end
     if self.adminFrame then self.adminFrame:Show() end
     if self.scrollFrame then self.scrollFrame:Hide() end
@@ -4933,6 +6004,7 @@ function LeafVE_AchTest.UI:Refresh()
   else
     if self.achTab then self.achTab:Enable() end
     if self.companionTab then self.companionTab:Enable() end
+    if self.mountsTab then self.mountsTab:Enable() end
     if self.titlesTab then self.titlesTab:Disable() end
     if self.adminTab and hasAdminAccess then self.adminTab:Enable() end
     if self.awardBtn then self.awardBtn:Hide() end
@@ -4945,6 +6017,7 @@ function LeafVE_AchTest.UI:Refresh()
     -- Show title sidebar, hide achievement sidebar and admin panel
     if self.sidebarFrame then self.sidebarFrame:Hide() end
     if self.companionSidebarFrame then self.companionSidebarFrame:Hide() end
+    if self.mountSidebarFrame then self.mountSidebarFrame:Hide() end
     if self.titleSidebarFrame then self.titleSidebarFrame:Show() end
     if self.adminFrame then self.adminFrame:Hide() end
     if self.scrollFrame then self.scrollFrame:Show() end
@@ -5053,6 +6126,16 @@ end
 -- Reposition and repopulate only the pool frames that fall inside the current
 -- scroll viewport.  Called by RefreshAchievements and by scroll events.
 function LeafVE_AchTest.UI:UpdateVisibleAchievements()
+  -- The achievement pool is shared by the scroll child, so never allow it to
+  -- paint over a collection or title view even if a stale scroll callback fires.
+  if self.currentView ~= "achievements" then
+    if self.achievementFrames then
+      for i = 1, table.getn(self.achievementFrames) do
+        if self.achievementFrames[i] then self.achievementFrames[i]:Hide() end
+      end
+    end
+    return
+  end
   local list = self.currentAchList
   if not list or not self.scrollFrame then return end
   local me    = self.currentAchOwner or ""
@@ -5088,7 +6171,7 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
 
     local rowIconTex = ach.data.icon
     if not rowIconTex or rowIconTex == "" then
-      rowIconTex = "Interface\Icons\INV_Misc_QuestionMark"
+      rowIconTex = "Interface\\Icons\\INV_Misc_QuestionMark"
     end
     frame.icon:SetTexture(rowIconTex)
     if ach.completed then
@@ -5137,14 +6220,16 @@ function LeafVE_AchTest.UI:RefreshTitles()
   -- Build filtered title list
   local filteredTitles = {}
   for i, titleData in ipairs(TITLES) do
-    local matchesSearch = true
+    local visibleToCharacter = not titleData.testCharacter
+      or string.lower(me or "") == string.lower(tostring(titleData.testCharacter))
+    local matchesSearch = visibleToCharacter
     
     -- Search filter
-    if self.titleSearchText and self.titleSearchText ~= "" then
+    if matchesSearch and self.titleSearchText and self.titleSearchText ~= "" then
       local searchLower = string.lower(self.titleSearchText)
       local nameLower = string.lower(titleData.name)
-      local achData = ACHIEVEMENTS[titleData.achievement]
-      local achNameLower = achData and string.lower(achData.name) or ""
+      local achData = titleData.achievement and ACHIEVEMENTS[titleData.achievement] or nil
+      local achNameLower = achData and string.lower(achData.name) or string.lower(titleData.desc or "")
       matchesSearch = string.find(nameLower, searchLower) or string.find(achNameLower, searchLower)
     end
     
@@ -5152,7 +6237,7 @@ function LeafVE_AchTest.UI:RefreshTitles()
       local matchesCategory = true
       local cat = self.titleCategoryFilter or "All"
       if cat == "Obtained" then
-        matchesCategory = LeafVE_AchTest:HasAchievement(me, titleData.achievement)
+        matchesCategory = IsTitleUnlocked(me, titleData)
       elseif cat ~= "All" then
         matchesCategory = (titleData.category == cat)
       end
@@ -5165,7 +6250,7 @@ function LeafVE_AchTest.UI:RefreshTitles()
   local yOffset = 0
   for i, titleData in ipairs(filteredTitles) do
     local frame = self.titleFrames[i]
-    local earned = LeafVE_AchTest:HasAchievement(me, titleData.achievement)
+    local earned = IsTitleUnlocked(me, titleData)
     if not frame then
       frame = CreateFrame("Frame", nil, self.scrollChild)
       frame:SetWidth(690)
@@ -5497,6 +6582,7 @@ ef:SetScript("OnEvent", function()
     LeafVE_AchTest:CheckQuestAchievements(true)
     LeafVE_AchTest:CheckPvPRankAchievements(true)
     LeafVE_AchTest:CheckGuildRankAchievements(true)
+    LeafVE_AchTest:CaptureReputationSnapshot(false)
     LeafVE_AchTest:CheckReputationAchievements(true)
     LeafVE_AchTest:CheckBattlegroundAchievements(true)
     LeafVE_AchTest:CheckRunMilestoneAchievements(true)
@@ -5545,7 +6631,10 @@ ef:SetScript("OnEvent", function()
   if event == "GUILD_ROSTER_UPDATE" and LeafVE_AchTest.initialized then
     LeafVE_AchTest:CheckGuildRankAchievements(true)
   end
-  if event == "UPDATE_FACTION" and LeafVE_AchTest.initialized then LeafVE_AchTest:CheckReputationAchievements() end
+  if event == "UPDATE_FACTION" and LeafVE_AchTest.initialized then
+    LeafVE_AchTest:CaptureReputationSnapshot(true)
+    LeafVE_AchTest:CheckReputationAchievements()
+  end
   if event == "UNIT_INVENTORY_CHANGED" and arg1 == "player" and LeafVE_AchTest.initialized then
     LeafVE_AchTest:CheckEquipmentAchievements()
   end
@@ -6230,10 +7319,10 @@ minimapButton:SetFrameLevel(8)
 minimapButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
 
 local MINIMAP_ICON_CANDIDATES = {
-  "Interface\\AddOns\\LeafVillageAchievements\\tga\\achievement_popup_icon_ring",
-  "Interface\\AddOns\\LeafVillageLegends\\Textures\\ashen_rank_1",
-  "Interface\\Icons\\INV_Misc_Rune_06",
+  "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_minimap_icon",
   "Interface\\Icons\\INV_Misc_Book_09",
+  "Interface\\Icons\\INV_Misc_Note_06",
+  "Interface\\Icons\\INV_Misc_Rune_06",
   "Interface\\Icons\\INV_Misc_QuestionMark",
 }
 local function ApplyMinimapIcon(tex)
@@ -6247,8 +7336,8 @@ end
 
 -- Icon
 local icon = minimapButton:CreateTexture(nil, "ARTWORK")
-icon:SetWidth(20)
-icon:SetHeight(20)
+icon:SetWidth(24)
+icon:SetHeight(24)
 ApplyMinimapIcon(icon)
 icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 icon:SetVertexColor(1, 1, 1, 1)
@@ -6302,7 +7391,7 @@ end)
 -- Tooltip
 minimapButton:SetScript("OnEnter", function()
   GameTooltip:SetOwner(this, "ANCHOR_LEFT")
-  GameTooltip:SetText("|cFF2DD35CLeafVillageAchievements|r", 1, 1, 1)
+  GameTooltip:SetText("|cFFFFD433Ashen Banner Achievements|r", 1, 1, 1)
   GameTooltip:AddLine("Click to open", 0.8, 0.8, 0.8)
   GameTooltip:AddLine("Drag to move", 0.6, 0.6, 0.6)
   GameTooltip:Show()

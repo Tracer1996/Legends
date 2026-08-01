@@ -5,7 +5,7 @@ AtlasLoot_Data = AtlasLoot_Data or {}
 LeafVE = LeafVE or {}
 LeafVE.name = "LeafVillageLegends"
 LeafVE.prefix = "LeafVE"
-LeafVE.version = "18.8"
+LeafVE.version = "18.9.3"
 LeafVE.allianceEnabled = false
 LeafVE.isAllianceStandalone = false
 LeafVE.guildBankOwner = "Methllyy"
@@ -338,6 +338,7 @@ LeafVE.shinobiDutyMetricCatalog = {
 }
 local GRPAWARD_GRACE_PERIOD = 60      -- seconds non-broadcasters wait for the guildie broadcaster before self-awarding
 local WEEKEND_POINT_MULTIPLIER = 2    -- LP multiplier applied on Saturday/Sunday
+local LEVEL_60_REP_CONVERSION_RATE = 0.25 -- Level 60 earns Banner Reputation in addition to normal Ashen Embers; weekly boards remain level 10-59 only
 LeafVE.allianceRosterBroadcasterTTL = 90
 
 local SEASON_REWARD_1 = 5
@@ -2458,7 +2459,172 @@ function LeafVE:GetShinobiDutyRepBonusEntry(playerName)
   return { name = shortName, amount = 0, updatedAt = 0 }
 end
 
-function LeafVE:StoreShinobiDutyRepBonus(playerName, amount, updatedAt, suppressBroadcast)
+-- Banner Reputation period tracking.
+-- Daily and weekly gains are recorded from this version forward. Existing reputation
+-- is migrated as the current season/all-time baseline without falsely assigning it
+-- to the day or week the addon was updated.
+function LeafVE:EnsureBannerRepTrackingDBState()
+  self:EnsureShinobiDutyDBState()
+  if type(LeafVE_DB.bannerRepTracking) ~= "table" then
+    LeafVE_DB.bannerRepTracking = { version = 1, players = {} }
+  end
+  if type(LeafVE_DB.bannerRepTracking.players) ~= "table" then
+    LeafVE_DB.bannerRepTracking.players = {}
+  end
+  if type(LeafVE_DB.bannerRepAllTimeTotals) ~= "table" then
+    LeafVE_DB.bannerRepAllTimeTotals = {}
+  end
+  if type(LeafVE_GlobalDB.bannerRepAllTimeTotals) ~= "table" then
+    LeafVE_GlobalDB.bannerRepAllTimeTotals = {}
+  end
+end
+
+function LeafVE:GetBannerRepTrackingRecord(playerName, create)
+  self:EnsureBannerRepTrackingDBState()
+  local shortName = ShortName(playerName)
+  if not shortName then return nil end
+  local key = Lower(shortName)
+  local players = LeafVE_DB.bannerRepTracking.players
+  local record = players[key]
+  if type(record) ~= "table" and create then
+    record = {
+      name = shortName,
+      initialized = false,
+      initializedBucket = nil,
+      lastKnownAmount = 0,
+      byDay = {},
+      byWeek = {},
+      bySeason = {},
+    }
+    players[key] = record
+  end
+  if type(record) == "table" then
+    record.name = shortName
+    if type(record.byDay) ~= "table" then record.byDay = {} end
+    if type(record.byWeek) ~= "table" then record.byWeek = {} end
+    if type(record.bySeason) ~= "table" then record.bySeason = {} end
+  end
+  return record
+end
+
+function LeafVE:GetStoredBannerRepAllTimeAmount(playerName)
+  self:EnsureBannerRepTrackingDBState()
+  local shortName = ShortName(playerName)
+  if not shortName then return 0 end
+  local key = Lower(shortName)
+  local localEntry = LeafVE_DB.bannerRepAllTimeTotals[key]
+  local sharedEntry = LeafVE_GlobalDB.bannerRepAllTimeTotals[key]
+  local localAmount = type(localEntry) == "table" and tonumber(localEntry.amount) or tonumber(localEntry)
+  local sharedAmount = type(sharedEntry) == "table" and tonumber(sharedEntry.amount) or tonumber(sharedEntry)
+  return math.max(0, localAmount or 0, sharedAmount or 0)
+end
+
+function LeafVE:SetStoredBannerRepAllTimeAmount(playerName, amount, updatedAt)
+  self:EnsureBannerRepTrackingDBState()
+  local shortName = ShortName(playerName)
+  if not shortName then return 0 end
+  local key = Lower(shortName)
+  amount = math.max(0, math.floor(tonumber(amount) or 0))
+  updatedAt = tonumber(updatedAt) or Now()
+  local stored = { name = shortName, amount = amount, updatedAt = updatedAt }
+  LeafVE_DB.bannerRepAllTimeTotals[key] = stored
+  LeafVE_GlobalDB.bannerRepAllTimeTotals[key] = {
+    name = shortName,
+    amount = amount,
+    updatedAt = updatedAt,
+  }
+  return amount
+end
+
+function LeafVE:InitializeBannerRepTrackingForPlayer(playerName, currentAmount, updatedAt)
+  self:EnsureBannerRepTrackingDBState()
+  local shortName = ShortName(playerName)
+  if not shortName then return nil end
+  local record = self:GetBannerRepTrackingRecord(shortName, true)
+  currentAmount = math.max(0, math.floor(tonumber(currentAmount) or 0))
+  updatedAt = tonumber(updatedAt) or Now()
+  local bucket = tostring((LeafVE_GlobalDB and tonumber(LeafVE_GlobalDB.fullWipeVersion)) or 0)
+  local lifetime = self:GetStoredBannerRepAllTimeAmount(shortName)
+
+  if record.initialized ~= true then
+    record.initialized = true
+    record.initializedBucket = bucket
+    record.lastKnownAmount = currentAmount
+    record.bySeason[bucket] = math.max(tonumber(record.bySeason[bucket]) or 0, currentAmount)
+    self:SetStoredBannerRepAllTimeAmount(shortName, math.max(lifetime, currentAmount), updatedAt)
+  elseif tostring(record.initializedBucket or "") ~= bucket then
+    -- A new official season starts at the current reputation amount (normally zero).
+    -- Preserve lifetime reputation while opening a fresh season bucket.
+    record.initializedBucket = bucket
+    record.lastKnownAmount = currentAmount
+    record.bySeason[bucket] = math.max(tonumber(record.bySeason[bucket]) or 0, currentAmount)
+    if currentAmount > 0 then
+      self:SetStoredBannerRepAllTimeAmount(shortName, lifetime + currentAmount, updatedAt)
+    end
+  else
+    local priorKnown = math.max(0, tonumber(record.lastKnownAmount) or 0)
+    if currentAmount > priorKnown then
+      local unbucketedGain = currentAmount - priorKnown
+      record.bySeason[bucket] = (tonumber(record.bySeason[bucket]) or priorKnown) + unbucketedGain
+      self:SetStoredBannerRepAllTimeAmount(shortName, lifetime + unbucketedGain, updatedAt)
+    else
+      record.bySeason[bucket] = math.max(tonumber(record.bySeason[bucket]) or 0, currentAmount)
+    end
+    record.lastKnownAmount = currentAmount
+  end
+
+  record.updatedAt = updatedAt
+  return record
+end
+
+function LeafVE:RecordBannerRepGain(playerName, amount, updatedAt, absoluteAmount)
+  self:EnsureBannerRepTrackingDBState()
+  local shortName = ShortName(playerName)
+  amount = math.max(0, math.floor(tonumber(amount) or 0))
+  if not shortName or amount <= 0 then return 0 end
+  updatedAt = tonumber(updatedAt) or Now()
+
+  local record = self:GetBannerRepTrackingRecord(shortName, true)
+  local bucket = tostring((LeafVE_GlobalDB and tonumber(LeafVE_GlobalDB.fullWipeVersion)) or 0)
+  local dayKey = DayKey(updatedAt)
+  local weekKey = WeekKey(updatedAt)
+  record.byDay[dayKey] = (tonumber(record.byDay[dayKey]) or 0) + amount
+  record.byWeek[weekKey] = (tonumber(record.byWeek[weekKey]) or 0) + amount
+  record.bySeason[bucket] = (tonumber(record.bySeason[bucket]) or 0) + amount
+  record.initialized = true
+  record.initializedBucket = bucket
+  record.lastKnownAmount = math.max(0, math.floor(tonumber(absoluteAmount) or ((tonumber(record.lastKnownAmount) or 0) + amount)))
+  record.updatedAt = updatedAt
+
+  local lifetime = self:GetStoredBannerRepAllTimeAmount(shortName)
+  self:SetStoredBannerRepAllTimeAmount(shortName, lifetime + amount, updatedAt)
+  return amount
+end
+
+function LeafVE:GetBannerRepGainSummary(playerName, timestamp)
+  self:EnsureBannerRepTrackingDBState()
+  local shortName = ShortName(playerName)
+  if not shortName then
+    return { today = 0, week = 0, season = 0, alltime = 0 }
+  end
+  timestamp = tonumber(timestamp) or Now()
+  local current = self:GetShinobiDutyRepBonusEntry(shortName)
+  local currentAmount = math.max(0, math.floor(tonumber(current and current.amount) or 0))
+  local record = self:InitializeBannerRepTrackingForPlayer(shortName, currentAmount, tonumber(current and current.updatedAt) or timestamp)
+  local bucket = tostring((LeafVE_GlobalDB and tonumber(LeafVE_GlobalDB.fullWipeVersion)) or 0)
+  local today = record and (tonumber(record.byDay[DayKey(timestamp)]) or 0) or 0
+  local week = record and (tonumber(record.byWeek[WeekKey(timestamp)]) or 0) or 0
+  local season = math.max(currentAmount, record and (tonumber(record.bySeason[bucket]) or 0) or 0)
+  local alltime = math.max(season, self:GetStoredBannerRepAllTimeAmount(shortName))
+  return {
+    today = math.max(0, math.floor(today)),
+    week = math.max(0, math.floor(week)),
+    season = math.max(0, math.floor(season)),
+    alltime = math.max(0, math.floor(alltime)),
+  }
+end
+
+function LeafVE:StoreShinobiDutyRepBonus(playerName, amount, updatedAt, suppressBroadcast, recordAsGain)
   self:EnsureShinobiDutyDBState()
   local shortName = ShortName(playerName)
   if not shortName then
@@ -2468,6 +2634,17 @@ function LeafVE:StoreShinobiDutyRepBonus(playerName, amount, updatedAt, suppress
   amount = math.max(0, math.floor(tonumber(amount) or 0))
   updatedAt = tonumber(updatedAt) or Now()
   local existing = self:GetShinobiDutyRepBonusEntry(shortName)
+  local activeWipeVersion = (LeafVE_GlobalDB and tonumber(LeafVE_GlobalDB.fullWipeVersion)) or 0
+  if not recordAsGain and activeWipeVersion > 0 and updatedAt < activeWipeVersion then
+    return existing
+  end
+  local existingAmount = math.max(0, tonumber(existing and existing.amount) or 0)
+  local trackingBefore = self:GetBannerRepTrackingRecord(shortName, false)
+  local hadTrackingBaseline = type(trackingBefore) == "table" and trackingBefore.initialized == true
+  if recordAsGain then
+    self:InitializeBannerRepTrackingForPlayer(shortName, existingAmount, tonumber(existing and existing.updatedAt) or updatedAt)
+    hadTrackingBaseline = true
+  end
   if (tonumber(existing.updatedAt) or 0) > updatedAt then
     return existing
   end
@@ -2490,6 +2667,20 @@ function LeafVE:StoreShinobiDutyRepBonus(playerName, amount, updatedAt, suppress
     amount = amount,
     updatedAt = updatedAt,
   }
+
+  local gained = math.max(0, amount - existingAmount)
+  if gained > 0 then
+    if recordAsGain or hadTrackingBaseline then
+      self:RecordBannerRepGain(shortName, gained, updatedAt, amount)
+    else
+      -- First sight of pre-existing/synced reputation: establish a baseline rather
+      -- than incorrectly counting the whole historical total as today's gain.
+      self:InitializeBannerRepTrackingForPlayer(shortName, amount, updatedAt)
+    end
+  elseif not hadTrackingBaseline then
+    self:InitializeBannerRepTrackingForPlayer(shortName, amount, updatedAt)
+  end
+
   self.workOrderReputationDirty = true
 
   if not suppressBroadcast and InGuild() then
@@ -2503,6 +2694,8 @@ function LeafVE:StoreShinobiDutyRepBonus(playerName, amount, updatedAt, suppress
       LeafVE.UI:RefreshShinobiReputationLeaderboard()
     elseif LeafVE.UI.activeTab == "shinobiDuties" and LeafVE.UI.RefreshShinobiDutiesPanel then
       LeafVE.UI:RefreshShinobiDutiesPanel()
+    elseif LeafVE.UI.activeTab == "me" and LeafVE.UI.Refresh then
+      LeafVE.UI:Refresh()
     end
   end
 
@@ -2545,7 +2738,7 @@ function LeafVE:AwardShinobiDutyRepBonus(playerName, amount)
   end
   local current = self:GetShinobiDutyRepBonusEntry(playerName)
   local currentAmount = tonumber(current and current.amount) or 0
-  local updated = self:StoreShinobiDutyRepBonus(playerName, currentAmount + amount, Now())
+  local updated = self:StoreShinobiDutyRepBonus(playerName, currentAmount + amount, Now(), false, true)
   return (tonumber(updated and updated.amount) or currentAmount) - currentAmount
 end
 
@@ -3595,6 +3788,10 @@ local function EnsureDB()
   if type(LeafVE_DB.shinobiDutyStats.players) ~= "table" then LeafVE_DB.shinobiDutyStats.players = {} end
   if type(LeafVE_DB.shinobiDutyRepBonuses) ~= "table" then LeafVE_DB.shinobiDutyRepBonuses = {} end
   if type(LeafVE_GlobalDB.shinobiDutyRepBonuses) ~= "table" then LeafVE_GlobalDB.shinobiDutyRepBonuses = {} end
+  if type(LeafVE_DB.bannerRepTracking) ~= "table" then LeafVE_DB.bannerRepTracking = { version = 1, players = {} } end
+  if type(LeafVE_DB.bannerRepTracking.players) ~= "table" then LeafVE_DB.bannerRepTracking.players = {} end
+  if type(LeafVE_DB.bannerRepAllTimeTotals) ~= "table" then LeafVE_DB.bannerRepAllTimeTotals = {} end
+  if type(LeafVE_GlobalDB.bannerRepAllTimeTotals) ~= "table" then LeafVE_GlobalDB.bannerRepAllTimeTotals = {} end
   if not LeafVE_DB.guildieGroupHours then LeafVE_DB.guildieGroupHours = {} end
   if not LeafVE_DB.guildieHonorableKills then LeafVE_DB.guildieHonorableKills = {} end
   if not LeafVE_DB.lboard then LeafVE_DB.lboard = { alltime = {}, weekly = {}, season = {}, updatedAt = {}, weeklyVersion = {} } end
@@ -7351,6 +7548,9 @@ function LeafVE:ResetMyData()
   LeafVE_DB.badges[me]             = nil
   LeafVE_DB.equippedTitles[me]     = nil
   LeafVE_DB.badgesAnnounced[me]    = nil
+  if LeafVE_DB.shinobiDutyRepBonuses then LeafVE_DB.shinobiDutyRepBonuses[me] = nil end
+  if LeafVE_DB.bannerRepTracking and LeafVE_DB.bannerRepTracking.players then LeafVE_DB.bannerRepTracking.players[Lower(me)] = nil end
+  if LeafVE_DB.bannerRepAllTimeTotals then LeafVE_DB.bannerRepAllTimeTotals[Lower(me)] = nil end
   for key, _ in pairs(LeafVE_DB.badgesAnnounced) do
     if type(key) == "string" and string.find(key, ":" .. me .. ":", 1, true) then
       LeafVE_DB.badgesAnnounced[key] = nil
@@ -7412,6 +7612,12 @@ function LeafVE:ResetMyData()
   if LeafVE_GlobalDB.professionDesignations then
     LeafVE_GlobalDB.professionDesignations[Lower(me)] = nil
   end
+  if LeafVE_GlobalDB.shinobiDutyRepBonuses then
+    LeafVE_GlobalDB.shinobiDutyRepBonuses[Lower(me)] = nil
+  end
+  if LeafVE_GlobalDB.bannerRepAllTimeTotals then
+    LeafVE_GlobalDB.bannerRepAllTimeTotals[Lower(me)] = nil
+  end
 
   -- Broadcast so online guild members remove this player from their caches.
   if InGuild() then
@@ -7442,6 +7648,8 @@ function LVE_ResetPlayerDB()
   local preservedBadgesAnnounced = (LeafVE_DB and LeafVE_DB.badgesAnnounced) or nil
   local preservedBadgeBucketVersion = (LeafVE_DB and LeafVE_DB.badgeBucketVersion) or nil
   local preservedBadgesArchive = (LeafVE_DB and LeafVE_DB.badgesArchive) or nil
+  local preservedBannerRepTracking = (LeafVE_DB and LeafVE_DB.bannerRepTracking) or nil
+  local preservedBannerRepAllTimeTotals = (LeafVE_DB and LeafVE_DB.bannerRepAllTimeTotals) or nil
   if LeafVE_DB then
     for k in pairs(LeafVE_DB) do
       LeafVE_DB[k] = nil
@@ -7461,6 +7669,12 @@ function LVE_ResetPlayerDB()
   end
   if type(preservedBadgesArchive) == "table" then
     LeafVE_DB.badgesArchive = preservedBadgesArchive
+  end
+  if type(preservedBannerRepTracking) == "table" then
+    LeafVE_DB.bannerRepTracking = preservedBannerRepTracking
+  end
+  if type(preservedBannerRepAllTimeTotals) == "table" then
+    LeafVE_DB.bannerRepAllTimeTotals = preservedBannerRepAllTimeTotals
   end
   EnsureDB()
 end
@@ -7576,6 +7790,7 @@ end
 -- returns the new version.
 function LVE_ResetGlobalDB(targetVersion)
   local currentVersion = (LeafVE_GlobalDB and LeafVE_GlobalDB.fullWipeVersion) or 0
+  local preservedBannerRepAllTimeTotals = (LeafVE_GlobalDB and LeafVE_GlobalDB.bannerRepAllTimeTotals) or nil
   local newVersion = tonumber(targetVersion)
   if not newVersion or newVersion <= 0 then
     -- Use epoch seconds so each admin wipe is globally monotonic across clients.
@@ -7595,6 +7810,9 @@ function LVE_ResetGlobalDB(targetVersion)
     LeafVE_GlobalDB = {}
   end
   LeafVE_GlobalDB.fullWipeVersion = newVersion
+  if type(preservedBannerRepAllTimeTotals) == "table" then
+    LeafVE_GlobalDB.bannerRepAllTimeTotals = preservedBannerRepAllTimeTotals
+  end
   EnsureDB()
   return newVersion
 end
@@ -8052,6 +8270,31 @@ function LeafVE:TrackAttendance()
   end
 end
 
+local function ResolveKnownPlayerLevel(playerName)
+  local shortName = ShortName(playerName)
+  if not shortName then return nil end
+  local me = ShortName(UnitName("player"))
+  if me and Lower(shortName) == Lower(me) then
+    local level = tonumber(UnitLevel("player"))
+    if level and level > 0 then return level end
+  end
+  local key = Lower(shortName)
+  local live = LeafVE.guildRosterCache and LeafVE.guildRosterCache[key]
+  if live and tonumber(live.level) then return tonumber(live.level) end
+  local saved = LeafVE_DB and LeafVE_DB.persistentRoster and LeafVE_DB.persistentRoster[key]
+  if saved and tonumber(saved.level) then return tonumber(saved.level) end
+  return nil
+end
+
+LEAFVE_WEEKLY_LEVEL_BRACKETS = LEAFVE_WEEKLY_LEVEL_BRACKETS or {"10-19", "20-29", "30-39", "40-49", "50-59"}
+
+local function WeeklyLevelBracket(level)
+  level = tonumber(level)
+  if not level or level < 10 or level >= 60 then return nil end
+  local low = math.floor(level / 10) * 10
+  return tostring(low) .. "-" .. tostring(low + 9)
+end
+
 function LeafVE:AddPoints(playerName, pointType, amount, skipMultiplier)
   EnsureDB() playerName = ShortName(playerName) if not playerName then return end
   local now = Now()
@@ -8059,6 +8302,14 @@ function LeafVE:AddPoints(playerName, pointType, amount, skipMultiplier)
   if not skipMultiplier then
     amount = ApplyPointMultiplier(amount, now)
   end
+
+  -- Level 60 members keep earning normal Ashen Embers and also gain Banner
+  -- Reputation from the same qualifying actions. They are filtered out of the
+  -- level-bracket weekly leaderboard, but their Embers still count toward all
+  -- personal totals and the lifetime leaderboard.
+  local playerLevel = ResolveKnownPlayerLevel(playerName)
+  local awardMaxLevelRep = playerLevel and playerLevel >= 60
+
   local day = DayKey(now)
   if not LeafVE_DB.global[day] then LeafVE_DB.global[day] = {} end
   local dayEntry = EnsurePointEntryCurrentBucket(LeafVE_DB.global[day], playerName)
@@ -8075,6 +8326,14 @@ function LeafVE:AddPoints(playerName, pointType, amount, skipMultiplier)
   if amount <= 0 then
     return 0
   end
+
+  local maxLevelRepAwarded = 0
+  if awardMaxLevelRep then
+    local repAmount = math.floor((amount * LEVEL_60_REP_CONVERSION_RATE) + 0.5)
+    if amount > 0 and repAmount < 1 then repAmount = 1 end
+    maxLevelRepAwarded = self:AwardShinobiDutyRepBonus(playerName, repAmount)
+  end
+
   dayEntry[pointType] = (dayEntry[pointType] or 0) + amount
   local alltimeEntry = EnsurePointEntryCurrentBucket(LeafVE_DB.alltime, playerName)
   alltimeEntry[pointType] = (alltimeEntry[pointType] or 0) + amount
@@ -8088,7 +8347,17 @@ function LeafVE:AddPoints(playerName, pointType, amount, skipMultiplier)
     local typeNames = {L = "Login", G = "Guild Activity", S = "Shoutout"}
     if not self.suppressPointNotification then
       if LeafVE_DB.options.enableNotifications ~= false and LeafVE_DB.options.enablePointNotifications ~= false then
-        self:ShowNotification("Ashen Embers Earned!", string.format("%s from %s", self:FormatPointDisplay(amount, false, true), typeNames[pointType] or "Guild Service"), LEAF_EMBLEM, THEME.gold)
+        local sourceName = typeNames[pointType] or "Guild Service"
+        if maxLevelRepAwarded > 0 then
+          self:ShowNotification(
+            "Ashen Embers + Rep Earned!",
+            string.format("%s from %s  |  +%d Rep", self:FormatPointDisplay(amount, false, true), sourceName, maxLevelRepAwarded),
+            LEAF_EMBLEM,
+            THEME.gold
+          )
+        else
+          self:ShowNotification("Ashen Embers Earned!", string.format("%s from %s", self:FormatPointDisplay(amount, false, true), sourceName), LEAF_EMBLEM, THEME.gold)
+        end
       end
     end
   end
@@ -15430,13 +15699,19 @@ function LeafVE:GetWeeklyLeaderboardLeadersForWeek(wk)
 
     local total = LboardEntryTotal(pts)
     if total > 0 then
-      table.insert(leaders, {
-        name = name,
-        total = total,
-        L = pts and (pts.L or 0) or 0,
-        G = pts and (pts.G or 0) or 0,
-        S = pts and (pts.S or 0) or 0,
-      })
+      local level = ResolveKnownPlayerLevel(name)
+      local bracket = WeeklyLevelBracket(level)
+      if bracket then
+        table.insert(leaders, {
+          name = name,
+          total = total,
+          L = pts and (pts.L or 0) or 0,
+          G = pts and (pts.G or 0) or 0,
+          S = pts and (pts.S or 0) or 0,
+          level = level,
+          bracket = bracket,
+        })
+      end
     end
   end
 
@@ -15450,15 +15725,38 @@ function LeafVE:GetWeeklyLeaderboardLeadersForWeek(wk)
   return leaders
 end
 
-function LeafVE:GetWeeklyRecapRewards()
+function LeafVE:GetWeeklyBracketChampionReward()
   EnsureDB()
-  return {
-    tonumber(LeafVE_DB.options and LeafVE_DB.options.seasonReward1) or SEASON_REWARD_1,
-    tonumber(LeafVE_DB.options and LeafVE_DB.options.seasonReward2) or SEASON_REWARD_2,
-    tonumber(LeafVE_DB.options and LeafVE_DB.options.seasonReward3) or SEASON_REWARD_3,
-    tonumber(LeafVE_DB.options and LeafVE_DB.options.seasonReward4) or SEASON_REWARD_4,
-    tonumber(LeafVE_DB.options and LeafVE_DB.options.seasonReward5) or SEASON_REWARD_5,
-  }
+  return tonumber(LeafVE_DB.options and LeafVE_DB.options.seasonReward1) or SEASON_REWARD_1
+end
+
+function LeafVE:GetWeeklyRecapRewards()
+  local championReward = self:GetWeeklyBracketChampionReward()
+  return {championReward, championReward, championReward, championReward, championReward}
+end
+
+function LeafVE:GetWeeklyBracketChampionsForWeek(wk)
+  local leaders = self:GetWeeklyLeaderboardLeadersForWeek(wk)
+  local winnersByBracket = {}
+  local i
+  for i = 1, table.getn(leaders) do
+    local leader = leaders[i]
+    local bracket = leader.bracket or WeeklyLevelBracket(leader.level)
+    if bracket and not winnersByBracket[bracket] then
+      winnersByBracket[bracket] = leader
+    end
+  end
+
+  local champions = {}
+  for i = 1, table.getn(LEAFVE_WEEKLY_LEVEL_BRACKETS) do
+    local bracket = LEAFVE_WEEKLY_LEVEL_BRACKETS[i]
+    local winner = winnersByBracket[bracket]
+    if winner then
+      winner.bracket = bracket
+      table.insert(champions, winner)
+    end
+  end
+  return champions
 end
 
 function GetWeeklyRecapMessageVariantIndex(seedText, variantCount)
@@ -15481,6 +15779,20 @@ function LeafVE:BuildWeeklyRecapPersonalMessage(entry, weekKey)
   end
   if (tonumber(entry.reward) or 0) <= 0 then
     return ""
+  end
+
+  local bracket = tostring(entry.bracket or "")
+  if bracket ~= "" then
+    local variants = {
+      "%s, you led the Level %s bracket this week. %dg is yours.",
+      "%s, you claimed the Level %s bracket. Your %dg champion reward is waiting.",
+      "%s, the Level %s bracket belongs to you this week. Claim your %dg purse.",
+    }
+    local variantIndex = GetWeeklyRecapMessageVariantIndex(
+      tostring(weekKey or "") .. ":" .. tostring(entry.name or "") .. ":" .. bracket,
+      table.getn(variants)
+    )
+    return string.format(variants[variantIndex] or variants[1], tostring(entry.name or "Champion"), bracket, tonumber(entry.reward) or 0)
   end
 
   local rank = tonumber(entry.rank) or 0
@@ -15523,19 +15835,19 @@ function LeafVE:BuildWeeklyRecapPopupMessage(playerName, snapshot)
 
   local lines = {
     "|cFFD8A24AAshen Banner Weekly Recap|r",
-    "Last week's winner: |cFFFFD700" .. tostring(snapshot.name or "Unknown") .. "|r with |cFFFFD700" .. LeafVE:FormatPointDisplay(tonumber(snapshot.total) or 0, true, false) .. "|r.",
-    "Top rewards:",
+    "Last week's level-bracket champions:",
   }
 
   for i = 1, table.getn(snapshot.entries) do
     local entry = snapshot.entries[i]
     if type(entry) == "table" then
       local reward = tonumber(entry.reward) or 0
-      if reward > 0 then
-        table.insert(
-          lines,
-          string.format("%d. %s - %s - Prize: %s", tonumber(entry.rank) or i, tostring(entry.name or "Unknown"), LeafVE:FormatPointDisplay(tonumber(entry.total) or 0, true, false), LeafVE:FormatSeasonGoldReward(reward))
-        )
+      local bracket = tostring(entry.bracket or "")
+      if bracket ~= "" then
+        local rewardText = reward > 0 and (" - Prize: " .. LeafVE:FormatSeasonGoldReward(reward)) or ""
+        table.insert(lines, string.format("Levels %s: %s - %s%s", bracket, tostring(entry.name or "Unknown"), LeafVE:FormatPointDisplay(tonumber(entry.total) or 0, true, false), rewardText))
+      elseif reward > 0 then
+        table.insert(lines, string.format("%d. %s - %s - Prize: %s", tonumber(entry.rank) or i, tostring(entry.name or "Unknown"), LeafVE:FormatPointDisplay(tonumber(entry.total) or 0, true, false), LeafVE:FormatSeasonGoldReward(reward)))
       end
     end
   end
@@ -15558,21 +15870,24 @@ function LeafVE:BuildWeeklyTopShinobisText(snapshot)
     return "|cFF888888No data available|r"
   end
 
-  local rankLabels = {"|cFFFFD7001st|r", "|cFFC0C0C02nd|r", "|cFFCD7F323rd|r", "|cFFFFFFFF4th|r", "|cFFFFFFFF5th|r"}
-
   local entries = type(snapshot.entries) == "table" and snapshot.entries or nil
   if not entries or table.getn(entries) < 1 then
     if snapshot.name and (tonumber(snapshot.total) or 0) > 0 then
-      return string.format("%s %s - |cFFFFD700%s|r", rankLabels[1], tostring(snapshot.name), LeafVE:FormatPointDisplay(tonumber(snapshot.total) or 0, true, false))
+      return string.format("|cFFFFD7001st|r %s - |cFFFFD700%s|r", tostring(snapshot.name), LeafVE:FormatPointDisplay(tonumber(snapshot.total) or 0, true, false))
     end
     return "|cFF888888No data available|r"
   end
 
   local lines = {}
-  for i = 1, math.min(5, table.getn(entries)) do
+  for i = 1, table.getn(entries) do
     local entry = entries[i]
     if type(entry) == "table" and entry.name and (tonumber(entry.total) or 0) > 0 then
-      table.insert(lines, string.format("%s %s - |cFFFFD700%s|r", rankLabels[i] or tostring(i), tostring(entry.name), LeafVE:FormatPointDisplay(tonumber(entry.total) or 0, true, false)))
+      if entry.bracket then
+        table.insert(lines, string.format("|cFFD8A24ALv %s|r %s - |cFFFFD700%s|r", tostring(entry.bracket), tostring(entry.name), LeafVE:FormatPointDisplay(tonumber(entry.total) or 0, true, false)))
+      elseif i <= 5 then
+        local rankLabels = {"|cFFFFD7001st|r", "|cFFC0C0C02nd|r", "|cFFCD7F323rd|r", "|cFFFFFFFF4th|r", "|cFFFFFFFF5th|r"}
+        table.insert(lines, string.format("%s %s - |cFFFFD700%s|r", rankLabels[i] or tostring(i), tostring(entry.name), LeafVE:FormatPointDisplay(tonumber(entry.total) or 0, true, false)))
+      end
     end
   end
 
@@ -15601,8 +15916,12 @@ function LeafVE:MaybeShowWeeklyRecapPopup(force)
   end
 
   local snapshot = self:GetCachedWeeklyWinnerSnapshot(previousWeekKey)
-  if type(snapshot) ~= "table" or type(snapshot.entries) ~= "table" or table.getn(snapshot.entries) < 1 then
-    snapshot = self:SnapshotWeeklyLeaderboardWinner(previousWeekKey, Now(), true)
+  if type(snapshot) ~= "table"
+    or snapshot.format ~= "level_brackets_v1"
+    or type(snapshot.entries) ~= "table"
+    or table.getn(snapshot.entries) < 1 then
+    local rebuilt = self:SnapshotWeeklyLeaderboardWinner(previousWeekKey, Now(), true)
+    if rebuilt then snapshot = rebuilt end
   end
   if type(snapshot) ~= "table" or type(snapshot.entries) ~= "table" or table.getn(snapshot.entries) < 1 then
     return false
@@ -15643,37 +15962,43 @@ function LeafVE:SnapshotWeeklyLeaderboardWinner(wk, capturedAt, forceReplace)
     return existing
   end
 
-  local leaders = self:GetWeeklyLeaderboardLeadersForWeek(wk)
-  local winner = leaders[1]
-  if not winner then
+  local champions = self:GetWeeklyBracketChampionsForWeek(wk)
+  if table.getn(champions) < 1 then
     return nil
   end
 
-  local rewards = self:GetWeeklyRecapRewards()
+  local championReward = self:GetWeeklyBracketChampionReward()
   local entries = {}
-  for i = 1, math.min(5, table.getn(leaders)) do
-    local leader = leaders[i]
+  local overall = nil
+  for i = 1, table.getn(champions) do
+    local leader = champions[i]
     local entry = {
-      rank = i,
+      rank = 1,
+      bracket = leader.bracket,
+      level = leader.level,
       name = leader.name,
       total = leader.total,
       L = leader.L or 0,
       G = leader.G or 0,
       S = leader.S or 0,
-      reward = tonumber(rewards[i]) or 0,
+      reward = tonumber(championReward) or 0,
     }
     entry.message = self:BuildWeeklyRecapPersonalMessage(entry, wk)
     entries[i] = entry
+    if not overall or (tonumber(entry.total) or 0) > (tonumber(overall.total) or 0) then
+      overall = entry
+    end
   end
 
   local snapshot = {
     weekKey = wk,
-    name = winner.name,
-    total = winner.total,
-    L = winner.L or 0,
-    G = winner.G or 0,
-    S = winner.S or 0,
-    reward = tonumber(rewards[1]) or 0,
+    format = "level_brackets_v1",
+    name = overall and overall.name or nil,
+    total = overall and overall.total or 0,
+    L = overall and (overall.L or 0) or 0,
+    G = overall and (overall.G or 0) or 0,
+    S = overall and (overall.S or 0) or 0,
+    reward = tonumber(championReward) or 0,
     entries = entries,
     capturedAt = tonumber(capturedAt) or Now(),
   }
@@ -17266,6 +17591,7 @@ self.cardGearBtn = gearBtn
   recentLabel:SetParent(achievementsPanel)
   recentLabel:SetPoint("TOPLEFT", achSummaryText, "BOTTOMLEFT", 0, -8)
   recentLabel:SetText("|cFF9BC2FFRecent Achievements|r")
+  self.cardRecentAchievementsLabel = recentLabel
   
   -- Recent achievements frame
   local recentFrame = CreateFrame("Frame", nil, achievementsPanel)
@@ -33616,16 +33942,16 @@ function BuildMyPanel(panel)
   alltimeLeader:SetText("Loading...")
   panel.alltimeLeader = alltimeLeader
 
-  -- Season Rewards (beneath All-Time Leader)
+  -- Weekly bracket rewards (beneath All-Time Leader)
   local seasonRewardsLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   seasonRewardsLabel:SetPoint("TOPLEFT", alltimeLeader, "BOTTOMLEFT", 0, -15)
-  seasonRewardsLabel:SetText("|cFFD8A24ASeason Rewards|r")
+  seasonRewardsLabel:SetText("|cFFD8A24AWeekly Bracket Rewards|r")
 
   local seasonRewards = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   seasonRewards:SetPoint("TOPLEFT", seasonRewardsLabel, "BOTTOMLEFT", 0, -4)
   seasonRewards:SetWidth(maxWidth)
   seasonRewards:SetJustifyH("LEFT")
-  seasonRewards:SetText("|cFFFFD7001st: 5g|r  |  |cFFC0C0C02nd: 4g|r  |  |cFFCD7F323rd: 3g|r\n|cFFB8B8B84th: 2g|r  |  |cFF9C9C9C5th: 1g|r")
+  seasonRewards:SetText("|cFFFFD700Each level-bracket champion: 5g|r\n|cFFB8B8B8Levels 10-19, 20-29, 30-39, 40-49, and 50-59|r")
   panel.seasonRewards = seasonRewards
   
   -- Week Countdown (styled like other stats) - MOVE TO RIGHT SIDE
@@ -33643,7 +33969,7 @@ function BuildMyPanel(panel)
   -- Current Weekly Standings (top 5)
   local weekStandingsLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   weekStandingsLabel:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 250, -15)
-  weekStandingsLabel:SetText("|cFFD8A24ACurrent Weekly Standings|r")
+  weekStandingsLabel:SetText("|cFFD8A24ACurrent Bracket Leaders|r")
 
   local weekTopEntries = {}
   local prevTopAnchor = weekStandingsLabel
@@ -34233,13 +34559,17 @@ function LeafVE.UI:RefreshLeaderboard(panelName)
       local total = pts and ((pts.L or 0) + (pts.G or 0) + (pts.S or 0)) or 0
       if total > 0 then
         local gInfo = memberSet[Lower(name)]
-        table.insert(leaders, {
-          name = name, total = total,
-          L = pts and (pts.L or 0) or 0,
-          G = pts and (pts.G or 0) or 0,
-          S = pts and (pts.S or 0) or 0,
-          class = (gInfo and gInfo.class) or "Unknown"
-        })
+        local level = (gInfo and tonumber(gInfo.level)) or ResolveKnownPlayerLevel(name)
+        if WeeklyLevelBracket(level) then
+          table.insert(leaders, {
+            name = name, total = total,
+            L = pts and (pts.L or 0) or 0,
+            G = pts and (pts.G or 0) or 0,
+            S = pts and (pts.S or 0) or 0,
+            class = (gInfo and gInfo.class) or "Unknown",
+            level = level
+          })
+        end
       end
     end
   else
@@ -34286,7 +34616,8 @@ function LeafVE.UI:RefreshLeaderboard(panelName)
           L = pts and (pts.L or 0) or 0,
           G = pts and (pts.G or 0) or 0,
           S = pts and (pts.S or 0) or 0,
-          class = (gInfo and gInfo.class) or "Unknown"
+          class = (gInfo and gInfo.class) or "Unknown",
+          level = (gInfo and tonumber(gInfo.level)) or ResolveKnownPlayerLevel(name)
         })
       end
     end
@@ -34298,154 +34629,181 @@ function LeafVE.UI:RefreshLeaderboard(panelName)
     end
     return a.total > b.total
   end)
-  
+
   for i = 1, table.getn(panel.leaderEntries) do
     LeafVE:DisableLeaderboardFireRow(panel.leaderEntries[i])
     panel.leaderEntries[i]:Hide()
   end
-  
+  panel.bracketHeaders = panel.bracketHeaders or {}
+  for i = 1, table.getn(panel.bracketHeaders) do
+    panel.bracketHeaders[i]:Hide()
+  end
+
+  local displayRows = {}
+  if isWeekly then
+    local bracketOrder = LEAFVE_WEEKLY_LEVEL_BRACKETS
+    local buckets = {}
+    for i = 1, table.getn(bracketOrder) do buckets[bracketOrder[i]] = {} end
+    for i = 1, table.getn(leaders) do
+      local bracket = WeeklyLevelBracket(leaders[i].level)
+      if bracket and buckets[bracket] then table.insert(buckets[bracket], leaders[i]) end
+    end
+    for i = 1, table.getn(bracketOrder) do
+      local bracket = bracketOrder[i]
+      table.insert(displayRows, { kind = "header", label = "Levels " .. bracket })
+      local bucket = buckets[bracket]
+      local count = math.min(5, table.getn(bucket))
+      if count == 0 then
+        table.insert(displayRows, { kind = "empty", label = "No qualifying players yet" })
+      else
+        for rank = 1, count do
+          table.insert(displayRows, { kind = "player", leader = bucket[rank], rank = rank })
+        end
+      end
+    end
+  else
+    local maxShow = math.min(20, table.getn(leaders))
+    for i = 1, maxShow do
+      table.insert(displayRows, { kind = "player", leader = leaders[i], rank = i })
+    end
+  end
+
   local scrollChild = panel.scrollChild
   local yOffset = -5
   local entryHeight = 40
-  
-  local maxShow = math.min(20, table.getn(leaders))
-  
-  if table.getn(leaders) == 0 then
+  local playerFrameIndex = 0
+  local headerIndex = 0
+
+  if table.getn(displayRows) == 0 then
     if not panel.noDataText then
       local noDataText = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
       noDataText:SetPoint("TOP", scrollChild, "TOP", 0, -20)
-      noDataText:SetText("|cFF888888No data available yet|r")
       panel.noDataText = noDataText
     end
+    panel.noDataText:SetText("|cFF888888No data available yet|r")
     panel.noDataText:Show()
   else
-    if panel.noDataText then
-      panel.noDataText:Hide()
-    end
-    
-    for i = 1, maxShow do
-      local leader = leaders[i]
-      local frame = panel.leaderEntries[i]
-      
-      if not frame then
-        frame = CreateFrame("Frame", nil, scrollChild)
-        frame:SetWidth(480)
-        frame:SetHeight(entryHeight)
-        
-        local rankIcon = frame:CreateTexture(nil, "ARTWORK")
-        rankIcon:SetWidth(32)
-        rankIcon:SetHeight(32)
-        rankIcon:SetPoint("LEFT", frame, "LEFT", 5, 0)
-        frame.rankIcon = rankIcon
-        LeafVE:AttachLeaderboardFire(frame)
-        
-        local rank = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        rank:SetPoint("LEFT", frame, "LEFT", 5, 0)
-        rank:SetWidth(30)
-        rank:SetJustifyH("RIGHT")
-        frame.rank = rank
-        
-        local nameText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        nameText:SetPoint("LEFT", rank, "RIGHT", 40, 0)
-        nameText:SetWidth(240)
-        nameText:SetJustifyH("LEFT")
-        frame.nameText = nameText
-        
-        local pointsText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        pointsText:SetPoint("LEFT", nameText, "RIGHT", 10, 0)
-        pointsText:SetWidth(160)
-        pointsText:SetJustifyH("LEFT")
-        frame.pointsText = pointsText
-        
-        local bg = frame:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints(frame)
-        bg:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
-        bg:SetVertexColor(0.1, 0.1, 0.1, 0.3)
-        frame.bg = bg
+    if panel.noDataText then panel.noDataText:Hide() end
 
-        frame:EnableMouse(true)
-        frame:SetScript("OnEnter", function()
-          this.bg:SetVertexColor(0.25, 0.25, 0.15, 0.7)
-          if LeafVE then LeafVE:StartLeaderboardFire(this) end
-        end)
-        frame:SetScript("OnLeave", function()
-          this.bg:SetVertexColor(0.1, 0.1, 0.1, 0.3)
-          if LeafVE then LeafVE:StopLeaderboardFire(this) end
-        end)
-        frame:SetScript("OnMouseUp", function()
-          if this.playerName then
-            if LeafVE.UI.allBadgesFrame and LeafVE.UI.allBadgesFrame:IsVisible() then
-              LeafVE.UI.allBadgesFrame:Hide()
-            end
-            if LeafVE.UI.achPopup and LeafVE.UI.achPopup:IsVisible() then
-              LeafVE.UI.achPopup:Hide()
-            end
-            if LeafVE.UI.gearPopup and LeafVE.UI.gearPopup:IsVisible() then
-              LeafVE.UI.gearPopup:Hide()
-            end
-            if LeafVE.UI.workOrderPopup and LeafVE.UI.workOrderPopup:IsVisible() then
-              LeafVE.UI.workOrderPopup:Hide()
-            end
-            if LeafVE.UI.talentPopup and LeafVE.UI.talentPopup:IsVisible() then
-              LeafVE.UI.talentPopup:Hide()
-            end
-            LeafVE.UI:HideNativeTalentFrame()
-            LeafVE.UI.inspectedPlayer = this.playerName
-            LeafVE.UI:ShowPlayerCard(this.playerName)
-          end
-        end)
-        
-        table.insert(panel.leaderEntries, frame)
-      end
-      
-      frame:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 5, yOffset)
-      
-      local rankColor = {1, 1, 1}
-      
-      if i <= 5 and (GetAshenRankIcon(i) or PVP_RANK_ICONS[i]) then
-        frame.rankIcon:SetTexture(GetAshenRankIcon(i) or PVP_RANK_ICONS[i])
-        if i == 1 then
-          frame.rankIcon:SetWidth(38)
-          frame.rankIcon:SetHeight(38)
-        elseif i == 2 then
-          frame.rankIcon:SetWidth(36)
-          frame.rankIcon:SetHeight(36)
-        else
-          frame.rankIcon:SetWidth(32)
-          frame.rankIcon:SetHeight(32)
+    for rowIndex = 1, table.getn(displayRows) do
+      local row = displayRows[rowIndex]
+      if row.kind == "header" or row.kind == "empty" then
+        headerIndex = headerIndex + 1
+        local header = panel.bracketHeaders[headerIndex]
+        if not header then
+          header = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+          header:SetWidth(470)
+          header:SetJustifyH("LEFT")
+          panel.bracketHeaders[headerIndex] = header
         end
-        frame.rankIcon:Show()
-        frame.rank:Hide()
-        LeafVE:EnableLeaderboardFireRow(frame, i)
+        header:ClearAllPoints()
+        header:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 10, yOffset)
+        if row.kind == "header" then
+          header:SetText("|cFFD8A24A" .. row.label .. "|r  |cFF777777Bracket standings|r")
+          yOffset = yOffset - 30
+        else
+          header:SetText("|cFF777777  " .. row.label .. "|r")
+          yOffset = yOffset - 26
+        end
+        header:Show()
       else
-        frame.rankIcon:Hide()
-        LeafVE:DisableLeaderboardFireRow(frame)
-        frame.rank:Show()
-        frame.rank:SetText("#"..i)
-        frame.rank:SetTextColor(rankColor[1], rankColor[2], rankColor[3])
+        playerFrameIndex = playerFrameIndex + 1
+        local leader = row.leader
+        local rankIndex = row.rank
+        local frame = panel.leaderEntries[playerFrameIndex]
+
+        if not frame then
+          frame = CreateFrame("Frame", nil, scrollChild)
+          frame:SetWidth(480)
+          frame:SetHeight(entryHeight)
+
+          local rankIcon = frame:CreateTexture(nil, "ARTWORK")
+          rankIcon:SetWidth(32)
+          rankIcon:SetHeight(32)
+          rankIcon:SetPoint("LEFT", frame, "LEFT", 5, 0)
+          frame.rankIcon = rankIcon
+          LeafVE:AttachLeaderboardFire(frame)
+
+          local rank = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+          rank:SetPoint("LEFT", frame, "LEFT", 5, 0)
+          rank:SetWidth(30)
+          rank:SetJustifyH("RIGHT")
+          frame.rank = rank
+
+          local nameText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+          nameText:SetPoint("LEFT", rank, "RIGHT", 40, 0)
+          nameText:SetWidth(220)
+          nameText:SetJustifyH("LEFT")
+          frame.nameText = nameText
+
+          local pointsText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+          pointsText:SetPoint("LEFT", nameText, "RIGHT", 10, 0)
+          pointsText:SetWidth(175)
+          pointsText:SetJustifyH("LEFT")
+          frame.pointsText = pointsText
+
+          local bg = frame:CreateTexture(nil, "BACKGROUND")
+          bg:SetAllPoints(frame)
+          bg:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
+          bg:SetVertexColor(0.1, 0.1, 0.1, 0.3)
+          frame.bg = bg
+
+          frame:EnableMouse(true)
+          frame:SetScript("OnEnter", function()
+            this.bg:SetVertexColor(0.25, 0.25, 0.15, 0.7)
+            if LeafVE then LeafVE:StartLeaderboardFire(this) end
+          end)
+          frame:SetScript("OnLeave", function()
+            this.bg:SetVertexColor(0.1, 0.1, 0.1, 0.3)
+            if LeafVE then LeafVE:StopLeaderboardFire(this) end
+          end)
+          frame:SetScript("OnMouseUp", function()
+            if this.playerName then
+              if LeafVE.UI.allBadgesFrame and LeafVE.UI.allBadgesFrame:IsVisible() then LeafVE.UI.allBadgesFrame:Hide() end
+              if LeafVE.UI.achPopup and LeafVE.UI.achPopup:IsVisible() then LeafVE.UI.achPopup:Hide() end
+              if LeafVE.UI.gearPopup and LeafVE.UI.gearPopup:IsVisible() then LeafVE.UI.gearPopup:Hide() end
+              if LeafVE.UI.workOrderPopup and LeafVE.UI.workOrderPopup:IsVisible() then LeafVE.UI.workOrderPopup:Hide() end
+              if LeafVE.UI.talentPopup and LeafVE.UI.talentPopup:IsVisible() then LeafVE.UI.talentPopup:Hide() end
+              LeafVE.UI:HideNativeTalentFrame()
+              LeafVE.UI.inspectedPlayer = this.playerName
+              LeafVE.UI:ShowPlayerCard(this.playerName)
+            end
+          end)
+          table.insert(panel.leaderEntries, frame)
+        end
+
+        frame:ClearAllPoints()
+        frame:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 5, yOffset)
+        if rankIndex <= 5 and (GetAshenRankIcon(rankIndex) or PVP_RANK_ICONS[rankIndex]) then
+          frame.rankIcon:SetTexture(GetAshenRankIcon(rankIndex) or PVP_RANK_ICONS[rankIndex])
+          frame.rankIcon:SetWidth(rankIndex == 1 and 38 or (rankIndex == 2 and 36 or 32))
+          frame.rankIcon:SetHeight(rankIndex == 1 and 38 or (rankIndex == 2 and 36 or 32))
+          frame.rankIcon:Show()
+          frame.rank:Hide()
+          LeafVE:EnableLeaderboardFireRow(frame, rankIndex)
+        else
+          frame.rankIcon:Hide()
+          LeafVE:DisableLeaderboardFireRow(frame)
+          frame.rank:Show()
+          frame.rank:SetText("#" .. rankIndex)
+          frame.rank:SetTextColor(1, 1, 1)
+        end
+
+        local class = string.upper(leader.class or "UNKNOWN")
+        local levelSuffix = leader.level and (" |cFF888888(L" .. tostring(leader.level) .. ")|r") or ""
+        frame.nameText:SetText(LeafVE:BuildStyledPlayerName(leader.name, class) .. levelSuffix)
+        frame.nameText:SetTextColor(1, 1, 1)
+        frame.playerName = leader.name
+        frame.pointsText:SetText(string.format("|cFFFFD700%s AE|r  (L:%s G:%s S:%s)", LeafVE:FormatPointAmount(leader.total), LeafVE:FormatPointAmount(leader.L), LeafVE:FormatPointAmount(leader.G), LeafVE:FormatPointAmount(leader.S)))
+        frame:Show()
+        yOffset = yOffset - entryHeight - 8
       end
-      
-      local class = string.upper(leader.class or "UNKNOWN")
-      frame.nameText:SetText(LeafVE:BuildStyledPlayerName(leader.name, class))
-      frame.nameText:SetTextColor(1, 1, 1)
-      frame.playerName = leader.name
-      
-      frame.pointsText:SetText(string.format("|cFFFFD700%s pts|r  (L:%s G:%s S:%s)", LeafVE:FormatPointAmount(leader.total), LeafVE:FormatPointAmount(leader.L), LeafVE:FormatPointAmount(leader.G), LeafVE:FormatPointAmount(leader.S)))
-      
-      frame:Show()
-      yOffset = yOffset - entryHeight - 8
     end
   end
-  
+
   scrollChild:SetHeight(math.max(1, math.abs(yOffset) + 50))
-  
   local scrollRange = panel.scrollFrame:GetVerticalScrollRange()
-  if scrollRange > 0 then
-    panel.scrollBar:Show()
-  else
-    panel.scrollBar:Hide()
-  end
-  
+  if scrollRange > 0 then panel.scrollBar:Show() else panel.scrollBar:Hide() end
   panel.scrollFrame:SetVerticalScroll(0)
   panel.scrollBar:SetValue(0)
 end
@@ -35826,22 +36184,23 @@ subtitle:SetText("|cFF888888Flame / Flame Keeper only|r")
       end
     end
     table.sort(sorted, function(a, b) return a.total > b.total end)
-    local rewards = LeafVE:GetWeeklyRecapRewards()
+    local champions = LeafVE:GetWeeklyBracketChampionsForWeek(wk)
+    local byBracket = {}
+    for i = 1, table.getn(champions) do
+      local entry = champions[i]
+      if entry and entry.bracket then byBracket[entry.bracket] = entry end
+    end
+    local reward = LeafVE:GetWeeklyBracketChampionReward()
     local headerLink = LeafVE:GetChatAnnouncementLink("leafve_title:weekly_champions", "Ashen Banner Weekly Champions", "FFD8A24A")
       or "|cFFD8A24AAshen Banner Weekly Champions|r"
     local lines = {headerLink}
-    local ordinals = {"1st", "2nd", "3rd", "4th", "5th"}
-    for i = 1, 5 do
-      local entry = sorted[i]
+    for i = 1, table.getn(LEAFVE_WEEKLY_LEVEL_BRACKETS) do
+      local bracket = LEAFVE_WEEKLY_LEVEL_BRACKETS[i]
+      local entry = byBracket[bracket]
       if entry then
-        local reward = rewards[i] or 0
-        if reward > 0 then
-          table.insert(lines, string.format("%s: %s - %s (%s reward)", ordinals[i], entry.name, LeafVE:FormatPointDisplay(entry.total, true, true), LeafVE:FormatSeasonGoldReward(reward)))
-        else
-          table.insert(lines, string.format("%s: %s - %s", ordinals[i], entry.name, LeafVE:FormatPointDisplay(entry.total, true, true)))
-        end
+        table.insert(lines, string.format("Levels %s: %s - %s (%s reward)", bracket, entry.name, LeafVE:FormatPointDisplay(entry.total, true, true), LeafVE:FormatSeasonGoldReward(reward)))
       else
-        table.insert(lines, string.format("%s: ---", ordinals[i]))
+        table.insert(lines, string.format("Levels %s: ---", bracket))
       end
     end
     return lines
@@ -39828,6 +40187,7 @@ function LeafVE.UI:Refresh()
     ShowPanelWithTransition(self.panels.me)
     local me = ShortName(UnitName("player") or "")
     if not me or me == "" then return end
+    local repSummary = LeafVE:GetBannerRepGainSummary(me, Now())
     
     local day = DayKey()
     local dayEntry = LeafVE_DB.global[day] and LeafVE_DB.global[day][me]
@@ -39835,8 +40195,8 @@ function LeafVE.UI:Refresh()
     
     if self.panels.me.todayStats then
       self.panels.me.todayStats:SetText(string.format(
-        "Login: %d  |  Group: %d  |  Shoutouts: %d  |  |cFFFFD700Total: %d|r",
-        dayT.L or 0, dayT.G or 0, dayT.S or 0, (dayT.L or 0) + (dayT.G or 0) + (dayT.S or 0)
+        "Login: %d  |  Group: %d  |  Shoutouts: %d  |  |cFFFFD700Total: %d|r\n|cFF88CCFFBanner Rep Gained: %d|r",
+        dayT.L or 0, dayT.G or 0, dayT.S or 0, (dayT.L or 0) + (dayT.G or 0) + (dayT.S or 0), repSummary.today or 0
       ))
     end
     
@@ -39845,8 +40205,8 @@ function LeafVE.UI:Refresh()
     local weekT = weekAgg[me] or {L = 0, G = 0, S = 0}
     if self.panels.me.weekStats then
       self.panels.me.weekStats:SetText(string.format(
-        "Login: %d  |  Group: %d  |  Shoutouts: %d  |  |cFFFFD700Total: %d|r",
-        weekT.L or 0, weekT.G or 0, weekT.S or 0, (weekT.L or 0) + (weekT.G or 0) + (weekT.S or 0)
+        "Login: %d  |  Group: %d  |  Shoutouts: %d  |  |cFFFFD700Total: %d|r\n|cFF88CCFFBanner Rep Gained: %d|r",
+        weekT.L or 0, weekT.G or 0, weekT.S or 0, (weekT.L or 0) + (weekT.G or 0) + (weekT.S or 0), repSummary.week or 0
       ))
     end
     
@@ -39869,8 +40229,8 @@ function LeafVE.UI:Refresh()
     end
     if self.panels.me.seasonStats then
       self.panels.me.seasonStats:SetText(string.format(
-        "Login: %d  |  Group: %d  |  Shoutouts: %d  |  |cFFFFD700Total: %d|r",
-        seasonT.L or 0, seasonT.G or 0, seasonT.S or 0, (seasonT.L or 0) + (seasonT.G or 0) + (seasonT.S or 0)
+        "Login: %d  |  Group: %d  |  Shoutouts: %d  |  |cFFFFD700Total: %d|r\n|cFF88CCFFBanner Rep Gained: %d|r",
+        seasonT.L or 0, seasonT.G or 0, seasonT.S or 0, (seasonT.L or 0) + (seasonT.G or 0) + (seasonT.S or 0), repSummary.season or 0
       ))
     end
     
@@ -39891,8 +40251,8 @@ function LeafVE.UI:Refresh()
     LeafVE:CacheBadgeProgress(me)
     if self.panels.me.alltimeStats then
       self.panels.me.alltimeStats:SetText(string.format(
-        "Login: %d  |  Group: %d  |  Shoutouts: %d  |  |cFFFFD700Total: %d|r",
-        alltimeT.L or 0, alltimeT.G or 0, alltimeT.S or 0, (alltimeT.L or 0) + (alltimeT.G or 0) + (alltimeT.S or 0)
+        "Login: %d  |  Group: %d  |  Shoutouts: %d  |  |cFFFFD700Total: %d|r\n|cFF88CCFFBanner Rep Gained: %d|r",
+        alltimeT.L or 0, alltimeT.G or 0, alltimeT.S or 0, (alltimeT.L or 0) + (alltimeT.G or 0) + (alltimeT.S or 0), repSummary.alltime or 0
       ))
     end
   
@@ -39900,8 +40260,9 @@ function LeafVE.UI:Refresh()
     if self.panels.me.lastWeekWinner then
       local previousWeekKey = PreviousWeekKey()
       local cachedWinner = LeafVE:GetCachedWeeklyWinnerSnapshot(previousWeekKey)
-      if not cachedWinner then
-        cachedWinner = LeafVE:SnapshotWeeklyLeaderboardWinner(previousWeekKey)
+      if not cachedWinner or cachedWinner.format ~= "level_brackets_v1" then
+        local rebuiltWinner = LeafVE:SnapshotWeeklyLeaderboardWinner(previousWeekKey, Now(), true)
+        if rebuiltWinner then cachedWinner = rebuiltWinner end
       end
       self.panels.me.lastWeekWinner:SetText(LeafVE:BuildWeeklyTopShinobisText(cachedWinner))
     end
@@ -39953,13 +40314,10 @@ function LeafVE.UI:Refresh()
 
     -- Refresh Season Rewards display
     if self.panels.me.seasonRewards then
-      local rewards = LeafVE:GetWeeklyRecapRewards()
+      local reward = LeafVE:GetWeeklyBracketChampionReward()
       self.panels.me.seasonRewards:SetText(
-        "|cFFFFD7001st: " .. LeafVE:FormatSeasonGoldReward(rewards[1]) .. "|r  |  " ..
-        "|cFFC0C0C02nd: " .. LeafVE:FormatSeasonGoldReward(rewards[2]) .. "|r  |  " ..
-        "|cFFCD7F323rd: " .. LeafVE:FormatSeasonGoldReward(rewards[3]) .. "|r\n" ..
-        "|cFFB8B8B84th: " .. LeafVE:FormatSeasonGoldReward(rewards[4]) .. "|r  |  " ..
-        "|cFF9C9C9C5th: " .. LeafVE:FormatSeasonGoldReward(rewards[5]) .. "|r"
+        "|cFFFFD700Each level-bracket champion: " .. LeafVE:FormatSeasonGoldReward(reward) .. "|r\n" ..
+        "|cFFB8B8B8Levels 10-19, 20-29, 30-39, 40-49, and 50-59|r"
       )
     end
 
@@ -39986,59 +40344,30 @@ function LeafVE.UI:Refresh()
       )
     end
 
-    -- Populate current weekly top 5 standings
+    -- Populate the current leader for each level bracket.
     if self.panels.me.weekTopEntries then
-      local wk = WeekKey()
-      local syncedWeek = LeafVE_DB.lboard.weekly[wk]
-      local localWeek = (AggForThisWeek())
+      local champions = LeafVE:GetWeeklyBracketChampionsForWeek(WeekKey())
+      local byBracket = {}
+      local i
+      for i = 1, table.getn(champions) do
+        local entry = champions[i]
+        if entry and entry.bracket then byBracket[entry.bracket] = entry end
+      end
 
-      local weekLeaders = {}
-      local memberSet = {}
-      if LeafVE_DB.persistentRoster then
-        for lowerName, info in pairs(LeafVE_DB.persistentRoster) do
-          memberSet[lowerName] = info
-        end
-      end
-      for lowerName, info in pairs(LeafVE.guildRosterCache) do
-        memberSet[lowerName] = info
-      end
-      for _, guildInfo in pairs(memberSet) do
-        local name = guildInfo.name
-        local localPts = localWeek[name]
-        local syncedPts = syncedWeek and syncedWeek[name]
-        -- Synced data is ground truth; local aggregation is fallback only when synced is absent.
-        local pts = syncedPts or localPts
-        local total = pts and ((pts.L or 0) + (pts.G or 0) + (pts.S or 0)) or 0
-        if total > 0 then
-          table.insert(weekLeaders, {name = name, total = total})
-        end
-      end
-      table.sort(weekLeaders, function(a, b)
-        if a.total == b.total then return Lower(a.name) < Lower(b.name) end
-        return a.total > b.total
-      end)
-      local medalProvider = LEAFVE_STYLE and LEAFVE_STYLE.GetMedalForRank
-      local medal1 = medalProvider and LEAFVE_STYLE:GetMedalForRank(1) or nil
-      local medal2 = medalProvider and LEAFVE_STYLE:GetMedalForRank(2) or nil
-      local medal3 = medalProvider and LEAFVE_STYLE:GetMedalForRank(3) or nil
-      local rankLabels = {
-        (medal1 and (medal1 .. " ") or "") .. "|cFFFFD7001st|r",
-        (medal2 and (medal2 .. " ") or "") .. "|cFFC0C0C02nd|r",
-        (medal3 and (medal3 .. " ") or "") .. "|cFFCD7F323rd|r",
-        "|cFFFFFFFF4th|r", "|cFFFFFFFF5th|r"
-      }
-      for i = 1, 5 do
-        if self.panels.me.weekTopEntries[i] then
-          if weekLeaders[i] then
-            local leaderClass = LeafVE:GetClassTagForPlayer(weekLeaders[i].name)
-            self.panels.me.weekTopEntries[i]:SetText(string.format("%s %s - |cFFFFD700%s pts|r", rankLabels[i], LeafVE:BuildStyledPlayerName(weekLeaders[i].name, leaderClass), LeafVE:FormatPointAmount(weekLeaders[i].total)))
+      for i = 1, table.getn(LEAFVE_WEEKLY_LEVEL_BRACKETS) do
+        local bracket = LEAFVE_WEEKLY_LEVEL_BRACKETS[i]
+        local entry = byBracket[bracket]
+        local row = self.panels.me.weekTopEntries[i]
+        if row then
+          if entry then
+            local leaderClass = LeafVE:GetClassTagForPlayer(entry.name)
+            row:SetText(string.format("|cFFD8A24ALv %s|r %s - |cFFFFD700%s pts|r", bracket, LeafVE:BuildStyledPlayerName(entry.name, leaderClass), LeafVE:FormatPointAmount(entry.total)))
           else
-            self.panels.me.weekTopEntries[i]:SetText(string.format("%s |cFF888888------|r", rankLabels[i]))
+            row:SetText(string.format("|cFFD8A24ALv %s|r |cFF888888------|r", bracket))
           end
         end
       end
     end
-
   elseif self.activeTab == "shoutouts" and self.panels.shoutouts then
     ShowPanelWithTransition(self.panels.shoutouts)
     local me = ShortName(UnitName("player"))
@@ -41179,6 +41508,15 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
         "|cFFFFD700[LVL]|r Your Ashen Embers data was reset by a guild admin. Welcome to the new season!"
       )
     end
+    local bannerRepPlayer = ShortName(UnitName("player"))
+    if bannerRepPlayer then
+      local bannerRepEntry = LeafVE:GetShinobiDutyRepBonusEntry(bannerRepPlayer)
+      LeafVE:InitializeBannerRepTrackingForPlayer(
+        bannerRepPlayer,
+        tonumber(bannerRepEntry and bannerRepEntry.amount) or 0,
+        tonumber(bannerRepEntry and bannerRepEntry.updatedAt) or Now()
+      )
+    end
     LeafVE:CheckDailyLogin()
     LeafVE:PurgeStaleWeeklyData()
     LeafVE:PurgeInvalidWorkOrders()
@@ -42310,69 +42648,10 @@ function LeafVE:HandleCustomHyperlinkClick(link, text)
 end
 
 function LeafVE:RegisterChatHyperlinkShowHandler()
-  if type(ChatFrame_OnHyperlinkShow) ~= "function" then
-    return false
-  end
-  if self.chatHyperlinkShowWrapped and ChatFrame_OnHyperlinkShow == self.chatHyperlinkShowWrapped then
-    return true
-  end
-
-  self.chatHyperlinkShowOriginal = ChatFrame_OnHyperlinkShow
-  self.chatHyperlinkShowWrapped = function(link, text, button)
-    local safeLink = tostring(link or "")
-    local isLeafLink = string.sub(safeLink, 1, 13) == "leafve_badge:"
-      or string.sub(safeLink, 1, 13) == "leafve_title:"
-      or string.sub(safeLink, 1, 11) == "leafve_ach:"
-
-    if isLeafLink then
-      local ok, err = pcall(function()
-        LeafVE:HandleCustomHyperlinkClick(link, text)
-      end)
-      if not ok then
-        Print("|cFFFF6666LeafVE link preview failed:|r " .. tostring(err))
-      end
-      return
-    end
-
-    -- Do not let external hyperlink hooks recurse through our wrapper. Some addons
-    -- (AtlasLoot included) call the global ChatFrame_OnHyperlinkShow from inside
-    -- their own hook, which can recurse until a stack overflow if we call that hook
-    -- again. For non-LeafVE links, prefer the original SetItemRef path instead.
-    if LeafVE.chatHyperlinkShowGuard then
-      return
-    end
-
-    local originalSetItemRef = LeafVE.badgeHyperlinkOriginalSetItemRef
-    if type(originalSetItemRef) ~= "function" then
-      originalSetItemRef = SetItemRef
-    end
-
-    if type(originalSetItemRef) == "function" and originalSetItemRef ~= LeafVE.badgeHyperlinkWrappedRef then
-      LeafVE.chatHyperlinkShowGuard = true
-      local ok, err = pcall(originalSetItemRef, link, text, button)
-      LeafVE.chatHyperlinkShowGuard = false
-      if not ok then
-        local errText = tostring(err or "")
-        local lowerErr = string.lower(errText)
-        if string.find(lowerErr, "unknown link type", 1, true) == nil
-          and string.find(lowerErr, "stack overflow", 1, true) == nil then
-          -- Keep this silent for common third-party unknown/custom links. Printing
-          -- errors here makes normal chat link clicks noisy for players.
-        end
-      end
-      return
-    end
-
-    local original = LeafVE.chatHyperlinkShowOriginal
-    if type(original) == "function" and original ~= LeafVE.chatHyperlinkShowWrapped then
-      LeafVE.chatHyperlinkShowGuard = true
-      pcall(original, link, text, button)
-      LeafVE.chatHyperlinkShowGuard = false
-    end
-  end
-
-  ChatFrame_OnHyperlinkShow = self.chatHyperlinkShowWrapped
-  return true
+  -- Never replace Blizzard's global chat hyperlink handler. Doing so blocks
+  -- player-name whispers, /reply targets, item links, and third-party links.
+  -- Our custom links are handled narrowly by the SetItemRef wrapper below.
+  return false
 end
 
 function LeafVE:RegisterBadgeHyperlinkHandler()
