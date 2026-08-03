@@ -4606,6 +4606,9 @@ function LeafVE_AchTest.UI:Build()
   
   local f = CreateFrame("Frame", "LeafVE_AchTestFrame", UIParent)
   self.frame = f
+  if UISpecialFrames then
+    tinsert(UISpecialFrames, "LeafVE_AchTestFrame")
+  end
   f:SetPoint("CENTER", 0, 0)
   f:SetWidth(930)
   f:SetHeight(640)
