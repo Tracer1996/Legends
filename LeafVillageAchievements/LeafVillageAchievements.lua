@@ -4587,7 +4587,7 @@ function LeafVE_AchTest.UI:RefreshMounts()
     self.scrollFrame:UpdateScrollChildRect()
   end
   if self.scrollFrame and self.scrollbar then
-    local maxScroll=self.scrollFrame:GetVerticalScrollRange()
+    local maxScroll=self:GetScrollMax()
     self.scrollbar:SetMinMaxValues(0,maxScroll>0 and maxScroll or 1)
     local current=self.scrollbar:GetValue() or 0
     if current>maxScroll then self.scrollbar:SetValue(maxScroll>0 and maxScroll or 0) end
@@ -5599,7 +5599,12 @@ function LeafVE_AchTest.UI:Build()
   self.scrollDown = scrollDown
   scrollbar:SetScript("OnValueChanged", function()
     if LeafVE_AchTest.UI and LeafVE_AchTest.UI.scrollFrame then
-      LeafVE_AchTest.UI.scrollFrame:SetVerticalScroll(this:GetValue())
+      local sf = LeafVE_AchTest.UI.scrollFrame
+      if sf.UpdateScrollChildRect then sf:UpdateScrollChildRect() end
+      local value = this:GetValue()
+      local maxScroll = LeafVE_AchTest.UI:GetScrollMax()
+      if value > maxScroll then value = maxScroll end
+      sf:SetVerticalScroll(value)
       if LeafVE_AchTest.UI:IsMountListView() then
         LeafVE_AchTest.UI:UpdateVisibleMounts()
       elseif LeafVE_AchTest.UI:IsAchievementListView() then
@@ -5626,8 +5631,9 @@ function LeafVE_AchTest.UI:Build()
   end)
   
   scrollFrame:SetScript("OnMouseWheel", function()
+    if this.UpdateScrollChildRect then this:UpdateScrollChildRect() end
     local current = this:GetVerticalScroll()
-    local maxScroll = this:GetVerticalScrollRange()
+    local maxScroll = LeafVE_AchTest.UI and LeafVE_AchTest.UI:GetScrollMax() or this:GetVerticalScrollRange()
     local newScroll = current - (arg1 * 20)
     if newScroll < 0 then newScroll = 0 end
     if newScroll > maxScroll then newScroll = maxScroll end
@@ -5640,9 +5646,21 @@ function LeafVE_AchTest.UI:Build()
   self:Refresh()
 end
 
+-- GetVerticalScrollRange() can lag behind a scrollChild height change on this
+-- client even after UpdateScrollChildRect(), which let the scrollbar/mouse
+-- wheel clamp against a stale range from the previously selected category
+-- (cutting the new list short, or leaving blank space past its real end).
+-- Computing the range directly from the current frame heights sidesteps that.
+function LeafVE_AchTest.UI:GetScrollMax()
+  if not self.scrollChild or not self.scrollFrame then return 0 end
+  local m = (self.scrollChild:GetHeight() or 0) - (self.scrollFrame:GetHeight() or 0)
+  if m < 0 then m = 0 end
+  return m
+end
+
 function LeafVE_AchTest.UI:Refresh()
   if not self.frame or not self.scrollChild then return end
-  
+
   local me = ShortName(UnitName("player") or "")
   local totalPoints = LeafVE_AchTest:GetTotalAchievementPoints(me)
   local currentTitle = LeafVE_AchTest:GetCurrentTitle(me)
@@ -5898,8 +5916,9 @@ function LeafVE_AchTest.UI:Refresh()
   end
   
   if self.scrollFrame and self.scrollbar then
-    local maxScroll = self.scrollFrame:GetVerticalScrollRange()
+    local maxScroll = self:GetScrollMax()
     self.scrollbar:SetMinMaxValues(0, maxScroll > 0 and maxScroll or 1)
+    if (self.scrollbar:GetValue() or 0) > maxScroll then self.scrollbar:SetValue(maxScroll) end
   end
 end
 
@@ -5961,11 +5980,14 @@ function LeafVE_AchTest.UI:RefreshAchievements()
   -- Set the scrollChild virtual height so the scrollbar range is correct.
   local totalHeight = math.max(10, table.getn(achievementList) * ACH_ROW_H + 10)
   self.scrollChild:SetHeight(totalHeight)
-  
+  if self.scrollFrame and self.scrollFrame.UpdateScrollChildRect then
+    self.scrollFrame:UpdateScrollChildRect()
+  end
 
   if self.scrollFrame and self.scrollbar then
-    local maxScroll = self.scrollFrame:GetVerticalScrollRange()
+    local maxScroll = self:GetScrollMax()
     self.scrollbar:SetMinMaxValues(0, maxScroll > 0 and maxScroll or 1)
+    if (self.scrollbar:GetValue() or 0) > maxScroll then self.scrollbar:SetValue(maxScroll) end
   end
 
   -- Ensure the recycled frame pool exists (created once, reused forever).
@@ -6244,9 +6266,13 @@ function LeafVE_AchTest.UI:RefreshTitles()
   end
   
   if self.scrollChild then self.scrollChild:SetHeight(yOffset + 10) end
+  if self.scrollFrame and self.scrollFrame.UpdateScrollChildRect then
+    self.scrollFrame:UpdateScrollChildRect()
+  end
   if self.scrollFrame and self.scrollbar then
-    local maxScroll = self.scrollFrame:GetVerticalScrollRange()
+    local maxScroll = self:GetScrollMax()
     self.scrollbar:SetMinMaxValues(0, maxScroll > 0 and maxScroll or 1)
+    if (self.scrollbar:GetValue() or 0) > maxScroll then self.scrollbar:SetValue(maxScroll) end
   end
 end
 
