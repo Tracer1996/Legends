@@ -2679,6 +2679,7 @@ LeafVE_AchTest.AchPopup = {
   POP_TIME = 0.35,
   HOLD_TIME = 4,
   FADE_TIME = 0.5,
+  ICON_EXIT_TIME = 0.12,
   WIDTH = 500,
   DESC_MAX_CHARS = 82,
 }
@@ -2799,7 +2800,19 @@ function LeafVE_AchTest.AchPopup.Build()
   popup.icon = icon
 
   -- Crops icon's square corners to the socket's circle -- OVERLAY draws
-  -- above icon's ARTWORK layer within this same frame.
+  -- above icon's ARTWORK layer within this same frame. This client has
+  -- no true texture-clip/mask API (confirmed -- MaskTexture wasn't added
+  -- until retail patch 7.2, a decade past this client's 1.12-era one),
+  -- so this only *looks* like a circular clip by opaquely painting over
+  -- the icon's square corners -- that only works while iconMask itself
+  -- is fully opaque. iconMask's own alpha is deliberately left untouched
+  -- here (it only ever cascades through popup's own slow SetAlpha, never
+  -- independently animated) -- see the "out" state in the OnUpdate
+  -- handler for why: icon fades out fast and separately from the mask
+  -- specifically so the mask stays close to opaque for as long as the
+  -- icon still has any visibility left, keeping the corner-leak small
+  -- instead of fading both down together (which peaks around 25% leaked
+  -- visibility at the midpoint of a shared fade).
   local iconMask = popup:CreateTexture(nil, "OVERLAY")
   iconMask:SetWidth(MASK_SIZE_W)
   iconMask:SetHeight(MASK_SIZE_H)
@@ -2828,7 +2841,9 @@ function LeafVE_AchTest.AchPopup.Build()
   -- higher frame level -- frame level beats texture layer when comparing
   -- across frames, so its tiles would draw over popup's own iconMask.
   -- Needs its own copy of the same mask, drawn on iconMosaic itself, same
-  -- absolute position (anchored to popup, not iconMosaic).
+  -- absolute position (anchored to popup, not iconMosaic). Like iconMask,
+  -- its own alpha is never independently animated -- only the mosaic's
+  -- individual tiles fade fast during "out" (see OnUpdate), not this.
   local iconMosaicMask = iconMosaic:CreateTexture(nil, "OVERLAY")
   iconMosaicMask:SetWidth(MASK_SIZE_W)
   iconMosaicMask:SetHeight(MASK_SIZE_H)
@@ -2912,20 +2927,34 @@ function LeafVE_AchTest.AchPopup.Build()
     elseif LeafVE_AchTest.AchPopup.state == "hold" then
       iconGlow:SetAlpha(0.55 + math.sin(LeafVE_AchTest.AchPopup.elapsed * 4) * 0.35)
       if LeafVE_AchTest.AchPopup.elapsed >= LeafVE_AchTest.AchPopup.HOLD_TIME then
-        -- iconGlow is ADD-blended (it adds light rather than blending
-        -- toward transparent like everything else here), so scaling its
-        -- alpha down in step with popup:SetAlpha() during "out" doesn't
-        -- read as "fading" the same way the rest of the toast does --
-        -- it just looks like it lingers, out of sync with the banner/
-        -- icon/mask fading together normally. Cutting it at the start
-        -- of the fade instead of trying to fade it removes that
-        -- mismatch entirely.
-        iconGlow:Hide()
         LeafVE_AchTest.AchPopup.state, LeafVE_AchTest.AchPopup.elapsed = "out", 0
       end
     elseif LeafVE_AchTest.AchPopup.state == "out" then
-      popup:SetAlpha(math.max(1 - (LeafVE_AchTest.AchPopup.elapsed / LeafVE_AchTest.AchPopup.FADE_TIME), 0))
-      if LeafVE_AchTest.AchPopup.elapsed >= LeafVE_AchTest.AchPopup.FADE_TIME then
+      local elapsed = LeafVE_AchTest.AchPopup.elapsed
+      -- icon/iconGlow/the mosaic tiles fade out on their own fast,
+      -- plain alpha fade over just the first ICON_EXIT_TIME, instead of
+      -- fading in step with the banner via popup:SetAlpha() for the
+      -- full FADE_TIME -- iconMask/iconMosaicMask are deliberately left
+      -- alone (see their comments in Build()): they only ever cascade
+      -- through popup's own slow fade, so they stay close to opaque for
+      -- as long as the icon still has any visibility left, keeping the
+      -- corner-leak small instead of both fading down together (which
+      -- peaks around 25% leaked visibility at the midpoint of a shared
+      -- fade). No scaling/shrinking -- just a faster plain fade.
+      if elapsed < LeafVE_AchTest.AchPopup.ICON_EXIT_TIME then
+        local ia = 1 - (elapsed / LeafVE_AchTest.AchPopup.ICON_EXIT_TIME)
+        icon:SetAlpha(ia)
+        iconGlow:SetAlpha(ia)
+        for i = 1, table.getn(iconMosaic.tiles) do
+          iconMosaic.tiles[i]:SetAlpha(ia)
+        end
+      else
+        icon:Hide()
+        iconGlow:Hide()
+        iconMosaic:Hide()
+      end
+      popup:SetAlpha(math.max(1 - (elapsed / LeafVE_AchTest.AchPopup.FADE_TIME), 0))
+      if elapsed >= LeafVE_AchTest.AchPopup.FADE_TIME then
         popup:Hide()
         shine:Show()
         LeafVE_AchTest.AchPopup.StartNext()
@@ -2951,6 +2980,9 @@ function LeafVE_AchTest.AchPopup.StartNext()
   if achievement.criteria_type == "explore_zone_live" and achievement.criteria_overlays then
     popup.icon:Hide()
     LeafVE_AchTest.ZoneMapUI.LayoutThumbnail(popup.iconMosaic, achievement.criteria_overlays, achievement.criteria_bounds, popup.iconSize)
+    for i = 1, table.getn(popup.iconMosaic.tiles) do
+      popup.iconMosaic.tiles[i]:SetAlpha(1)
+    end
     popup.iconMosaic:Show()
   else
     popup.iconMosaic:Hide()
@@ -2958,6 +2990,7 @@ function LeafVE_AchTest.AchPopup.StartNext()
     if not popupIconTex or popupIconTex == "" then
       popupIconTex = "Interface\\Icons\\INV_Misc_QuestionMark"
     end
+    popup.icon:SetAlpha(1)
     popup.icon:Show()
     popup.icon:SetTexture(popupIconTex)
   end
@@ -2969,6 +3002,7 @@ function LeafVE_AchTest.AchPopup.StartNext()
   popup:SetAlpha(0)
   popup:SetScale(0.4)
   popup.iconGlow:Show()
+  popup.iconGlow:SetAlpha(1)
   popup.shine:Show()
   popup.shine:ClearAllPoints()
   popup.shine:SetPoint("TOP", popup, "TOP", 0, -4)
