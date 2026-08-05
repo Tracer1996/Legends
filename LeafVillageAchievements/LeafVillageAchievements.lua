@@ -5183,7 +5183,7 @@ function LeafVE_AchTest.UI:RefreshMounts()
     self.scrollFrame:UpdateScrollChildRect()
   end
   if self.scrollFrame and self.scrollbar then
-    local maxScroll=self.scrollFrame:GetVerticalScrollRange()
+    local maxScroll=self:GetScrollMax()
     self.scrollbar:SetMinMaxValues(0,maxScroll>0 and maxScroll or 1)
     local current=self.scrollbar:GetValue() or 0
     if current>maxScroll then self.scrollbar:SetValue(maxScroll>0 and maxScroll or 0) end
@@ -5539,6 +5539,9 @@ function LeafVE_AchTest.UI:Build()
   
   local f = CreateFrame("Frame", "LeafVE_AchTestFrame", UIParent)
   self.frame = f
+  if UISpecialFrames then
+    tinsert(UISpecialFrames, "LeafVE_AchTestFrame")
+  end
   f:SetPoint("CENTER", 0, 0)
   f:SetWidth(930)
   f:SetHeight(640)
@@ -6497,28 +6500,72 @@ function LeafVE_AchTest.UI:Build()
   scrollFrame:SetScrollChild(scrollChild)
   self.scrollChild = scrollChild
   
-  local scrollbar = CreateFrame("Slider", nil, f)
-  scrollbar:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, -176)
-  scrollbar:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -18, 34)
-  scrollbar:SetWidth(16)
-  scrollbar:SetOrientation("VERTICAL")
-  scrollbar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-  scrollbar:SetBackdrop({
+  -- The native Slider auto-positions its thumb texture, and how it maps
+  -- value->pixel at the frame's own edges isn't consistent enough on this
+  -- client to keep the knob inside the bar across every value range (small
+  -- ranges rendered fine, larger ones stopped short of the bottom). Rather
+  -- than keep guessing at the native mapping, drive the Slider's thumb
+  -- texture invisibly (it stays the real drag handle) and draw our own
+  -- knob graphic, positioned by hand from value/min/max on a track frame
+  -- that never changes size, so it always reaches exactly top and bottom.
+  local scrollTrack = CreateFrame("Frame", nil, f)
+  scrollTrack:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, -176)
+  scrollTrack:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -18, 34)
+  scrollTrack:SetWidth(20)
+  scrollTrack:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 8,
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
-  scrollbar:SetBackdropColor(0.10, 0.10, 0.10, 0.90)
+  scrollTrack:SetBackdropColor(0.10, 0.10, 0.10, 0.90)
+
+  local THUMB_W, THUMB_H = 20, 30
+  local scrollbar = CreateFrame("Slider", nil, scrollTrack)
+  scrollbar:SetAllPoints(scrollTrack)
+  scrollbar:SetWidth(20)
+  scrollbar:SetOrientation("VERTICAL")
+  scrollbar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+  local thumbTex = scrollbar:GetThumbTexture()
+  if thumbTex then
+    thumbTex:SetWidth(THUMB_W)
+    thumbTex:SetHeight(THUMB_H)
+    thumbTex:SetAlpha(0)
+  end
   scrollbar:SetMinMaxValues(0, 1)
   scrollbar:SetValue(0)
   scrollbar:SetValueStep(20)
   self.scrollbar = scrollbar
 
+  local scrollThumb = scrollTrack:CreateTexture(nil, "OVERLAY")
+  scrollThumb:SetTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+  scrollThumb:SetWidth(THUMB_W)
+  scrollThumb:SetHeight(THUMB_H)
+  scrollThumb:SetPoint("TOP", scrollTrack, "TOP", 0, 0)
+  self.scrollThumb = scrollThumb
+
+  function LeafVE_AchTest.UI:UpdateScrollThumb()
+    if not self.scrollbar or not self.scrollThumb or not self.scrollTrack then return end
+    local minV, maxV = self.scrollbar:GetMinMaxValues()
+    minV = minV or 0
+    maxV = maxV or 0
+    local val = self.scrollbar:GetValue() or 0
+    local frac = 0
+    if maxV > minV then
+      frac = (val - minV) / (maxV - minV)
+      if frac < 0 then frac = 0 end
+      if frac > 1 then frac = 1 end
+    end
+    local travel = math.max(0, (self.scrollTrack:GetHeight() or 0) - THUMB_H)
+    self.scrollThumb:ClearAllPoints()
+    self.scrollThumb:SetPoint("TOP", self.scrollTrack, "TOP", 0, -(frac * travel))
+  end
+  self.scrollTrack = scrollTrack
+
   local scrollUp = CreateFrame("Button", nil, f)
-  scrollUp:SetWidth(18)
-  scrollUp:SetHeight(18)
-  scrollUp:SetPoint("BOTTOM", scrollbar, "TOP", 0, 4)
+  scrollUp:SetWidth(22)
+  scrollUp:SetHeight(22)
+  scrollUp:SetPoint("BOTTOM", scrollTrack, "TOP", 0, 4)
   scrollUp:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
   scrollUp:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
   scrollUp:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
@@ -6526,9 +6573,9 @@ function LeafVE_AchTest.UI:Build()
   self.scrollUp = scrollUp
 
   local scrollDown = CreateFrame("Button", nil, f)
-  scrollDown:SetWidth(18)
-  scrollDown:SetHeight(18)
-  scrollDown:SetPoint("TOP", scrollbar, "BOTTOM", 0, -4)
+  scrollDown:SetWidth(22)
+  scrollDown:SetHeight(22)
+  scrollDown:SetPoint("TOP", scrollTrack, "BOTTOM", 0, -4)
   scrollDown:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
   scrollDown:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down")
   scrollDown:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Highlight")
@@ -6536,7 +6583,13 @@ function LeafVE_AchTest.UI:Build()
   self.scrollDown = scrollDown
   scrollbar:SetScript("OnValueChanged", function()
     if LeafVE_AchTest.UI and LeafVE_AchTest.UI.scrollFrame then
-      LeafVE_AchTest.UI.scrollFrame:SetVerticalScroll(this:GetValue())
+      local sf = LeafVE_AchTest.UI.scrollFrame
+      if sf.UpdateScrollChildRect then sf:UpdateScrollChildRect() end
+      local value = this:GetValue()
+      local maxScroll = LeafVE_AchTest.UI:GetScrollMax()
+      if value > maxScroll then value = maxScroll end
+      sf:SetVerticalScroll(value)
+      LeafVE_AchTest.UI:UpdateScrollThumb()
       if LeafVE_AchTest.UI:IsMountListView() then
         LeafVE_AchTest.UI:UpdateVisibleMounts()
       elseif LeafVE_AchTest.UI:IsAchievementListView() then
@@ -6561,10 +6614,11 @@ function LeafVE_AchTest.UI:Build()
     scrollbar:SetValue(newValue)
     if PlaySound then PlaySound("UChatScrollButton") end
   end)
-  
+
   scrollFrame:SetScript("OnMouseWheel", function()
+    if this.UpdateScrollChildRect then this:UpdateScrollChildRect() end
     local current = this:GetVerticalScroll()
-    local maxScroll = this:GetVerticalScrollRange()
+    local maxScroll = LeafVE_AchTest.UI and LeafVE_AchTest.UI:GetScrollMax() or this:GetVerticalScrollRange()
     local newScroll = current - (arg1 * 20)
     if newScroll < 0 then newScroll = 0 end
     if newScroll > maxScroll then newScroll = maxScroll end
@@ -6573,13 +6627,26 @@ function LeafVE_AchTest.UI:Build()
       LeafVE_AchTest.UI.scrollbar:SetValue(newScroll)
     end
   end)
-  
+
   self:Refresh()
+  self:UpdateScrollThumb()
+end
+
+-- GetVerticalScrollRange() can lag behind a scrollChild height change on this
+-- client even after UpdateScrollChildRect(), which let the scrollbar/mouse
+-- wheel clamp against a stale range from the previously selected category
+-- (cutting the new list short, or leaving blank space past its real end).
+-- Computing the range directly from the current frame heights sidesteps that.
+function LeafVE_AchTest.UI:GetScrollMax()
+  if not self.scrollChild or not self.scrollFrame then return 0 end
+  local m = (self.scrollChild:GetHeight() or 0) - (self.scrollFrame:GetHeight() or 0)
+  if m < 0 then m = 0 end
+  return m
 end
 
 function LeafVE_AchTest.UI:Refresh()
   if not self.frame or not self.scrollChild then return end
-  
+
   local me = ShortName(UnitName("player") or "")
   local totalPoints = LeafVE_AchTest:GetTotalAchievementPoints(me)
   local currentTitle = LeafVE_AchTest:GetCurrentTitle(me)
@@ -6835,8 +6902,9 @@ function LeafVE_AchTest.UI:Refresh()
   end
   
   if self.scrollFrame and self.scrollbar then
-    local maxScroll = self.scrollFrame:GetVerticalScrollRange()
+    local maxScroll = self:GetScrollMax()
     self.scrollbar:SetMinMaxValues(0, maxScroll > 0 and maxScroll or 1)
+    if (self.scrollbar:GetValue() or 0) > maxScroll then self.scrollbar:SetValue(maxScroll) end
   end
 end
 
@@ -6904,11 +6972,14 @@ function LeafVE_AchTest.UI:RefreshAchievements()
   -- Set the scrollChild virtual height so the scrollbar range is correct.
   local totalHeight = math.max(10, table.getn(achievementList) * ACH_ROW_H + 10)
   self.scrollChild:SetHeight(totalHeight)
-  
+  if self.scrollFrame and self.scrollFrame.UpdateScrollChildRect then
+    self.scrollFrame:UpdateScrollChildRect()
+  end
 
   if self.scrollFrame and self.scrollbar then
-    local maxScroll = self.scrollFrame:GetVerticalScrollRange()
+    local maxScroll = self:GetScrollMax()
     self.scrollbar:SetMinMaxValues(0, maxScroll > 0 and maxScroll or 1)
+    if (self.scrollbar:GetValue() or 0) > maxScroll then self.scrollbar:SetValue(maxScroll) end
   end
 
   -- Ensure the recycled frame pool exists (created once, reused forever).
@@ -7253,9 +7324,13 @@ function LeafVE_AchTest.UI:RefreshTitles()
   end
   
   if self.scrollChild then self.scrollChild:SetHeight(yOffset + 10) end
+  if self.scrollFrame and self.scrollFrame.UpdateScrollChildRect then
+    self.scrollFrame:UpdateScrollChildRect()
+  end
   if self.scrollFrame and self.scrollbar then
-    local maxScroll = self.scrollFrame:GetVerticalScrollRange()
+    local maxScroll = self:GetScrollMax()
     self.scrollbar:SetMinMaxValues(0, maxScroll > 0 and maxScroll or 1)
+    if (self.scrollbar:GetValue() or 0) > maxScroll then self.scrollbar:SetValue(maxScroll) end
   end
 end
 
