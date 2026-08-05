@@ -2681,6 +2681,8 @@ LeafVE_AchTest.AchPopup = {
   FADE_TIME = 0.5,
   ICON_EXIT_TIME = 0.12,
   WIDTH = 500,
+  BASE_Y = -150,
+  EXIT_SHRINK_AMOUNT = 0.6,
   DESC_MAX_CHARS = 82,
 }
 
@@ -2724,7 +2726,7 @@ function LeafVE_AchTest.AchPopup.Build()
   local popup = CreateFrame("Frame", nil, UIParent)
   popup:SetWidth(LeafVE_AchTest.AchPopup.WIDTH)
   popup:SetHeight(122)
-  popup:SetPoint("TOP", UIParent, "TOP", 0, -150)
+  popup:SetPoint("TOP", UIParent, "TOP", 0, LeafVE_AchTest.AchPopup.BASE_Y)
   popup:SetFrameStrata("DIALOG")
   popup:SetFrameLevel(100)
   popup:Hide()
@@ -2953,7 +2955,16 @@ function LeafVE_AchTest.AchPopup.Build()
         iconGlow:Hide()
         iconMosaic:Hide()
       end
-      popup:SetAlpha(math.max(1 - (elapsed / LeafVE_AchTest.AchPopup.FADE_TIME), 0))
+      -- Shrinks toward its own TOP anchor while it fades (eased in,
+      -- accelerating toward the end) instead of fading flat in place --
+      -- the same pivot the pop-in entrance grows from (Scale(t) below),
+      -- just mirrored in reverse, so it reads as "the same motion,
+      -- undone" rather than an unrelated new effect. The motion also
+      -- draws the eye away from the icon's own brief fade above rather
+      -- than inviting a static, close look at it.
+      local fadeT = math.min(elapsed / LeafVE_AchTest.AchPopup.FADE_TIME, 1)
+      popup:SetScale(1 - fadeT * fadeT * LeafVE_AchTest.AchPopup.EXIT_SHRINK_AMOUNT)
+      popup:SetAlpha(1 - fadeT)
       if elapsed >= LeafVE_AchTest.AchPopup.FADE_TIME then
         popup:Hide()
         shine:Show()
@@ -2998,6 +3009,8 @@ function LeafVE_AchTest.AchPopup.StartNext()
   popup.descText:SetText("|cFFC8B896"..LeafVE_AchTest.AchPopup.TruncateDesc(achievement.desc).."|r")
   popup.pointsText:SetText("|cFFFFB347+"..achievement.points.." points|r")
 
+  popup:ClearAllPoints()
+  popup:SetPoint("TOP", UIParent, "TOP", 0, LeafVE_AchTest.AchPopup.BASE_Y)
   popup:Show()
   popup:SetAlpha(0)
   popup:SetScale(0.4)

@@ -275,6 +275,17 @@ local liveZoneAchievementIds = {}
 -- function and the throttled scan below, since Lua resolves locals as
 -- upvalues lexically.
 local backfillIndex = 1
+-- Flips true once backfillIndex has wrapped all the way around
+-- liveZoneAchievementIds at least once -- i.e., every known zone
+-- achievement has been checked against C_MapExplorationInfo's
+-- fog-of-war data at least one time. Before that point, any award this
+-- sweep produces is (or at least might be) retroactively catching up on
+-- exploration the player did before this feature -- or this character's
+-- login -- ever ran, not something happening live right now, so it's
+-- kept silent (see the `silent` args threaded through
+-- CheckZoneExplorationLive/CheckExploreCountAchievements below). After
+-- the first full pass, further completions are genuinely new.
+local hasCompletedFirstSweep = false
 
 local function RegisterOrUpdateZoneAchievement(zoneName, zoneAreaID, areas, areaOverlays, overlays, bounds)
   local goal = table.getn(areas)
@@ -489,7 +500,10 @@ function LeafVE_AchTest:CheckZoneExplorationLive()
   local changed = false
   local processed = 0
   while processed < BACKFILL_ZONES_PER_TICK and processed < total do
-    if backfillIndex > total then backfillIndex = 1 end
+    if backfillIndex > total then
+      backfillIndex = 1
+      hasCompletedFirstSweep = true
+    end
     local id = liveZoneAchievementIds[backfillIndex]
     backfillIndex = backfillIndex + 1
     processed = processed + 1
@@ -516,16 +530,19 @@ function LeafVE_AchTest:CheckZoneExplorationLive()
   end
 
   if changed then
+    -- Silent until the first full sweep completes -- see
+    -- hasCompletedFirstSweep's comment above.
+    local silent = not hasCompletedFirstSweep
     if LeafVE_AchTest.CheckExplorationAchievements then
-      LeafVE_AchTest:CheckExplorationAchievements(false)
+      LeafVE_AchTest:CheckExplorationAchievements(silent)
     end
     if LeafVE_AchTest.CheckExploreCountAchievements then
-      LeafVE_AchTest:CheckExploreCountAchievements()
+      LeafVE_AchTest:CheckExploreCountAchievements(silent)
     end
   end
 end
 
-function LeafVE_AchTest:CheckExploreCountAchievements()
+function LeafVE_AchTest:CheckExploreCountAchievements(silent)
   local me = LeafVE_AchTest.ShortName(UnitName("player") or "")
   if not me or me == "" then return end
   if not LeafVE_AchTest_DB or not LeafVE_AchTest_DB.exploredZones or not LeafVE_AchTest_DB.exploredZones[me] then
@@ -535,7 +552,7 @@ function LeafVE_AchTest:CheckExploreCountAchievements()
   for _ in pairs(LeafVE_AchTest_DB.exploredZones[me]) do total = total + 1 end
   for _, tier in ipairs(EXPLORE_COUNT_TIERS) do
     if total >= tier.goal and not LeafVE_AchTest:HasAchievement(me, tier.id) then
-      LeafVE_AchTest:AwardAchievement(tier.id)
+      LeafVE_AchTest:AwardAchievement(tier.id, silent)
     end
   end
 end
@@ -615,7 +632,11 @@ liveExploreFrame:SetScript("OnUpdate", function()
   if pollElapsed >= POLL_INTERVAL then
     pollElapsed = 0
     LeafVE_AchTest:CheckZoneExplorationLive()
-    LeafVE_AchTest:CheckExploreCountAchievements()
+    -- Same silent-until-first-full-sweep rule as inside
+    -- CheckZoneExplorationLive itself (see hasCompletedFirstSweep) --
+    -- this direct call re-derives the count independent of whether this
+    -- particular tick discovered anything new.
+    LeafVE_AchTest:CheckExploreCountAchievements(not hasCompletedFirstSweep)
     LeafVE_AchTest:CheckZonesVisitedLive()
   end
 end)
