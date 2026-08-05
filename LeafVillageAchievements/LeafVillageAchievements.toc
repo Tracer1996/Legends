@@ -15,5 +15,6 @@ data\LeafVE_Ach_QuestRewards.lua
 data\LeafVE_Ach_Companions.lua
 data\LeafVE_Ach_Mounts.lua
 data\LeafVE_Ach_Probe.lua
+data\LeafVE_Ach_ExplorationLive.lua
 LeafVillageAchievementsCollectionsPortraits.lua
 LeafVillageAchievementsCollections.lua
