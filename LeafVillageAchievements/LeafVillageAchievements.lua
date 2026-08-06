@@ -47,25 +47,12 @@ local TEX = {
   ashenSearchBox = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_search_box",
   ashenTabButton = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_tab_button",
   ashenAchievementPopup = "Interface\\AddOns\\LeafVillageAchievements\\tga\\achievement_popup_banner",
-  -- 128x128 (power-of-two) canvas; real content is a tight 86x90 crop
-  -- of the banner's own socket art -- centered on the medallion's true
-  -- center (x=71, from its own alpha silhouette -- see the MASK_LEFT
-  -- comment in AchPopup.Build for why this constant alone can't move
-  -- the ring's on-screen position, only what gets sampled into it),
-  -- sized to just past the ring's own outer edge (radius ~45, measured
-  -- by walking a radial brightness scan out past the gold band until it
-  -- drops back to background level) and no further, with the left side
-  -- trimmed in further still (23px margin there vs 19px on the other
-  -- three sides). Earlier attempts padded this out
-  -- much more generously (up to 24px margin on a side); the extra
-  -- background territory that pulled in doesn't line up pixel-for-pixel
-  -- with the same spot on the real banner underneath (our popup:banner
-  -- scale/position math is only approximate), and that mismatch is what
-  -- read as a faint "bleed" wherever it showed. Staying tight to just
-  -- the ring avoids ever including that unmatched territory. Padding
-  -- pixels are edge-bled from the nearest real content pixel (not left
-  -- black) so GPU bilinear/mipmap blending across the alpha=0 boundary
-  -- has nothing dark to fringe with.
+  -- 128x128 (power-of-two) canvas; real content is a tight crop of the
+  -- banner's own socket art around the ring, centered on the medallion's
+  -- true center (x=71 in the source art). Padding pixels are edge-bled
+  -- from the nearest real content pixel rather than left black, so GPU
+  -- bilinear/mipmap blending across the alpha=0 boundary has nothing
+  -- dark to fringe with.
   ashenAchievementPopupIconMask = "Interface\\AddOns\\LeafVillageAchievements\\tga\\achievement_popup_icon_mask",
   ashenAchievementPopupIconRing = "Interface\\AddOns\\LeafVillageAchievements\\tga\\achievement_popup_icon_ring",
 }
@@ -2654,23 +2641,13 @@ function LeafVE_AchTest:CheckExplorationAchievements(silent, newlyDiscovered)
   end
 end
 
--- Toast pop-in animation ported from OctoAchieve's Popup.lua: an
--- overshoot-bounce scale-in, a shine sweep across the banner, a pulsing
--- gold glow behind the icon while it's held on screen, then a fade out.
--- Also fixes a real bug the old fade-only version had for free: that
--- version built a brand new frame on every single call with no queue, so
--- several achievements completing at once (a meta-achievement cascade in
--- AwardAchievement) stacked overlapping popups on top of each other. This
--- keeps one frame, built once, and queues the rest to show one after
--- another -- same as OctoAchieve's own toast queue.
+-- Toast pop-in animation: overshoot-bounce scale-in, a shine sweep, a
+-- pulsing gold glow behind the icon while held, then a fade out. One
+-- frame built once and queued rather than a new frame per call, so
+-- several achievements completing at once don't stack overlapping popups.
 --
--- Hangs off LeafVE_AchTest (already a global) rather than a new top-level
--- `local` -- this file's main chunk is a single Lua function for local-slot
--- purposes, a top-level local never goes out of scope before EOF, and this
--- file sits right at Lua's 200-local ceiling (see ZoneMapUI further down
--- for the same reasoning, and the exact same fix). Even one more permanent
--- top-level local here tips a later, unrelated declaration over the limit
--- and fails the whole file's compile.
+-- Hangs off LeafVE_AchTest rather than a top-level `local` -- this file
+-- sits right at Lua's 200-local ceiling (see ZoneMapUI for the same fix).
 LeafVE_AchTest.AchPopup = {
   queue = {},
   state = "hidden",
@@ -2686,13 +2663,9 @@ LeafVE_AchTest.AchPopup = {
   DESC_MAX_CHARS = 82,
 }
 
--- descText is fixed to 2 lines (see its SetHeight in AchPopup.Build) so
--- it can never grow into pointsText below it -- at ~315px wide / 12pt
--- font that's roughly 88 characters. Rather than let WoW's own wrap
--- silently clip a long description mid-line (no visual indication
--- anything's missing), trim it here first and end with "..." so a
--- truncated description always reads as truncated. Breaks on the last
--- space before the limit rather than mid-word where possible.
+-- descText is fixed to 2 lines, so a long description gets truncated with
+-- "..." here (breaking on the last space where possible) rather than
+-- silently clipped mid-line by WoW's own wrap.
 function LeafVE_AchTest.AchPopup.TruncateDesc(desc)
   if not desc or string.len(desc) <= LeafVE_AchTest.AchPopup.DESC_MAX_CHARS then
     return desc
@@ -2740,59 +2713,20 @@ function LeafVE_AchTest.AchPopup.Build()
   bg:SetVertexColor(1, 1, 1, 1)
   popup.bg = bg
 
-  -- No separate icon-ring overlay: TEX.ashenAchievementPopup already has an
-  -- ornate circular medallion frame baked directly into the banner art on
-  -- its left side (its own gold border, its own diamond flourishes). Drawing
-  -- achievement_popup_icon_ring.tga on top of that was a second, independent
-  -- ring stacked on the banner's own -- however precisely it was aligned,
-  -- two overlapping frame illustrations reads as a doubled/duplicated
-  -- border. The icon just needs to sit inside the socket that's already
-  -- there.
-  --
-  -- Center found from the medallion's own alpha silhouette (its top and
-  -- bottom spike tips both land at x=71 in the source art, extremely
-  -- consistently across 15+ independent row measurements) -- 71*500/512
-  -- = ~69.3px into this 500-wide popup. Sized to sit inside the ring
-  -- with almost nothing wasted; its square corners get cropped off by
-  -- iconMask below instead of overlapping the ring. (A slightly larger,
-  -- exact-diameter fill was tried and reverted -- looked worse in game
-  -- than this size. A +2 nudge to x=73 was also tried and reverted --
-  -- see the MASK_LEFT comment below for why that didn't actually do
-  -- anything and the real fix was elsewhere.)
+  -- No separate icon-ring overlay: the banner art already has an ornate
+  -- medallion frame baked in on its left side, so the icon just sits
+  -- inside that socket. Center measured from the medallion's own alpha
+  -- silhouette (x=71 in the source art -> ~69.3px into this 500-wide
+  -- popup); square corners get cropped by iconMask below.
   local ICON_SIZE = 72
   local ICON_LEFT = 33
-  -- iconMask is drawn at (approximately) the same scale/position as the
-  -- banner itself -- 500/512 x 122/128, the same popup:banner ratio the
-  -- banner texture itself is drawn at.
-  --
-  -- MASK_LEFT positions the *whole 128px canvas*, not the ring within
-  -- it -- the mask's own crop_ox math always keeps its hole centered on
-  -- the canvas's own midpoint regardless of what source-banner x the
-  -- content is sampled from, so changing which pixels get sampled (the
-  -- CX constant in the mask-generation script) can only change the
-  -- ring's appearance, never its on-screen position. That position is
-  -- controlled entirely by MASK_LEFT. The original inherited value
-  -- (4.9) put the canvas's midpoint at popup-x 67.4 -- 1.9px left of
-  -- the true ring center (69.3, from CX=71 above) -- which is why every
-  -- previous "move it right" attempt that only touched CX (69->71->73)
-  -- never visibly changed the ring's position at all. Solved for
-  -- directly: MASK_LEFT such that canvas-midpoint lands exactly on
-  -- popup-x 69.3.
+  -- MASK_LEFT positions the mask's whole 128px canvas -- its own crop
+  -- keeps the hole centered on the canvas midpoint regardless of source
+  -- pixels sampled, so this is the only thing that controls its on-screen
+  -- position.
   local MASK_SIZE_W = 125.0
   local MASK_SIZE_H = 122.0
   local MASK_LEFT = 6.84
-
-  -- Soft golden glow that pulses behind the icon while the popup is held
-  -- on screen -- alpha-pulsed via math.sin, since vanilla's Texture object
-  -- has no rotation or animation-group API.
-  local iconGlow = popup:CreateTexture(nil, "ARTWORK")
-  iconGlow:SetWidth(90)
-  iconGlow:SetHeight(90)
-  iconGlow:SetPoint("CENTER", popup, "LEFT", ICON_LEFT + ICON_SIZE / 2, 0)
-  iconGlow:SetTexture("Interface\\Cooldown\\star4")
-  iconGlow:SetVertexColor(1, 0.82, 0.2, 0.8)
-  iconGlow:SetBlendMode("ADD")
-  popup.iconGlow = iconGlow
 
   local icon = popup:CreateTexture(nil, "ARTWORK")
   icon:SetWidth(ICON_SIZE)
@@ -2801,20 +2735,12 @@ function LeafVE_AchTest.AchPopup.Build()
   icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
   popup.icon = icon
 
-  -- Crops icon's square corners to the socket's circle -- OVERLAY draws
-  -- above icon's ARTWORK layer within this same frame. This client has
-  -- no true texture-clip/mask API (confirmed -- MaskTexture wasn't added
-  -- until retail patch 7.2, a decade past this client's 1.12-era one),
-  -- so this only *looks* like a circular clip by opaquely painting over
-  -- the icon's square corners -- that only works while iconMask itself
-  -- is fully opaque. iconMask's own alpha is deliberately left untouched
-  -- here (it only ever cascades through popup's own slow SetAlpha, never
-  -- independently animated) -- see the "out" state in the OnUpdate
-  -- handler for why: icon fades out fast and separately from the mask
-  -- specifically so the mask stays close to opaque for as long as the
-  -- icon still has any visibility left, keeping the corner-leak small
-  -- instead of fading both down together (which peaks around 25% leaked
-  -- visibility at the midpoint of a shared fade).
+  -- Crops icon's square corners to the socket's circle by opaquely
+  -- painting over them -- this client has no true texture-clip/mask API.
+  -- iconMask's own alpha is never independently animated (only icon
+  -- fades fast during "out", see OnUpdate) so it stays opaque for as
+  -- long as the icon still has visibility, keeping the leak-through at
+  -- the corners small.
   local iconMask = popup:CreateTexture(nil, "OVERLAY")
   iconMask:SetWidth(MASK_SIZE_W)
   iconMask:SetHeight(MASK_SIZE_H)
@@ -2823,12 +2749,22 @@ function LeafVE_AchTest.AchPopup.Build()
   iconMask:SetTexCoord(0, 1, 0, 1)
   popup.iconMask = iconMask
 
+  -- Soft golden glow that pulses behind the icon while held on screen --
+  -- alpha-pulsed via math.sin (no animation-group API here). OVERLAY,
+  -- drawn after iconMask, so its bloom shows on top of the mask instead
+  -- of being cropped by it.
+  local iconGlow = popup:CreateTexture(nil, "OVERLAY")
+  iconGlow:SetWidth(90)
+  iconGlow:SetHeight(90)
+  iconGlow:SetPoint("CENTER", popup, "LEFT", ICON_LEFT + ICON_SIZE / 2, 0)
+  iconGlow:SetTexture("Interface\\Cooldown\\star4")
+  iconGlow:SetVertexColor(1, 0.82, 0.2, 0.8)
+  iconGlow:SetBlendMode("ADD")
+  popup.iconGlow = iconGlow
+
   -- Live per-zone exploration achievements show the same whole-zone map
-  -- mosaic here as their row icon and row thumbnail, instead of
-  -- PickZoneIcon's single cropped tile (which reads as an arbitrary random
-  -- map fragment, not "this zone, fully explored"). Same mosaic frame the
-  -- achievement rows use, built via LeafVE_AchTest.ZoneMapUI.LayoutThumbnail,
-  -- just laid out at this icon slot's own size instead of the row's 44px.
+  -- mosaic here as their row icon, instead of a single arbitrary cropped
+  -- tile, via the same LeafVE_AchTest.ZoneMapUI.LayoutThumbnail the rows use.
   local iconMosaic = CreateFrame("Frame", nil, popup)
   iconMosaic:SetWidth(ICON_SIZE)
   iconMosaic:SetHeight(ICON_SIZE)
@@ -2839,13 +2775,9 @@ function LeafVE_AchTest.AchPopup.Build()
   popup.iconMosaic = iconMosaic
   popup.iconSize = ICON_SIZE
 
-  -- iconMask lives on popup, but iconMosaic is a separate child frame at a
-  -- higher frame level -- frame level beats texture layer when comparing
-  -- across frames, so its tiles would draw over popup's own iconMask.
-  -- Needs its own copy of the same mask, drawn on iconMosaic itself, same
-  -- absolute position (anchored to popup, not iconMosaic). Like iconMask,
-  -- its own alpha is never independently animated -- only the mosaic's
-  -- individual tiles fade fast during "out" (see OnUpdate), not this.
+  -- iconMosaic is a separate, higher-frame-level frame, so its tiles would
+  -- draw over popup's own iconMask -- needs its own copy, drawn on
+  -- iconMosaic itself but at the same absolute position.
   local iconMosaicMask = iconMosaic:CreateTexture(nil, "OVERLAY")
   iconMosaicMask:SetWidth(MASK_SIZE_W)
   iconMosaicMask:SetHeight(MASK_SIZE_H)
@@ -2854,10 +2786,8 @@ function LeafVE_AchTest.AchPopup.Build()
   iconMosaicMask:SetTexCoord(0, 1, 0, 1)
   popup.iconMosaicMask = iconMosaicMask
 
-  -- Outlined fonts + a soft drop shadow on each, matching the shadow
-  -- treatment already used elsewhere in this addon (see the tooltip-row
-  -- fontstrings) -- flat GameFontNormal* text was getting lost against
-  -- the parchment's own busy, high-contrast crack/stain texture.
+  -- Outlined fonts + a soft drop shadow so the text holds up against the
+  -- parchment's own busy, high-contrast texture.
   local earnedText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   earnedText:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
   earnedText:SetPoint("TOP", popup, "TOP", 14, -14)
@@ -2880,12 +2810,7 @@ function LeafVE_AchTest.AchPopup.Build()
   descText:SetShadowOffset(1, -1)
   descText:SetPoint("TOPLEFT", nameText, "BOTTOMLEFT", 0, -4)
   descText:SetWidth(299)
-  -- Fixed to exactly 2 lines' worth of height so a long description can
-  -- never grow tall enough to run into pointsText below it -- text past
-  -- this is truncated with "..." before it ever reaches SetText (see
-  -- LeafVE_AchTest.AchPopup.TruncateDesc / StartNext), not just clipped
-  -- here, so the cutoff is always a clean, visible ellipsis rather than
-  -- a silently chopped-off line.
+  -- Fixed to 2 lines so it can never grow into pointsText below it.
   descText:SetHeight(30)
   descText:SetJustifyH("LEFT")
   descText:SetJustifyV("TOP")
@@ -2933,16 +2858,9 @@ function LeafVE_AchTest.AchPopup.Build()
       end
     elseif LeafVE_AchTest.AchPopup.state == "out" then
       local elapsed = LeafVE_AchTest.AchPopup.elapsed
-      -- icon/iconGlow/the mosaic tiles fade out on their own fast,
-      -- plain alpha fade over just the first ICON_EXIT_TIME, instead of
-      -- fading in step with the banner via popup:SetAlpha() for the
-      -- full FADE_TIME -- iconMask/iconMosaicMask are deliberately left
-      -- alone (see their comments in Build()): they only ever cascade
-      -- through popup's own slow fade, so they stay close to opaque for
-      -- as long as the icon still has any visibility left, keeping the
-      -- corner-leak small instead of both fading down together (which
-      -- peaks around 25% leaked visibility at the midpoint of a shared
-      -- fade). No scaling/shrinking -- just a faster plain fade.
+      -- icon/iconGlow/mosaic tiles fade out fast over just ICON_EXIT_TIME,
+      -- ahead of the banner's own slower FADE_TIME fade -- iconMask stays
+      -- untouched so it's still opaque while the icon still has visibility.
       if elapsed < LeafVE_AchTest.AchPopup.ICON_EXIT_TIME then
         local ia = 1 - (elapsed / LeafVE_AchTest.AchPopup.ICON_EXIT_TIME)
         icon:SetAlpha(ia)
@@ -2955,13 +2873,8 @@ function LeafVE_AchTest.AchPopup.Build()
         iconGlow:Hide()
         iconMosaic:Hide()
       end
-      -- Shrinks toward its own TOP anchor while it fades (eased in,
-      -- accelerating toward the end) instead of fading flat in place --
-      -- the same pivot the pop-in entrance grows from (Scale(t) below),
-      -- just mirrored in reverse, so it reads as "the same motion,
-      -- undone" rather than an unrelated new effect. The motion also
-      -- draws the eye away from the icon's own brief fade above rather
-      -- than inviting a static, close look at it.
+      -- Shrinks toward its own TOP anchor while it fades (eased in),
+      -- mirroring the pop-in's growth from the same pivot in reverse.
       local fadeT = math.min(elapsed / LeafVE_AchTest.AchPopup.FADE_TIME, 1)
       popup:SetScale(1 - fadeT * fadeT * LeafVE_AchTest.AchPopup.EXIT_SHRINK_AMOUNT)
       popup:SetAlpha(1 - fadeT)
@@ -2998,6 +2911,18 @@ function LeafVE_AchTest.AchPopup.StartNext()
   else
     popup.iconMosaic:Hide()
     local popupIconTex = achievement.icon
+    -- Same fallback as the achievement row: companion achievements carry
+    -- a generic placeholder icon, so prefer the real one scanned out of
+    -- the player's spellbook (LeafVE_AchTest_DB.collections.companions)
+    -- when it's available.
+    if achievement.collectionType == "companion" and achievement.companionType == "individual" then
+      local scanned = LeafVE_AchTest_DB and LeafVE_AchTest_DB.collections
+        and LeafVE_AchTest_DB.collections.companions
+        and LeafVE_AchTest_DB.collections.companions[achievement.name]
+      if scanned and scanned.icon and scanned.icon ~= "" then
+        popupIconTex = scanned.icon
+      end
+    end
     if not popupIconTex or popupIconTex == "" then
       popupIconTex = "Interface\\Icons\\INV_Misc_QuestionMark"
     end
@@ -4011,15 +3936,10 @@ local ALL_DUNGEON_COMPLETE_IDS = {
   "dung_dmr_complete",
 }
 
--- Unified {current, goal} progress for any achievement type, reusing the
--- same per-type logic the row tooltip already computes (zone_group,
--- explore_zone_live, explore_count, zone_visited_count, dungeon/raid boss
--- checklists, dungeon_meta/raid_meta/ach_meta completion counts) plus the
--- existing counter/api-backed ACHIEVEMENT_PROGRESS_DEF lookup -- one place
--- both the achievement-row progress bar and the not-yet-earned sort order
--- (LeafVE_AchTest.UI:RefreshAchievements) can read from instead of each
--- re-deriving it. Returns current, goal or nil if this achievement has no
--- meaningful progress notion (goal is always > 0 when returned non-nil).
+-- Unified {current, goal} progress for any achievement type -- one place
+-- both the row progress bar and the not-yet-earned sort order can read
+-- from. Returns current, goal or nil if this achievement has no
+-- meaningful progress notion.
 function LeafVE_AchTest:GetUnifiedProgress(me, ad)
   if not ad then return nil end
 
@@ -4357,26 +4277,14 @@ end
 local ACH_ROW_H = 105
 local ACH_POOL  = 14
 
--- Live per-zone exploration achievements (data\LeafVE_Ach_ExplorationLive.lua)
--- show the zone's whole live map mosaic as their row icon instead of a
--- single square texture -- every overlay tile shrunk to fit the icon slot,
--- ported from OctoAchieve's UI.lua LayoutRowThumbnail/GetOrBuildThumbFrame.
--- Built once per achievement and cached forever: a pooled achievement row
--- gets reused for a different achievement every time you scroll, so
--- redrawing a zone's tiles from scratch on every scroll tick (rather than a
--- cheap SetPoint reposition of an already-built frame) is what would
--- actually cause scroll stutter.
+-- Live per-zone exploration achievements show the zone's whole live map
+-- mosaic as their row icon instead of a single square texture. Built once
+-- per achievement and cached forever, since pooled rows get reused for a
+-- different achievement on every scroll -- redrawing tiles from scratch
+-- each time would cause scroll stutter.
 --
--- Hangs off LeafVE_AchTest (already a global) rather than a new top-level
--- `local` -- this file's main chunk is a single Lua function for local-slot
--- purposes, a top-level local never goes out of scope before EOF, and this
--- file is close enough to Lua's 200-local ceiling that even one more
--- permanent top-level local tips a later, unrelated declaration over the
--- limit and fails the whole file's compile (see the do...end-scoped "mount
--- collection renderer scope" section elsewhere in this file, which exists
--- for the same reason). A plain global field costs nothing against that
--- budget and is reachable from anywhere in the file regardless of which
--- function it's read from.
+-- Hangs off LeafVE_AchTest rather than a top-level `local` -- this file
+-- sits right at Lua's 200-local ceiling.
 LeafVE_AchTest.ZoneMapUI = {
   THUMB_SIZE = 44,
   MAP_W = 1002,
@@ -4386,14 +4294,9 @@ LeafVE_AchTest.ZoneMapUI = {
   thumbCache = {}, -- [achievementId] = frame
 }
 
--- bounds (criteria_bounds, computed per-zone by BuildZoneCriteria in
--- data\LeafVE_Ach_ExplorationLive.lua) is that zone's own true tile bounding
--- box -- {minX, minY, width, height}. A tile's own offset isn't bounded by
--- any fixed "world map" size (confirmed via /leafzonedebug on Loch Modan:
--- Farstrider Lodge's own remainder tiles are legitimately positioned past
--- x=1002, correctly adjacent to its other tiles), so scaling/positioning
--- has to be measured against each zone's own extent, not a shared constant.
--- Falls back to the old fixed constants only if bounds is somehow missing.
+-- bounds is that zone's own true tile bounding box -- {minX, minY, width,
+-- height} -- since a tile's offset isn't bounded by any fixed "world map"
+-- size. Falls back to the old fixed constants only if bounds is missing.
 function LeafVE_AchTest.ZoneMapUI.LayoutThumbnail(mapThumb, overlays, bounds, size)
   size = size or LeafVE_AchTest.ZoneMapUI.THUMB_SIZE
   local boundsW = bounds and bounds.width or LeafVE_AchTest.ZoneMapUI.MAP_W
@@ -5240,28 +5143,16 @@ end
 
 end -- mount collection renderer scope
 
--- ===========================================================================
 -- Zone Map window -- shown when clicking a live per-zone exploration
--- achievement row (criteria_type == "explore_zone_live"). Ported from
--- OctoAchieve's UI.lua LayoutZoneMosaic/ShowZoneMapPreview/
--- ShowZoneMapHighlight, styled to match this addon's own main window
--- (ashen banner tiled background, UIPanelCloseButton, UISpecialFrames
--- Escape-to-close) instead of a re-implementation of OctoAchieve's own
--- dialog-box look. Replaces the old tooltip checklist with a real
--- scrollable, hoverable widget list plus the live map itself.
--- ===========================================================================
+-- achievement row. Styled to match this addon's own main window (ashen
+-- banner background, UIPanelCloseButton, Escape-to-close). Replaces the
+-- old tooltip checklist with a real scrollable, hoverable widget list
+-- plus the live map itself.
 
--- Shares the LeafVE_AchTest.ZoneMapUI table declared above (row-icon thumbnails) instead
--- of its own top-level locals, for the same 200-local-budget reason.
-
--- Draws overlays (a criteria_overlays tile list) into mapFrame, scaled to
--- fit ("contain") and centered against that zone's own true bounding box
--- (bounds = criteria_bounds, {minX, minY, width, height} -- see
--- LayoutThumbnail above for why a fixed canvas constant doesn't work here).
--- dimSet, if given, is a set of tile specs (by table identity, straight out
--- of an overlay's own .tiles array) to draw darkened instead of full
--- brightness. Returns the flat tile list so callers can reapply it if the
--- frame needed a delayed re-texture.
+-- Draws overlays into mapFrame, scaled to fit and centered against that
+-- zone's own true bounding box. dimSet, if given, is a set of tile specs
+-- to draw darkened instead of full brightness. Returns the flat tile list
+-- so callers can reapply it after a delayed re-texture.
 function LeafVE_AchTest.ZoneMapUI.LayoutMosaic(mapFrame, overlays, dimSet, bounds)
   local boxW, boxH = mapFrame:GetWidth(), mapFrame:GetHeight()
   local boundsW = bounds and bounds.width or LeafVE_AchTest.ZoneMapUI.MAP_W
@@ -5316,13 +5207,9 @@ function LeafVE_AchTest.UI:BuildZoneMapFrame()
   f:SetWidth(760)
   f:SetHeight(500)
   f:SetPoint("CENTER", 0, 0)
-  -- A higher strata than the main window (also FULLSCREEN_DIALOG), not
-  -- just a higher level within the same one: both windows have
-  -- SetToplevel(true), so clicking the main window while this one is open
-  -- would raise the main window's level and could push it back in front
-  -- within a shared strata. Strata always wins over level regardless of
-  -- toplevel click-reordering, so this keeps the map window in front no
-  -- matter what gets clicked.
+  -- Higher strata than the main window, not just a higher level -- both
+  -- windows have SetToplevel(true), so a same-strata level could get
+  -- reordered by clicking the main window. Strata always wins.
   f:SetFrameStrata("TOOLTIP")
   f:SetFrameLevel(150)
   f:SetToplevel(true)
@@ -6547,14 +6434,10 @@ function LeafVE_AchTest.UI:Build()
   scrollFrame:SetScrollChild(scrollChild)
   self.scrollChild = scrollChild
   
-  -- The native Slider auto-positions its thumb texture, and how it maps
-  -- value->pixel at the frame's own edges isn't consistent enough on this
-  -- client to keep the knob inside the bar across every value range (small
-  -- ranges rendered fine, larger ones stopped short of the bottom). Rather
-  -- than keep guessing at the native mapping, drive the Slider's thumb
-  -- texture invisibly (it stays the real drag handle) and draw our own
-  -- knob graphic, positioned by hand from value/min/max on a track frame
-  -- that never changes size, so it always reaches exactly top and bottom.
+  -- The native Slider's thumb positioning isn't reliable enough on this
+  -- client across every value range, so its texture is driven invisible
+  -- (it stays the real drag handle) and a hand-positioned knob graphic is
+  -- drawn on top instead.
   local scrollTrack = CreateFrame("Frame", nil, f)
   scrollTrack:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, -176)
   scrollTrack:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -18, 34)
@@ -7066,11 +6949,9 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
     if self.achievementFrames[i] then self.achievementFrames[i]:Hide() end
   end
 
-  -- LeafVE_AchTest.ZoneMapUI.thumbCache frames aren't parented to any one pool slot
-  -- (they're cached per achievement id, see LeafVE_AchTest.ZoneMapUI.GetOrBuildThumbnail),
-  -- so reconcile them the same way RefreshMounts reconciles mount cards:
-  -- collect what's claimed this pass, hide whatever was visible last pass
-  -- but isn't.
+  -- thumbCache frames are cached per achievement id, not per pool slot, so
+  -- reconcile them: collect what's claimed this pass, hide whatever was
+  -- visible last pass but isn't now.
   local newlyVisibleZoneThumbs = {}
 
   if total == 0 then
@@ -7106,11 +6987,8 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
     local zoneThumb = nil
     if isZoneMosaic then
       frame.icon:Hide()
-      -- Parented to scrollChild, not self.frame: scrollChild is what the
-      -- achievement list's ScrollFrame actually clips to its viewport, so
-      -- a thumbnail positioned near the top/bottom edge (or scrolled just
-      -- past it) gets masked off the same way row textures are, instead of
-      -- bleeding out over the search bar above the list.
+      -- Parented to scrollChild so it clips to the ScrollFrame's viewport
+      -- like the row textures, instead of bleeding out over the search bar.
       zoneThumb = LeafVE_AchTest.ZoneMapUI.GetOrBuildThumbnail(ach.data, self.scrollChild)
       zoneThumb:ClearAllPoints()
       zoneThumb:SetPoint("LEFT", frame, "LEFT", 22, 0)
@@ -7120,6 +6998,20 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
     else
       frame.icon:Show()
       local rowIconTex = ach.data.icon
+      -- Companion achievements are registered with a generic placeholder
+      -- icon (data\LeafVE_Ach_Companions.lua's catalog has no per-pet
+      -- icon field) -- the real icon only exists once the collections
+      -- panel has scanned it out of the player's own spellbook via
+      -- GetSpellTexture, saved under the same companion name. Prefer that
+      -- scanned icon here when it's available.
+      if ach.data.collectionType == "companion" and ach.data.companionType == "individual" then
+        local scanned = LeafVE_AchTest_DB and LeafVE_AchTest_DB.collections
+          and LeafVE_AchTest_DB.collections.companions
+          and LeafVE_AchTest_DB.collections.companions[ach.data.name]
+        if scanned and scanned.icon and scanned.icon ~= "" then
+          rowIconTex = scanned.icon
+        end
+      end
       if not rowIconTex or rowIconTex == "" then
         rowIconTex = "Interface\\Icons\\INV_Misc_QuestionMark"
       end
@@ -8266,13 +8158,9 @@ local function HookChatWithTitles()
           hasExistingTitle = string.sub(msg, 1, string.len(ownPlainPrefix)) == ownPlainPrefix
             or string.sub(msg, 1, string.len(ownBracketedPrefix)) == ownBracketedPrefix
         end
-        -- Leave server-side commands sent as plain GUILD chat text alone --
-        -- these aren't client slash-commands (those never reach
-        -- SendChatMessage at all), but a private-server convention of its
-        -- own: other addons like pfQuest/Altoholic send exact strings such
-        -- as ".queststatus" over guild chat for the server to parse.
-        -- Prepending a title breaks that exact match, so "." is excluded
-        -- the same way "/" already is.
+        -- Other addons (pfQuest/Altoholic) send server-parsed commands like
+        -- ".queststatus" over guild chat -- prepending a title would break
+        -- that exact match, so "." is excluded the same way "/" already is.
         if not hasExistingTitle and not string.find(msg, "^/") and not string.find(msg, "^%.")
           and not string.find(msg, " has earned the achievement ", 1, true) then
           local titleLink = BuildAnnouncementTitleLink(title)
@@ -8589,13 +8477,9 @@ SlashCmdList["LEAFVE_POPUP_DEBUG"] = function(msg)
   LeafVE_AchTest:DebugPopupTexture(msg)
 end
 
--- /achtoast [achievementId] -- previews the real achievement-earned toast
--- (icon, name, desc, points, full pop-in/glow/fade animation) without
--- going through AwardAchievement: nothing gets written to
--- LeafVE_AchTest_DB, no guild announcement is sent, and no meta-
--- achievement cascade runs. Purely local, purely visual. Queues like a
--- real award too, so calling it a few times in a row previews the queue
--- behavior (each toast waits for the previous one to finish).
+-- /achtoast [achievementId] -- previews the achievement toast without
+-- going through AwardAchievement (nothing written to DB, no guild
+-- announcement). Queues like a real award too.
 SLASH_LEAFVE_ACHTOAST1 = "/achtoast"
 SlashCmdList["LEAFVE_ACHTOAST"] = function(msg)
   local achId = Trim and Trim(msg or "") or msg

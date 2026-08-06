@@ -1,25 +1,15 @@
 -- LeafVE_Ach_ExplorationLive.lua
 --
--- Live, DBC-driven zone exploration achievements -- ported from OctoAchieve's
--- Data\ZoneExploration.lua + Tracking.lua exploration section
--- (~/achievements-octowow/OctoAchieve). Replaces the hand-typed
--- ZONE_GROUP_ZONES subzone lists (LeafVillageAchievements.lua) as the data
--- source for every per-zone "Explorer of <Zone>" achievement: C_Map.GetAreas/
--- GetMapZones/C_Map.GetMapOverlays give the exact real subzones for every
--- zone in the game straight from this server's own map data, and
--- C_MapExplorationInfo.GetExploredMapTextures gives real fog-of-war state,
--- so already-explored areas from before this file existed get credited
--- immediately instead of only from the next "Discovered X" message onward.
+-- Live zone exploration achievements: C_Map.GetAreas/GetMapZones/
+-- GetMapOverlays give the real subzones for every zone from this server's
+-- own map data, and C_MapExplorationInfo.GetExploredMapTextures gives real
+-- fog-of-war state, so already-explored areas get credited immediately
+-- rather than only from the next zone change onward.
 --
--- A zone that already has a curated achievement today (Balor, Gilneas,
--- Hyjal, Lapidis Isle, Gillijim's Isle, Northwind, Scarlet Enclave, Grim
--- Reaches, Tel'Abim, Tirisfal Uplands, Elwynn Forest, The Barrens) keeps its
--- existing id/name/points -- only its criteria becomes live instead of
--- hand-typed (REUSE_ZONE_ACHIEVEMENT_ID below). Every other real zone gets a
--- brand-new achievement with a stable "explore_zone_<slug>" id derived from
--- the zone's own name, not an index-based scheme -- an index shifts every
--- id if a new zone ever sorts earlier alphabetically, which is exactly the
--- kind of instability a stable id is supposed to avoid.
+-- Zones with an existing curated achievement (see REUSE_ZONE_ACHIEVEMENT_ID
+-- below) keep their id/name/points and just get live criteria. Every other
+-- zone gets a new "explore_zone_<slug>" id derived from its name, not an
+-- index (which would shift if a new zone ever sorted earlier alphabetically).
 
 -- ===== Name normalization / slugging =====
 
@@ -153,17 +143,9 @@ local function PickZoneIcon(overlays)
   return best.file, { 0, best.texCoordX, 0, best.texCoordY }
 end
 
--- The zone map mosaic (UI.lua's LayoutThumbnail/LayoutMosaic) used to scale
--- every tile against a fixed 1002x668 "world map canvas" constant borrowed
--- from OctoAchieve. That's wrong: a zone's own tile offsets aren't bounded
--- by that figure at all (confirmed via /leafzonedebug on Loch Modan --
--- Farstrider Lodge's own remainder tiles are legitimately positioned at
--- offsetX 997 with width 128, i.e. extending to x=1125, correctly adjacent
--- to its own other tiles, not stray/duplicate data). What looked like a
--- rendering artifact was real content being scaled against a canvas
--- reference too small for it. Fixed properly: compute each zone's own true
--- bounding box from all of its own tiles and scale/position against that
--- instead of any fixed constant.
+-- Computes each zone's own true bounding box from its tiles, rather than
+-- scaling against a fixed world-map-canvas constant -- a zone's tile
+-- offsets aren't bounded by any single fixed size.
 local function ComputeZoneBounds(overlays)
   local minX, minY, maxX, maxY = nil, nil, nil, nil
   for _, ov in ipairs(overlays) do
@@ -195,19 +177,9 @@ local function OverlayHasNamedArea(ov, zoneAreaID)
   return ov.areaID and ov.areaID > 0 and ov.areaID ~= zoneAreaID
 end
 
--- Specific tiles confirmed (via /leafzonedebug plus checking the stock
--- in-game world map, which renders these zones correctly) to render as a
--- disconnected floating fragment rather than the general per-zone bounds
--- math being wrong. Both known offenders share the same signature: a
--- narrow "remainder" tile (width well under a full 256) that claims
--- tc=(1.000,...) -- zero cropping -- when every other correctly-behaving
--- remainder tile in the same zone has a fractional texcoord proportional
--- to its own size (e.g. Grizzlepaw Ridge's 6px-wide remainder is
--- tc.X=0.375, Mogrosh Stronghold's 31px is tc.X=0.969). Isolated to these
--- specific POIs' own live data rather than a bug in the general tile
--- pipeline (verified by hand: every other tile in the zone composes
--- correctly), so patched by excluding these specific texture files
--- instead of reworking the shared layout code.
+-- These specific tiles' own live data renders as a disconnected floating
+-- fragment (bad texcoord data, not a bug in the general tile pipeline),
+-- so they're excluded by filename rather than reworking the layout code.
 local EXCLUDED_TILE_FILES = {
   ["interface\\worldmap\\lochmodan\\thefarstriderlodge2"] = true,
   ["interface\\worldmap\\lochmodan\\thefarstriderlodge3"] = true,
@@ -271,20 +243,12 @@ end
 -- table directly.
 local liveZoneAchievementIds = {}
 -- Rotating cursor into liveZoneAchievementIds for the throttled backfill
--- sweep (CheckZoneExplorationLive) -- declared here, ahead of both that
--- function and the throttled scan below, since Lua resolves locals as
--- upvalues lexically.
+-- sweep (CheckZoneExplorationLive).
 local backfillIndex = 1
--- Flips true once backfillIndex has wrapped all the way around
--- liveZoneAchievementIds at least once -- i.e., every known zone
--- achievement has been checked against C_MapExplorationInfo's
--- fog-of-war data at least one time. Before that point, any award this
--- sweep produces is (or at least might be) retroactively catching up on
--- exploration the player did before this feature -- or this character's
--- login -- ever ran, not something happening live right now, so it's
--- kept silent (see the `silent` args threaded through
--- CheckZoneExplorationLive/CheckExploreCountAchievements below). After
--- the first full pass, further completions are genuinely new.
+-- Flips true once backfillIndex has wrapped around at least once -- until
+-- then, sweep results might be retroactively catching up on old
+-- exploration rather than something happening live, so they're kept
+-- silent (see `silent` below).
 local hasCompletedFirstSweep = false
 
 local function RegisterOrUpdateZoneAchievement(zoneName, zoneAreaID, areas, areaOverlays, overlays, bounds)
@@ -302,9 +266,8 @@ local function RegisterOrUpdateZoneAchievement(zoneName, zoneAreaID, areas, area
   end
 
   if def then
-    -- Already registered (either the curated original or a previous
-    -- LiveInit run this session) -- refresh its criteria/desc/icon in
-    -- place. Name/points/category stay whatever they already are.
+    -- Already registered -- refresh criteria/desc/icon in place, keep
+    -- name/points/category as-is.
     def.criteria_type = "explore_zone_live"
     def.criteria_areas = areas
     def.criteria_areaOverlays = areaOverlays
@@ -342,10 +305,8 @@ local function RegisterOrUpdateZoneAchievement(zoneName, zoneAreaID, areas, area
   table.insert(liveZoneAchievementIds, id)
 end
 
--- Generic "discover N total areas" tiers (OctoAchieve Data\Exploration.lua
--- ids 2000-2005) -- LeafVillageAchievements had no equivalent of this
--- before. Tracked off the total size of LeafVE_AchTest_DB.exploredZones[me],
--- the same per-player dedupe set every exploration achievement type reads.
+-- Generic "discover N total areas" tiers, tracked off the total size of
+-- LeafVE_AchTest_DB.exploredZones[me].
 local EXPLORE_COUNT_TIERS = {
   { id = "explore_areas_10",  goal = 10,  points = 5,  name = "Wide Eyed Wanderer" },
   { id = "explore_areas_25",  goal = 25,  points = 5,  name = "Getting Your Bearings" },
@@ -372,10 +333,9 @@ local function RegisterExploreCountTiers()
   end
 end
 
--- "Visit every zone" (OctoAchieve's "Seen It All", ZoneExploration.lua
--- id 2020) -- goal is the live discovered zone count itself, not a
--- hand-picked number, so it always matches whatever this server's
--- continents actually contain.
+-- "Visit every zone" -- goal is the live discovered zone count, not a
+-- hand-picked number, so it matches whatever this server's continents
+-- actually contain.
 local function RegisterZonesVisitedAchievement()
   local goal = table.getn(zoneList)
   if goal <= 0 then return end
@@ -398,18 +358,11 @@ local function RegisterZonesVisitedAchievement()
   end
 end
 
--- Calling C_Map.GetMapOverlays for every zone (60-100+) in one synchronous
--- burst right on PLAYER_ENTERING_WORLD -- immediately followed by another
--- full-zone burst of C_MapExplorationInfo.GetExploredMapTextures for the
--- retroactive backfill -- crashed the client outright (a native
--- ACCESS_VIOLATION, not a Lua error, so no pcall can catch it). Most likely
--- either a race with the ClassicAPI backport's own login-time init, or the
--- backport simply not tolerating a rapid-fire burst of calls. Two changes
--- address both possibilities: delay the first scan a few seconds after
--- entering world (the same pattern LeafVillageAchievements.lua's own
--- hookFrame already uses for HookChatWithTitles, for the same kind of
--- reason), and process only a couple of zones per frame instead of the
--- whole list at once, via the scanState machine + OnUpdate driver below.
+-- Calling C_Map.GetMapOverlays for every zone in one synchronous burst on
+-- PLAYER_ENTERING_WORLD crashed the client outright (native
+-- ACCESS_VIOLATION, uncatchable by pcall). Delay the first scan a few
+-- seconds after entering world, and process only a couple of zones per
+-- frame via the scanState machine + OnUpdate driver below.
 local ZONES_PER_TICK = 2
 local scanState = "idle" -- idle | scanning | done
 local scanIndex = 1
@@ -439,10 +392,8 @@ local function TickLiveInitScan()
   end
 end
 
--- Kicks off (or restarts, e.g. on a later PLAYER_ENTERING_WORLD from a zone
--- change) the throttled scan above -- does none of the actual C_Map work
--- itself. The OnUpdate driver in the event-wiring section below is what
--- calls TickLiveInitScan a couple of zones at a time.
+-- Kicks off (or restarts) the throttled scan above; the OnUpdate driver
+-- below calls TickLiveInitScan a couple of zones at a time.
 function LeafVE_AchTest_ExplorationLive_Init()
   if not C_Map or not C_Map.GetMapOverlays or not C_Map.GetAreas or not C_Map.GetAreaInfo
     or not GetMapZones then
@@ -451,11 +402,9 @@ function LeafVE_AchTest_ExplorationLive_Init()
 
   EnsureZoneList()
 
-  -- Continent-level "discover all zones in X" achievements (explore_kalimdor/
-  -- explore_eastern_kingdoms) already exist as criteria_type="zone_group";
-  -- just repoint their zone list at the live per-continent list instead of
-  -- the hand-typed one -- same mechanism (LeafVE_AchTest:CheckExplorationAchievements
-  -- still reads ZONE_GROUP_ZONES.kalimdor/.eastern_kingdoms), live source.
+  -- Continent-level "discover all zones in X" achievements already exist
+  -- as criteria_type="zone_group" -- just repoint their zone list at the
+  -- live per-continent list instead of the hand-typed one.
   local zgz = LeafVE_AchTest:GetZoneGroupZones()
   if zgz and zonesByContinent then
     if table.getn(zonesByContinent[2]) > 0 then zgz.kalimdor = zonesByContinent[2] end
@@ -470,20 +419,11 @@ end
 
 -- ===== Tracking =====
 
--- Real fog-of-war, not a chat-text guess: C_MapExplorationInfo.
--- GetExploredMapTextures returns exactly the WorldMapOverlay rows this
--- character has actually revealed for a zone, keyed the same way as
--- C_Map.GetMapOverlays. Folding that into LeafVE_AchTest_DB.exploredZones,
--- the same dedupe table the "Discovered X" zone-change tracking
--- (LeafVillageAchievements.lua's zoneDiscFrame) already writes to, means
--- both the checklist and the achievement award check are correct
--- immediately -- including areas explored before this file ever existed --
--- rather than only from the next zone transition onward.
--- Throttled the same way as the registration scan above (BACKFILL_ZONES_PER_TICK
--- zones per call, rotating through liveZoneAchievementIds via backfillIndex,
--- wrapping back to the start once it reaches the end) rather than every
--- zone in one synchronous burst -- called repeatedly off the poll timer
--- below, so the full list still gets swept regularly, just spread out.
+-- Real fog-of-war via C_MapExplorationInfo.GetExploredMapTextures, folded
+-- into the same LeafVE_AchTest_DB.exploredZones dedupe table the
+-- "Discovered X" zone-change tracking already writes to. Throttled the
+-- same way as the registration scan above rather than one synchronous
+-- burst.
 local BACKFILL_ZONES_PER_TICK = 2
 
 function LeafVE_AchTest:CheckZoneExplorationLive()
@@ -530,8 +470,6 @@ function LeafVE_AchTest:CheckZoneExplorationLive()
   end
 
   if changed then
-    -- Silent until the first full sweep completes -- see
-    -- hasCompletedFirstSweep's comment above.
     local silent = not hasCompletedFirstSweep
     if LeafVE_AchTest.CheckExplorationAchievements then
       LeafVE_AchTest:CheckExplorationAchievements(silent)
@@ -579,22 +517,16 @@ function LeafVE_AchTest:CheckZonesVisitedLive()
 end
 
 -- ===== Event wiring =====
--- A self-contained frame/event set, same pattern OctoAchieve's Tracking.lua
--- uses -- doesn't touch any of the existing PLAYER_ENTERING_WORLD handlers
--- already in LeafVillageAchievements.lua.
+-- Self-contained frame/event set -- doesn't touch the existing
+-- PLAYER_ENTERING_WORLD handlers already in LeafVillageAchievements.lua.
 
 local liveExploreFrame = CreateFrame("Frame", "LeafVE_ExplorationLiveFrame")
 liveExploreFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 liveExploreFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 
--- INIT_DELAY: how long after entering world before the (still throttled)
--- registration scan starts -- gives the ClassicAPI backport and every other
--- addon's own login-time init a head start instead of racing it.
--- POLL_INTERVAL: how often, once the registration scan has finished, the
--- throttled backfill sweep (CheckZoneExplorationLive) advances by
--- BACKFILL_ZONES_PER_TICK zones. Both were lowered from an earlier
--- unthrottled version that called C_Map for every zone in one synchronous
--- burst and crashed the client outright.
+-- INIT_DELAY: seconds after entering world before the registration scan
+-- starts, giving other addons' login-time init a head start.
+-- POLL_INTERVAL: how often the backfill sweep advances once scanning is done.
 local INIT_DELAY = 3
 local POLL_INTERVAL = 5
 local initTimer = 0
@@ -625,17 +557,12 @@ liveExploreFrame:SetScript("OnUpdate", function()
     return
   end
 
-  -- scanState == "done": the registration scan is fully populated, so it's
-  -- now safe to run the (also throttled) backfill sweep and the count/
-  -- visited checks on a normal interval.
+  -- scanState == "done": safe to run the backfill sweep and count/visited
+  -- checks on a normal interval.
   pollElapsed = pollElapsed + arg1
   if pollElapsed >= POLL_INTERVAL then
     pollElapsed = 0
     LeafVE_AchTest:CheckZoneExplorationLive()
-    -- Same silent-until-first-full-sweep rule as inside
-    -- CheckZoneExplorationLive itself (see hasCompletedFirstSweep) --
-    -- this direct call re-derives the count independent of whether this
-    -- particular tick discovered anything new.
     LeafVE_AchTest:CheckExploreCountAchievements(not hasCompletedFirstSweep)
     LeafVE_AchTest:CheckZonesVisitedLive()
   end
