@@ -8177,9 +8177,11 @@ local function HookChatWithTitles()
             or string.sub(msg, 1, string.len(ownBracketedPrefix)) == ownBracketedPrefix
         end
         -- Other addons (pfQuest/Altoholic) send server-parsed commands like
-        -- ".queststatus" over guild chat -- prepending a title would break
-        -- that exact match, so "." is excluded the same way "/" already is.
+        -- ".queststatus" or "#command" over guild chat -- prepending a
+        -- title would break that exact match, so "." and "#" are excluded
+        -- the same way "/" already is.
         if not hasExistingTitle and not string.find(msg, "^/") and not string.find(msg, "^%.")
+          and not string.find(msg, "^#")
           and not string.find(msg, " has earned the achievement ", 1, true) then
           local titleLink = BuildAnnouncementTitleLink(title)
           if titleLink then
