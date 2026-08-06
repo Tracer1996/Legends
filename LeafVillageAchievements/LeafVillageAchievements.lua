@@ -2786,6 +2786,18 @@ function LeafVE_AchTest.AchPopup.Build()
   iconMosaicMask:SetTexCoord(0, 1, 0, 1)
   popup.iconMosaicMask = iconMosaicMask
 
+  -- Same reasoning as iconMosaicMask above: iconMosaic's own tiles would
+  -- draw over popup's iconGlow, so the mosaic needs its own glow copy,
+  -- drawn after iconMosaicMask so its bloom shows on top of it too.
+  local iconMosaicGlow = iconMosaic:CreateTexture(nil, "OVERLAY")
+  iconMosaicGlow:SetWidth(90)
+  iconMosaicGlow:SetHeight(90)
+  iconMosaicGlow:SetPoint("CENTER", popup, "LEFT", ICON_LEFT + ICON_SIZE / 2, 0)
+  iconMosaicGlow:SetTexture("Interface\\Cooldown\\star4")
+  iconMosaicGlow:SetVertexColor(1, 0.82, 0.2, 0.8)
+  iconMosaicGlow:SetBlendMode("ADD")
+  popup.iconMosaicGlow = iconMosaicGlow
+
   -- Outlined fonts + a soft drop shadow so the text holds up against the
   -- parchment's own busy, high-contrast texture.
   local earnedText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -2852,7 +2864,9 @@ function LeafVE_AchTest.AchPopup.Build()
         LeafVE_AchTest.AchPopup.state, LeafVE_AchTest.AchPopup.elapsed = "hold", 0
       end
     elseif LeafVE_AchTest.AchPopup.state == "hold" then
-      iconGlow:SetAlpha(0.55 + math.sin(LeafVE_AchTest.AchPopup.elapsed * 4) * 0.35)
+      local glowAlpha = 0.55 + math.sin(LeafVE_AchTest.AchPopup.elapsed * 4) * 0.35
+      iconGlow:SetAlpha(glowAlpha)
+      iconMosaicGlow:SetAlpha(glowAlpha)
       if LeafVE_AchTest.AchPopup.elapsed >= LeafVE_AchTest.AchPopup.HOLD_TIME then
         LeafVE_AchTest.AchPopup.state, LeafVE_AchTest.AchPopup.elapsed = "out", 0
       end
@@ -2865,12 +2879,14 @@ function LeafVE_AchTest.AchPopup.Build()
         local ia = 1 - (elapsed / LeafVE_AchTest.AchPopup.ICON_EXIT_TIME)
         icon:SetAlpha(ia)
         iconGlow:SetAlpha(ia)
+        iconMosaicGlow:SetAlpha(ia)
         for i = 1, table.getn(iconMosaic.tiles) do
           iconMosaic.tiles[i]:SetAlpha(ia)
         end
       else
         icon:Hide()
         iconGlow:Hide()
+        iconMosaicGlow:Hide()
         iconMosaic:Hide()
       end
       -- Shrinks toward its own TOP anchor while it fades (eased in),
@@ -2941,6 +2957,8 @@ function LeafVE_AchTest.AchPopup.StartNext()
   popup:SetScale(0.4)
   popup.iconGlow:Show()
   popup.iconGlow:SetAlpha(1)
+  popup.iconMosaicGlow:Show()
+  popup.iconMosaicGlow:SetAlpha(1)
   popup.shine:Show()
   popup.shine:ClearAllPoints()
   popup.shine:SetPoint("TOP", popup, "TOP", 0, -4)
