@@ -47,6 +47,13 @@ local TEX = {
   ashenSearchBox = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_search_box",
   ashenTabButton = "Interface\\AddOns\\LeafVillageAchievements\\tga\\ashen_tab_button",
   ashenAchievementPopup = "Interface\\AddOns\\LeafVillageAchievements\\tga\\achievement_popup_banner",
+  -- 128x128 (power-of-two) canvas; real content is a tight crop of the
+  -- banner's own socket art around the ring, centered on the medallion's
+  -- true center (x=71 in the source art). Padding pixels are edge-bled
+  -- from the nearest real content pixel rather than left black, so GPU
+  -- bilinear/mipmap blending across the alpha=0 boundary has nothing
+  -- dark to fringe with.
+  ashenAchievementPopupIconMask = "Interface\\AddOns\\LeafVillageAchievements\\tga\\achievement_popup_icon_mask",
   ashenAchievementPopupIconRing = "Interface\\AddOns\\LeafVillageAchievements\\tga\\achievement_popup_icon_ring",
 }
 
@@ -1912,12 +1919,27 @@ end
 
 -- Expose helpers so separate achievement module files loaded after this file
 -- can add achievements and interact with the DB without duplicating locals.
-LeafVE_AchTest.ShortName     = ShortName
-LeafVE_AchTest.IncrCounter   = IncrCounter
-LeafVE_AchTest.SetCounter    = SetCounter
-LeafVE_AchTest.IsPartyOrSelf = IsPartyOrSelf
+LeafVE_AchTest.ShortName        = ShortName
+LeafVE_AchTest.IncrCounter      = IncrCounter
+LeafVE_AchTest.SetCounter       = SetCounter
+LeafVE_AchTest.IsPartyOrSelf    = IsPartyOrSelf
+LeafVE_AchTest.NormalizeZoneName = NormalizeZoneName
 function LeafVE_AchTest:AddAchievement(id, data)
   ACHIEVEMENTS[id] = data
+end
+-- Look up an existing achievement definition by id (returns the live table
+-- reference, so callers can mutate its fields in place -- e.g. converting a
+-- curated zone_group achievement's criteria to live map data while keeping
+-- its id/name/points/title-references untouched).
+function LeafVE_AchTest:GetAchievementDef(id)
+  return ACHIEVEMENTS[id]
+end
+-- Live zone-exploration data (data\LeafVE_Ach_ExplorationLive.lua) needs to
+-- populate the continent-level zone_group lists (kalimdor/eastern_kingdoms)
+-- from GetMapZones instead of the hand-typed lists -- returns the live table
+-- reference so it can assign into it directly.
+function LeafVE_AchTest:GetZoneGroupZones()
+  return ZONE_GROUP_ZONES
 end
 -- Allow external modules to register tooltip progress definitions.
 function LeafVE_AchTest:RegisterProgressDef(achId, def)
@@ -2576,19 +2598,111 @@ function LeafVE_AchTest:CheckExplorationAchievements(silent, newlyDiscovered)
       end
     end
   end
+
+  -- Live per-zone exploration achievements (data\LeafVE_Ach_ExplorationLive.lua)
+  -- -- same found/total/award logic as the zone_group loop above, but each
+  -- achievement carries its own area list (criteria_areas) straight from
+  -- live C_Map data instead of looking one up by key in a shared table.
+  for achId, achData in pairs(ACHIEVEMENTS) do
+    if achData.criteria_type == "explore_zone_live" and achData.criteria_areas then
+      local zones = achData.criteria_areas
+      local total = table.getn(zones)
+      local found = 0
+      local hasNew = false
+      for _, z in ipairs(zones) do
+        if discovered[z] then
+          found = found + 1
+        end
+        if newlyDiscovered and newlyDiscovered[z] then
+          hasNew = true
+        end
+      end
+
+      if hasNew and not silent then
+        for _, z in ipairs(zones) do
+          if newlyDiscovered[z] then
+            Print('Discovered "'..z..'" - '..found..'/'..total..' Locations for '..achData.name)
+          end
+        end
+        if not soundPlayed then
+          PlaySound("QUESTCOMPLETED")
+          soundPlayed = true
+        end
+      end
+
+      if total > 0 and found == total and not self:HasAchievement(me, achId) then
+        self:AwardAchievement(achId, silent)
+      end
+    end
+  end
+
+  if self.CheckExploreCountAchievements then
+    self:CheckExploreCountAchievements()
+  end
 end
 
-function LeafVE_AchTest:ShowAchievementPopup(achievementID)
-  local achievement = ACHIEVEMENTS[achievementID]
-  if not achievement or achievement.disabled == true then return end
+-- Toast pop-in animation: overshoot-bounce scale-in, a shine sweep, a
+-- pulsing gold glow behind the icon while held, then a fade out. One
+-- frame built once and queued rather than a new frame per call, so
+-- several achievements completing at once don't stack overlapping popups.
+--
+-- Hangs off LeafVE_AchTest rather than a top-level `local` -- this file
+-- sits right at Lua's 200-local ceiling (see ZoneMapUI for the same fix).
+LeafVE_AchTest.AchPopup = {
+  queue = {},
+  state = "hidden",
+  elapsed = 0,
+  frame = nil,
+  POP_TIME = 0.35,
+  HOLD_TIME = 4,
+  FADE_TIME = 0.5,
+  ICON_EXIT_TIME = 0.12,
+  WIDTH = 500,
+  BASE_Y = -150,
+  EXIT_SHRINK_AMOUNT = 0.6,
+  DESC_MAX_CHARS = 82,
+}
 
+-- descText is fixed to 2 lines, so a long description gets truncated with
+-- "..." here (breaking on the last space where possible) rather than
+-- silently clipped mid-line by WoW's own wrap.
+function LeafVE_AchTest.AchPopup.TruncateDesc(desc)
+  if not desc or string.len(desc) <= LeafVE_AchTest.AchPopup.DESC_MAX_CHARS then
+    return desc
+  end
+  local cut = string.sub(desc, 1, LeafVE_AchTest.AchPopup.DESC_MAX_CHARS)
+  local lastSpace = nil
+  local searchFrom = 1
+  while true do
+    local s = string.find(cut, " ", searchFrom, true)
+    if not s then break end
+    lastSpace = s
+    searchFrom = s + 1
+  end
+  if lastSpace and lastSpace > LeafVE_AchTest.AchPopup.DESC_MAX_CHARS - 15 then
+    cut = string.sub(cut, 1, lastSpace - 1)
+  end
+  return cut .. "..."
+end
+
+-- Two-segment overshoot: pops past full size then settles back down,
+-- instead of a flat linear scale-up.
+function LeafVE_AchTest.AchPopup.Scale(t)
+  if t < 0.6 then
+    return 0.4 + (t / 0.6) * (1.25 - 0.4)
+  else
+    return 1.25 - ((t - 0.6) / 0.4) * (1.25 - 1.0)
+  end
+end
+
+function LeafVE_AchTest.AchPopup.Build()
   local popup = CreateFrame("Frame", nil, UIParent)
-  popup:SetWidth(500)
+  popup:SetWidth(LeafVE_AchTest.AchPopup.WIDTH)
   popup:SetHeight(122)
-  popup:SetPoint("TOP", UIParent, "TOP", 0, -150)
+  popup:SetPoint("TOP", UIParent, "TOP", 0, LeafVE_AchTest.AchPopup.BASE_Y)
   popup:SetFrameStrata("DIALOG")
   popup:SetFrameLevel(100)
-  popup:SetAlpha(0)
+  popup:Hide()
 
   -- Custom popup texture. Same framework as the working custom rows:
   -- direct Texture object, exact addon TGA path, no .tga extension, no fallback/backdrop.
@@ -2597,77 +2711,270 @@ function LeafVE_AchTest:ShowAchievementPopup(achievementID)
   bg:SetTexture(TEX.ashenAchievementPopup)
   bg:SetTexCoord(0, 1, 0, 1)
   bg:SetVertexColor(1, 1, 1, 1)
-  bg:Show()
   popup.bg = bg
 
-  -- Zoom the square icon behind a circular medallion overlay.
-  -- The overlay sits above the icon and hides the square corners,
-  -- making the visible icon area read as a circle.
+  -- No separate icon-ring overlay: the banner art already has an ornate
+  -- medallion frame baked in on its left side, so the icon just sits
+  -- inside that socket. Center measured from the medallion's own alpha
+  -- silhouette (x=71 in the source art -> ~69.3px into this 500-wide
+  -- popup); square corners get cropped by iconMask below.
+  local ICON_SIZE = 72
+  local ICON_LEFT = 33
+  -- MASK_LEFT positions the mask's whole 128px canvas -- its own crop
+  -- keeps the hole centered on the canvas midpoint regardless of source
+  -- pixels sampled, so this is the only thing that controls its on-screen
+  -- position.
+  local MASK_SIZE_W = 125.0
+  local MASK_SIZE_H = 122.0
+  local MASK_LEFT = 6.84
+
   local icon = popup:CreateTexture(nil, "ARTWORK")
-  icon:SetWidth(58)
-  icon:SetHeight(58)
-  icon:SetPoint("LEFT", popup, "LEFT", 36, -2)
-  local popupIconTex = achievement.icon
-  if not popupIconTex or popupIconTex == "" then
-    popupIconTex = "Interface\\Icons\\INV_Misc_QuestionMark"
-  end
-  icon:SetTexture(popupIconTex)
+  icon:SetWidth(ICON_SIZE)
+  icon:SetHeight(ICON_SIZE)
+  icon:SetPoint("LEFT", popup, "LEFT", ICON_LEFT, 0)
   icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+  popup.icon = icon
 
-  local iconRing = popup:CreateTexture(nil, "OVERLAY")
-  iconRing:SetWidth(105)
-  iconRing:SetHeight(105)
-  iconRing:SetPoint("LEFT", popup, "LEFT", 6, -2)
-  iconRing:SetTexture(TEX.ashenAchievementPopupIconRing)
-  iconRing:SetTexCoord(0, 1, 0, 1)
-  iconRing:SetVertexColor(1, 1, 1, 1)
-  iconRing:Show()
-  popup.iconRing = iconRing
+  -- Crops icon's square corners to the socket's circle by opaquely
+  -- painting over them -- this client has no true texture-clip/mask API.
+  -- iconMask's own alpha is never independently animated (only icon
+  -- fades fast during "out", see OnUpdate) so it stays opaque for as
+  -- long as the icon still has visibility, keeping the leak-through at
+  -- the corners small.
+  local iconMask = popup:CreateTexture(nil, "OVERLAY")
+  iconMask:SetWidth(MASK_SIZE_W)
+  iconMask:SetHeight(MASK_SIZE_H)
+  iconMask:SetPoint("LEFT", popup, "LEFT", MASK_LEFT, 0)
+  iconMask:SetTexture(TEX.ashenAchievementPopupIconMask)
+  iconMask:SetTexCoord(0, 1, 0, 1)
+  popup.iconMask = iconMask
 
+  -- Soft golden glow that pulses behind the icon while held on screen --
+  -- alpha-pulsed via math.sin (no animation-group API here). OVERLAY,
+  -- drawn after iconMask, so its bloom shows on top of the mask instead
+  -- of being cropped by it.
+  local iconGlow = popup:CreateTexture(nil, "OVERLAY")
+  iconGlow:SetWidth(90)
+  iconGlow:SetHeight(90)
+  iconGlow:SetPoint("CENTER", popup, "LEFT", ICON_LEFT + ICON_SIZE / 2, 0)
+  iconGlow:SetTexture("Interface\\Cooldown\\star4")
+  iconGlow:SetVertexColor(1, 0.82, 0.2, 0.8)
+  iconGlow:SetBlendMode("ADD")
+  popup.iconGlow = iconGlow
+
+  -- Live per-zone exploration achievements show the same whole-zone map
+  -- mosaic here as their row icon, instead of a single arbitrary cropped
+  -- tile, via the same LeafVE_AchTest.ZoneMapUI.LayoutThumbnail the rows use.
+  local iconMosaic = CreateFrame("Frame", nil, popup)
+  iconMosaic:SetWidth(ICON_SIZE)
+  iconMosaic:SetHeight(ICON_SIZE)
+  iconMosaic:SetPoint("LEFT", popup, "LEFT", ICON_LEFT, 0)
+  iconMosaic:SetFrameLevel(popup:GetFrameLevel() + 1)
+  iconMosaic.tiles = {}
+  iconMosaic:Hide()
+  popup.iconMosaic = iconMosaic
+  popup.iconSize = ICON_SIZE
+
+  -- iconMosaic is a separate, higher-frame-level frame, so its tiles would
+  -- draw over popup's own iconMask -- needs its own copy, drawn on
+  -- iconMosaic itself but at the same absolute position.
+  local iconMosaicMask = iconMosaic:CreateTexture(nil, "OVERLAY")
+  iconMosaicMask:SetWidth(MASK_SIZE_W)
+  iconMosaicMask:SetHeight(MASK_SIZE_H)
+  iconMosaicMask:SetPoint("LEFT", popup, "LEFT", MASK_LEFT, 0)
+  iconMosaicMask:SetTexture(TEX.ashenAchievementPopupIconMask)
+  iconMosaicMask:SetTexCoord(0, 1, 0, 1)
+  popup.iconMosaicMask = iconMosaicMask
+
+  -- Same reasoning as iconMosaicMask above: iconMosaic's own tiles would
+  -- draw over popup's iconGlow, so the mosaic needs its own glow copy,
+  -- drawn after iconMosaicMask so its bloom shows on top of it too.
+  local iconMosaicGlow = iconMosaic:CreateTexture(nil, "OVERLAY")
+  iconMosaicGlow:SetWidth(90)
+  iconMosaicGlow:SetHeight(90)
+  iconMosaicGlow:SetPoint("CENTER", popup, "LEFT", ICON_LEFT + ICON_SIZE / 2, 0)
+  iconMosaicGlow:SetTexture("Interface\\Cooldown\\star4")
+  iconMosaicGlow:SetVertexColor(1, 0.82, 0.2, 0.8)
+  iconMosaicGlow:SetBlendMode("ADD")
+  popup.iconMosaicGlow = iconMosaicGlow
+
+  -- Outlined fonts + a soft drop shadow so the text holds up against the
+  -- parchment's own busy, high-contrast texture.
   local earnedText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  earnedText:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
   earnedText:SetPoint("TOP", popup, "TOP", 14, -14)
   earnedText:SetWidth(260)
   earnedText:SetJustifyH("CENTER")
   earnedText:SetText("|cFFFFD433Achievement Earned!|r")
 
   local nameText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  nameText:SetPoint("TOPLEFT", popup, "TOPLEFT", 114, -38)
-  nameText:SetWidth(315)
+  nameText:SetFont("Fonts\\FRIZQT__.TTF", 17, "OUTLINE")
+  nameText:SetShadowColor(0, 0, 0, 0.8)
+  nameText:SetShadowOffset(1, -1)
+  nameText:SetPoint("TOPLEFT", popup, "TOPLEFT", 130, -40)
+  nameText:SetWidth(299)
   nameText:SetJustifyH("LEFT")
-  nameText:SetText("|cFFFFFFFF"..achievement.name.."|r")
+  popup.nameText = nameText
 
   local descText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  descText:SetPoint("TOPLEFT", nameText, "BOTTOMLEFT", 0, -2)
-  descText:SetWidth(315)
+  descText:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+  descText:SetShadowColor(0, 0, 0, 0.8)
+  descText:SetShadowOffset(1, -1)
+  descText:SetPoint("TOPLEFT", nameText, "BOTTOMLEFT", 0, -4)
+  descText:SetWidth(299)
+  -- Fixed to 2 lines so it can never grow into pointsText below it.
+  descText:SetHeight(30)
   descText:SetJustifyH("LEFT")
-  descText:SetText("|cFFDDDDDD"..achievement.desc.."|r")
+  descText:SetJustifyV("TOP")
+  popup.descText = descText
 
   local pointsText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  pointsText:SetPoint("BOTTOMLEFT", popup, "BOTTOMLEFT", 114, 18)
-  pointsText:SetText("|cFFFFB347+"..achievement.points.." points|r")
+  pointsText:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+  pointsText:SetPoint("BOTTOMLEFT", popup, "BOTTOMLEFT", 130, 18)
+  popup.pointsText = pointsText
 
-  local fadeIn = 0
-  local stay = 0
-  local fadeOut = 0
+  -- Bright bar that sweeps left-to-right across the banner once as it pops
+  -- in, for a quick "glint" flourish.
+  local shine = popup:CreateTexture(nil, "OVERLAY")
+  shine:SetWidth(40)
+  shine:SetPoint("TOP", popup, "TOP", 0, -4)
+  shine:SetPoint("BOTTOM", popup, "BOTTOM", 0, 4)
+  shine:SetTexture("Interface\\Buttons\\WHITE8x8")
+  shine:SetVertexColor(1, 1, 1, 0.35)
+  shine:SetBlendMode("ADD")
+  popup.shine = shine
 
   popup:SetScript("OnUpdate", function()
-    if fadeIn < 0.5 then
-      fadeIn = fadeIn + arg1
-      popup:SetAlpha(fadeIn / 0.5)
-    elseif stay < 4 then
-      stay = stay + arg1
-      popup:SetAlpha(1)
-    elseif fadeOut < 0.5 then
-      fadeOut = fadeOut + arg1
-      popup:SetAlpha(1 - (fadeOut / 0.5))
-    else
-      popup:SetScript("OnUpdate", nil)
-      popup:Hide()
+    if LeafVE_AchTest.AchPopup.state == "hidden" then return end
+    LeafVE_AchTest.AchPopup.elapsed = LeafVE_AchTest.AchPopup.elapsed + arg1
+    if LeafVE_AchTest.AchPopup.state == "in" then
+      local t = math.min(LeafVE_AchTest.AchPopup.elapsed / LeafVE_AchTest.AchPopup.POP_TIME, 1)
+      popup:SetAlpha(math.min(t * 2, 1))
+      popup:SetScale(LeafVE_AchTest.AchPopup.Scale(t))
+
+      local sweepX = -40 + (t * (LeafVE_AchTest.AchPopup.WIDTH + 80))
+      shine:ClearAllPoints()
+      shine:SetPoint("TOP", popup, "TOP", 0, -4)
+      shine:SetPoint("BOTTOM", popup, "BOTTOM", 0, 4)
+      shine:SetPoint("LEFT", popup, "LEFT", sweepX, 0)
+
+      if t >= 1 then
+        popup:SetScale(1)
+        shine:Hide()
+        LeafVE_AchTest.AchPopup.state, LeafVE_AchTest.AchPopup.elapsed = "hold", 0
+      end
+    elseif LeafVE_AchTest.AchPopup.state == "hold" then
+      local glowAlpha = 0.55 + math.sin(LeafVE_AchTest.AchPopup.elapsed * 4) * 0.35
+      iconGlow:SetAlpha(glowAlpha)
+      iconMosaicGlow:SetAlpha(glowAlpha)
+      if LeafVE_AchTest.AchPopup.elapsed >= LeafVE_AchTest.AchPopup.HOLD_TIME then
+        LeafVE_AchTest.AchPopup.state, LeafVE_AchTest.AchPopup.elapsed = "out", 0
+      end
+    elseif LeafVE_AchTest.AchPopup.state == "out" then
+      local elapsed = LeafVE_AchTest.AchPopup.elapsed
+      -- icon/iconGlow/mosaic tiles fade out fast over just ICON_EXIT_TIME,
+      -- ahead of the banner's own slower FADE_TIME fade -- iconMask stays
+      -- untouched so it's still opaque while the icon still has visibility.
+      if elapsed < LeafVE_AchTest.AchPopup.ICON_EXIT_TIME then
+        local ia = 1 - (elapsed / LeafVE_AchTest.AchPopup.ICON_EXIT_TIME)
+        icon:SetAlpha(ia)
+        iconGlow:SetAlpha(ia)
+        iconMosaicGlow:SetAlpha(ia)
+        for i = 1, table.getn(iconMosaic.tiles) do
+          iconMosaic.tiles[i]:SetAlpha(ia)
+        end
+      else
+        icon:Hide()
+        iconGlow:Hide()
+        iconMosaicGlow:Hide()
+        iconMosaic:Hide()
+      end
+      -- Shrinks toward its own TOP anchor while it fades (eased in),
+      -- mirroring the pop-in's growth from the same pivot in reverse.
+      local fadeT = math.min(elapsed / LeafVE_AchTest.AchPopup.FADE_TIME, 1)
+      popup:SetScale(1 - fadeT * fadeT * LeafVE_AchTest.AchPopup.EXIT_SHRINK_AMOUNT)
+      popup:SetAlpha(1 - fadeT)
+      if elapsed >= LeafVE_AchTest.AchPopup.FADE_TIME then
+        popup:Hide()
+        shine:Show()
+        LeafVE_AchTest.AchPopup.StartNext()
+      end
     end
   end)
 
+  return popup
+end
+
+function LeafVE_AchTest.AchPopup.StartNext()
+  local achievement = table.remove(LeafVE_AchTest.AchPopup.queue, 1)
+  if not achievement then
+    LeafVE_AchTest.AchPopup.state = "hidden"
+    if LeafVE_AchTest.AchPopup.frame then LeafVE_AchTest.AchPopup.frame:Hide() end
+    return
+  end
+  if not LeafVE_AchTest.AchPopup.frame then
+    LeafVE_AchTest.AchPopup.frame = LeafVE_AchTest.AchPopup.Build()
+  end
+  local popup = LeafVE_AchTest.AchPopup.frame
+
+  if achievement.criteria_type == "explore_zone_live" and achievement.criteria_overlays then
+    popup.icon:Hide()
+    LeafVE_AchTest.ZoneMapUI.LayoutThumbnail(popup.iconMosaic, achievement.criteria_overlays, achievement.criteria_bounds, popup.iconSize)
+    for i = 1, table.getn(popup.iconMosaic.tiles) do
+      popup.iconMosaic.tiles[i]:SetAlpha(1)
+    end
+    popup.iconMosaic:Show()
+  else
+    popup.iconMosaic:Hide()
+    local popupIconTex = achievement.icon
+    -- Same fallback as the achievement row: companion achievements carry
+    -- a generic placeholder icon, so prefer the real one scanned out of
+    -- the player's spellbook (LeafVE_AchTest_DB.collections.companions)
+    -- when it's available.
+    if achievement.collectionType == "companion" and achievement.companionType == "individual" then
+      local scanned = LeafVE_AchTest_DB and LeafVE_AchTest_DB.collections
+        and LeafVE_AchTest_DB.collections.companions
+        and LeafVE_AchTest_DB.collections.companions[achievement.name]
+      if scanned and scanned.icon and scanned.icon ~= "" then
+        popupIconTex = scanned.icon
+      end
+    end
+    if not popupIconTex or popupIconTex == "" then
+      popupIconTex = "Interface\\Icons\\INV_Misc_QuestionMark"
+    end
+    popup.icon:SetAlpha(1)
+    popup.icon:Show()
+    popup.icon:SetTexture(popupIconTex)
+  end
+  popup.nameText:SetText("|cFFFFEFCF"..achievement.name.."|r")
+  popup.descText:SetText("|cFFC8B896"..LeafVE_AchTest.AchPopup.TruncateDesc(achievement.desc).."|r")
+  popup.pointsText:SetText("|cFFFFB347+"..achievement.points.." points|r")
+
+  popup:ClearAllPoints()
+  popup:SetPoint("TOP", UIParent, "TOP", 0, LeafVE_AchTest.AchPopup.BASE_Y)
   popup:Show()
+  popup:SetAlpha(0)
+  popup:SetScale(0.4)
+  popup.iconGlow:Show()
+  popup.iconGlow:SetAlpha(1)
+  popup.iconMosaicGlow:Show()
+  popup.iconMosaicGlow:SetAlpha(1)
+  popup.shine:Show()
+  popup.shine:ClearAllPoints()
+  popup.shine:SetPoint("TOP", popup, "TOP", 0, -4)
+  popup.shine:SetPoint("BOTTOM", popup, "BOTTOM", 0, 4)
+  popup.shine:SetPoint("LEFT", popup, "LEFT", -40, 0)
+  LeafVE_AchTest.AchPopup.state, LeafVE_AchTest.AchPopup.elapsed = "in", 0
   PlaySound("LevelUp")
+end
+
+function LeafVE_AchTest:ShowAchievementPopup(achievementID)
+  local achievement = ACHIEVEMENTS[achievementID]
+  if not achievement or achievement.disabled == true then return end
+  table.insert(LeafVE_AchTest.AchPopup.queue, achievement)
+  if LeafVE_AchTest.AchPopup.state == "hidden" then
+    LeafVE_AchTest.AchPopup.StartNext()
+  end
 end
 
 local LEGENDARY_GUILD_MESSAGES = {
@@ -3647,6 +3954,109 @@ local ALL_DUNGEON_COMPLETE_IDS = {
   "dung_dmr_complete",
 }
 
+-- Unified {current, goal} progress for any achievement type -- one place
+-- both the row progress bar and the not-yet-earned sort order can read
+-- from. Returns current, goal or nil if this achievement has no
+-- meaningful progress notion.
+function LeafVE_AchTest:GetUnifiedProgress(me, ad)
+  if not ad then return nil end
+
+  local def = ACHIEVEMENT_PROGRESS_DEF[ad.id]
+  if def then
+    local prog = GetAchievementProgress(me, ad.id)
+    if prog and prog.goal and prog.goal > 0 then
+      return math.min(prog.current or 0, prog.goal), prog.goal
+    end
+  end
+
+  if ad.criteria_type == "zone_group" and ad.criteria_key then
+    local zones = ZONE_GROUP_ZONES[ad.criteria_key]
+    if zones and table.getn(zones) > 0 then
+      local pz = LeafVE_AchTest_DB and LeafVE_AchTest_DB.exploredZones
+      local myZones = pz and pz[me]
+      local found = 0
+      for _, z in ipairs(zones) do
+        if myZones and myZones[z] then found = found + 1 end
+      end
+      return found, table.getn(zones)
+    end
+    return nil
+  end
+
+  if ad.criteria_type == "explore_zone_live" and ad.criteria_areas and table.getn(ad.criteria_areas) > 0 then
+    local pz = LeafVE_AchTest_DB and LeafVE_AchTest_DB.exploredZones
+    local myZones = pz and pz[me]
+    local found = 0
+    for _, z in ipairs(ad.criteria_areas) do
+      if myZones and myZones[z] then found = found + 1 end
+    end
+    return found, table.getn(ad.criteria_areas)
+  end
+
+  if ad.criteria_type == "explore_count" and ad.criteria_goal and ad.criteria_goal > 0 then
+    local pz = LeafVE_AchTest_DB and LeafVE_AchTest_DB.exploredZones
+    local myZones = pz and pz[me]
+    local count = 0
+    if myZones then for _ in pairs(myZones) do count = count + 1 end end
+    return math.min(count, ad.criteria_goal), ad.criteria_goal
+  end
+
+  if ad.criteria_type == "zone_visited_count" and ad.criteria_goal and ad.criteria_goal > 0 then
+    local zv = LeafVE_AchTest_DB and LeafVE_AchTest_DB.zonesVisited
+    local myZones = zv and zv[me]
+    local count = 0
+    if myZones then for _ in pairs(myZones) do count = count + 1 end end
+    return math.min(count, ad.criteria_goal), ad.criteria_goal
+  end
+
+  if ad.criteria_key and (ad.criteria_type == "dungeon" or ad.criteria_type == "raid") then
+    local bossList, progress
+    if ad.criteria_type == "dungeon" then
+      bossList = DUNGEON_CLEAR_BOSSES[ad.criteria_key]
+      local dp = LeafVE_AchTest_DB and LeafVE_AchTest_DB.dungeonProgress
+      progress = dp and dp[me] and dp[me][ad.criteria_key]
+    else
+      bossList = RAID_CLEAR_BOSSES[ad.criteria_key]
+      local rp = LeafVE_AchTest_DB and LeafVE_AchTest_DB.raidProgress
+      progress = rp and rp[me] and rp[me][ad.criteria_key]
+    end
+    if bossList and table.getn(bossList) > 0 then
+      local killed = 0
+      for _, bossName in ipairs(bossList) do
+        if progress and progress[bossName] then killed = killed + 1 end
+      end
+      return killed, table.getn(bossList)
+    end
+    return nil
+  end
+
+  if ad.criteria_type == "dungeon_meta" and table.getn(ALL_DUNGEON_COMPLETE_IDS) > 0 then
+    local done = 0
+    for _, dachId in ipairs(ALL_DUNGEON_COMPLETE_IDS) do
+      if self:HasAchievement(me, dachId) then done = done + 1 end
+    end
+    return done, table.getn(ALL_DUNGEON_COMPLETE_IDS)
+  end
+
+  if ad.criteria_type == "raid_meta" and table.getn(ALL_RAID_COMPLETE_IDS) > 0 then
+    local done = 0
+    for _, rachId in ipairs(ALL_RAID_COMPLETE_IDS) do
+      if self:HasAchievement(me, rachId) then done = done + 1 end
+    end
+    return done, table.getn(ALL_RAID_COMPLETE_IDS)
+  end
+
+  if ad.criteria_type == "ach_meta" and ad.criteria_ids and table.getn(ad.criteria_ids) > 0 then
+    local done = 0
+    for _, reqId in ipairs(ad.criteria_ids) do
+      if self:HasAchievement(me, reqId) then done = done + 1 end
+    end
+    return done, table.getn(ad.criteria_ids)
+  end
+
+  return nil
+end
+
 function LeafVE_AchTest:CheckMetaAchievements(silent, localOnly)
   local me = ShortName(UnitName("player"))
   if not me then return end
@@ -3885,6 +4295,86 @@ end
 local ACH_ROW_H = 105
 local ACH_POOL  = 14
 
+-- Live per-zone exploration achievements show the zone's whole live map
+-- mosaic as their row icon instead of a single square texture. Built once
+-- per achievement and cached forever, since pooled rows get reused for a
+-- different achievement on every scroll -- redrawing tiles from scratch
+-- each time would cause scroll stutter.
+--
+-- Hangs off LeafVE_AchTest rather than a top-level `local` -- this file
+-- sits right at Lua's 200-local ceiling.
+LeafVE_AchTest.ZoneMapUI = {
+  THUMB_SIZE = 44,
+  MAP_W = 1002,
+  MAP_H = 668,
+  DIM_R = 0.28, DIM_G = 0.28, DIM_B = 0.28,
+  ROW_H = 24,
+  thumbCache = {}, -- [achievementId] = frame
+}
+
+-- bounds is that zone's own true tile bounding box -- {minX, minY, width,
+-- height} -- since a tile's offset isn't bounded by any fixed "world map"
+-- size. Falls back to the old fixed constants only if bounds is missing.
+function LeafVE_AchTest.ZoneMapUI.LayoutThumbnail(mapThumb, overlays, bounds, size)
+  size = size or LeafVE_AchTest.ZoneMapUI.THUMB_SIZE
+  local boundsW = bounds and bounds.width or LeafVE_AchTest.ZoneMapUI.MAP_W
+  local boundsH = bounds and bounds.height or LeafVE_AchTest.ZoneMapUI.MAP_H
+  local minX = bounds and bounds.minX or 0
+  local minY = bounds and bounds.minY or 0
+  if boundsW <= 0 then boundsW = 1 end
+  if boundsH <= 0 then boundsH = 1 end
+  local scale = math.min(size / boundsW, size / boundsH)
+  local w, h = boundsW * scale, boundsH * scale
+  local xOff, yOff = (size - w) / 2, (size - h) / 2
+
+  local tileList = {}
+  for _, ov in ipairs(overlays or {}) do
+    if ov.tiles then
+      for _, t in ipairs(ov.tiles) do table.insert(tileList, t) end
+    end
+  end
+
+  local n = table.getn(tileList)
+  for i = 1, n do
+    local spec = tileList[i]
+    local tile = mapThumb.tiles[i]
+    if not tile then
+      tile = mapThumb:CreateTexture(nil, "ARTWORK")
+      mapThumb.tiles[i] = tile
+    end
+    tile:ClearAllPoints()
+    tile:SetPoint("TOPLEFT", mapThumb, "TOPLEFT",
+      xOff + (spec.offsetX - minX) * scale, -(yOff + (spec.offsetY - minY) * scale))
+    tile:SetWidth(spec.width * scale)
+    tile:SetHeight(spec.height * scale)
+    tile:SetTexCoord(0, spec.texCoordX, 0, spec.texCoordY)
+    tile:SetTexture(spec.file)
+    tile:Show()
+  end
+  for i = n + 1, table.getn(mapThumb.tiles) do
+    mapThumb.tiles[i]:Hide()
+  end
+end
+
+-- parent should be the main achievements window (self.frame), not UIParent:
+-- a frame inherits its parent's strata unless SetFrameStrata overrides it,
+-- and the main window sits in FULLSCREEN_DIALOG strata. Parenting straight
+-- to UIParent inherited UIParent's own (much lower) default strata instead,
+-- which drew the thumbnail behind the whole addon window regardless of
+-- frame level -- level only breaks ties within the same strata.
+function LeafVE_AchTest.ZoneMapUI.GetOrBuildThumbnail(def, parent)
+  local existing = LeafVE_AchTest.ZoneMapUI.thumbCache[def.id]
+  if existing then return existing end
+  local f = CreateFrame("Frame", nil, parent or UIParent)
+  f:SetWidth(LeafVE_AchTest.ZoneMapUI.THUMB_SIZE)
+  f:SetHeight(LeafVE_AchTest.ZoneMapUI.THUMB_SIZE)
+  f.tiles = {}
+  f:Hide()
+  LeafVE_AchTest.ZoneMapUI.LayoutThumbnail(f, def.criteria_overlays, def.criteria_bounds)
+  LeafVE_AchTest.ZoneMapUI.thumbCache[def.id] = f
+  return f
+end
+
 -- Create one unstyled achievement row frame attached to `parent`.
 local function CreateAchievementRow(parent)
   local frame = CreateFrame("Frame", nil, parent)
@@ -3949,6 +4439,41 @@ local function CreateAchievementRow(parent)
   points:SetPoint("CENTER", emblem, "CENTER", 0, -1)
   points:SetTextColor(1, 0.83, 0.22, 1)
   frame.points = points
+
+  -- Progress bar for not-yet-earned achievements (OctoAchieve shows one
+  -- too), styled to this addon's ashen/gold theme instead of OctoAchieve's
+  -- own blue: a dark backing plate, thin ashen-bordered frame, gold fill.
+  local progressBar = CreateFrame("StatusBar", nil, frame)
+  progressBar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 78, 14)
+  progressBar:SetWidth(430)
+  progressBar:SetHeight(12)
+  progressBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+  progressBar:SetStatusBarColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 1)
+  progressBar:SetMinMaxValues(0, 1)
+  progressBar:SetValue(0)
+  frame.progressBar = progressBar
+
+  local progressBarBg = progressBar:CreateTexture(nil, "BACKGROUND")
+  progressBarBg:SetAllPoints(progressBar)
+  progressBarBg:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+  progressBarBg:SetVertexColor(0.12, 0.11, 0.08, 0.9)
+  frame.progressBarBg = progressBarBg
+
+  local progressBarBorder = CreateFrame("Frame", nil, frame)
+  progressBarBorder:SetPoint("TOPLEFT", progressBar, "TOPLEFT", -1, 1)
+  progressBarBorder:SetPoint("BOTTOMRIGHT", progressBar, "BOTTOMRIGHT", 1, -1)
+  progressBarBorder:SetBackdrop({
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    edgeSize = 6,
+  })
+  progressBarBorder:SetBackdropBorderColor(THEME.border[1], THEME.border[2], THEME.border[3], 1)
+  frame.progressBarBorder = progressBarBorder
+
+  local progressBarText = progressBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  progressBarText:SetPoint("CENTER", progressBar, "CENTER", 0, 0)
+  progressBarText:SetTextColor(0.95, 0.93, 0.85, 1)
+  frame.progressBarText = progressBarText
+
   frame:EnableMouse(true)
   frame:SetScript("OnEnter", function()
     local ad = this.achData
@@ -4058,6 +4583,38 @@ local function CreateAchievementRow(parent)
         GameTooltip:AddLine(string.format("Discovered: %d / %d locations", found, total), 1.0, 0.82, 0.2)
       end
     end
+    -- â”€â”€ Live per-zone exploration criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    -- Full checklist + live map mosaic live in the Zone Map window instead
+    -- (click the row) -- the tooltip just shows the summary count.
+    if ad.criteria_type == "explore_zone_live" and ad.criteria_areas then
+      local pz = LeafVE_AchTest_DB and LeafVE_AchTest_DB.exploredZones
+      local myZones = pz and pz[me]
+      local found, total = 0, table.getn(ad.criteria_areas)
+      for _, z in ipairs(ad.criteria_areas) do
+        if myZones and myZones[z] then found = found + 1 end
+      end
+      GameTooltip:AddLine(" ", 1, 1, 1)
+      GameTooltip:AddLine(string.format("Discovered: %d / %d locations", found, total), 1.0, 0.82, 0.2)
+      GameTooltip:AddLine("Click to view the map", 0.6, 0.6, 0.6)
+    end
+    -- â”€â”€ Total-areas-discovered tiers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    if ad.criteria_type == "explore_count" and ad.criteria_goal then
+      local pz = LeafVE_AchTest_DB and LeafVE_AchTest_DB.exploredZones
+      local myZones = pz and pz[me]
+      local count = 0
+      if myZones then for _ in pairs(myZones) do count = count + 1 end end
+      GameTooltip:AddLine(" ", 1, 1, 1)
+      GameTooltip:AddLine(string.format("Progress: %d / %d areas", math.min(count, ad.criteria_goal), ad.criteria_goal), 0.6, 0.8, 1.0)
+    end
+    -- â”€â”€ Zones-visited meta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    if ad.criteria_type == "zone_visited_count" and ad.criteria_goal then
+      local zv = LeafVE_AchTest_DB and LeafVE_AchTest_DB.zonesVisited
+      local myZones = zv and zv[me]
+      local count = 0
+      if myZones then for _ in pairs(myZones) do count = count + 1 end end
+      GameTooltip:AddLine(" ", 1, 1, 1)
+      GameTooltip:AddLine(string.format("Progress: %d / %d zones", math.min(count, ad.criteria_goal), ad.criteria_goal), 0.6, 0.8, 1.0)
+    end
     -- â”€â”€ Quest chain step criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if ad._questSteps then
       local cq = LeafVE_AchTest_DB and LeafVE_AchTest_DB.completedQuests
@@ -4131,6 +4688,13 @@ local function CreateAchievementRow(parent)
   end)
   frame:SetScript("OnLeave", function()
     GameTooltip:Hide()
+  end)
+  frame:SetScript("OnMouseUp", function()
+    local ad = this.achData
+    if ad and ad.criteria_type == "explore_zone_live" and ad.criteria_overlays then
+      GameTooltip:Hide()
+      LeafVE_AchTest.UI:ShowZoneMapWindow(ad)
+    end
   end)
   return frame
 end
@@ -4587,7 +5151,7 @@ function LeafVE_AchTest.UI:RefreshMounts()
     self.scrollFrame:UpdateScrollChildRect()
   end
   if self.scrollFrame and self.scrollbar then
-    local maxScroll=self.scrollFrame:GetVerticalScrollRange()
+    local maxScroll=self:GetScrollMax()
     self.scrollbar:SetMinMaxValues(0,maxScroll>0 and maxScroll or 1)
     local current=self.scrollbar:GetValue() or 0
     if current>maxScroll then self.scrollbar:SetValue(maxScroll>0 and maxScroll or 0) end
@@ -4596,6 +5160,327 @@ function LeafVE_AchTest.UI:RefreshMounts()
 end
 
 end -- mount collection renderer scope
+
+-- Zone Map window -- shown when clicking a live per-zone exploration
+-- achievement row. Styled to match this addon's own main window (ashen
+-- banner background, UIPanelCloseButton, Escape-to-close). Replaces the
+-- old tooltip checklist with a real scrollable, hoverable widget list
+-- plus the live map itself.
+
+-- Draws overlays into mapFrame, scaled to fit and centered against that
+-- zone's own true bounding box. dimSet, if given, is a set of tile specs
+-- to draw darkened instead of full brightness. Returns the flat tile list
+-- so callers can reapply it after a delayed re-texture.
+function LeafVE_AchTest.ZoneMapUI.LayoutMosaic(mapFrame, overlays, dimSet, bounds)
+  local boxW, boxH = mapFrame:GetWidth(), mapFrame:GetHeight()
+  local boundsW = bounds and bounds.width or LeafVE_AchTest.ZoneMapUI.MAP_W
+  local boundsH = bounds and bounds.height or LeafVE_AchTest.ZoneMapUI.MAP_H
+  local minX = bounds and bounds.minX or 0
+  local minY = bounds and bounds.minY or 0
+  if boundsW <= 0 then boundsW = 1 end
+  if boundsH <= 0 then boundsH = 1 end
+  local scale = math.min(boxW / boundsW, boxH / boundsH)
+  local w, h = boundsW * scale, boundsH * scale
+  local xOff, yOff = (boxW - w) / 2, (boxH - h) / 2
+
+  local tileList = {}
+  for _, ov in ipairs(overlays or {}) do
+    if ov.tiles then
+      for _, t in ipairs(ov.tiles) do table.insert(tileList, t) end
+    end
+  end
+
+  local n = table.getn(tileList)
+  for i = 1, n do
+    local spec = tileList[i]
+    local tile = mapFrame.tiles[i]
+    if not tile then
+      tile = mapFrame:CreateTexture(nil, "ARTWORK")
+      mapFrame.tiles[i] = tile
+    end
+    tile:ClearAllPoints()
+    tile:SetPoint("TOPLEFT", mapFrame, "TOPLEFT",
+      xOff + (spec.offsetX - minX) * scale, -(yOff + (spec.offsetY - minY) * scale))
+    tile:SetWidth(spec.width * scale)
+    tile:SetHeight(spec.height * scale)
+    tile:SetTexCoord(0, spec.texCoordX, 0, spec.texCoordY)
+    tile:SetTexture(spec.file)
+    tile:Show()
+    if dimSet and dimSet[spec] then
+      tile:SetVertexColor(LeafVE_AchTest.ZoneMapUI.DIM_R, LeafVE_AchTest.ZoneMapUI.DIM_G, LeafVE_AchTest.ZoneMapUI.DIM_B, 1)
+    else
+      tile:SetVertexColor(1, 1, 1, 1)
+    end
+  end
+  for i = n + 1, table.getn(mapFrame.tiles) do
+    mapFrame.tiles[i]:Hide()
+  end
+  return tileList
+end
+
+function LeafVE_AchTest.UI:BuildZoneMapFrame()
+  if self.zoneMapFrame then return end
+
+  local f = CreateFrame("Frame", "LeafVE_ZoneMapFrame", UIParent)
+  f:SetWidth(760)
+  f:SetHeight(500)
+  f:SetPoint("CENTER", 0, 0)
+  -- Higher strata than the main window, not just a higher level -- both
+  -- windows have SetToplevel(true), so a same-strata level could get
+  -- reordered by clicking the main window. Strata always wins.
+  f:SetFrameStrata("TOOLTIP")
+  f:SetFrameLevel(150)
+  f:SetToplevel(true)
+  f:EnableMouse(true)
+  f:SetMovable(true)
+  f:RegisterForDrag("LeftButton")
+  f:SetScript("OnDragStart", function() f:StartMoving() end)
+  f:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
+  f:SetBackdrop({
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 }
+  })
+  f:SetBackdropColor(0, 0, 0, 0)
+  f:SetBackdropBorderColor(0.55, 0.42, 0.18, 1)
+  LeafVE_AddTiledTexture(f, "BACKGROUND", TEX.ashenBg, 4, -4, -4, 4, 512, 128, 1)
+  f:Hide()
+
+  if UISpecialFrames then
+    tinsert(UISpecialFrames, "LeafVE_ZoneMapFrame")
+  end
+
+  local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+  close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, -6)
+
+  local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  title:SetPoint("TOP", f, "TOP", 0, -16)
+  title:SetTextColor(THEME.gold[1], THEME.gold[2], THEME.gold[3])
+  f.title = title
+
+  local subtitle = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  subtitle:SetPoint("TOP", title, "BOTTOM", 0, -4)
+  subtitle:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3])
+  f.subtitle = subtitle
+
+  -- Left: the live map mosaic.
+  local mapFrame = CreateFrame("Frame", nil, f)
+  mapFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -54)
+  mapFrame:SetWidth(430)
+  mapFrame:SetHeight(410)
+  mapFrame:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 }
+  })
+  mapFrame:SetBackdropColor(0, 0, 0, 0.6)
+  mapFrame:SetBackdropBorderColor(0.42, 0.31, 0.12, 1)
+  mapFrame.tiles = {}
+  f.mapFrame = mapFrame
+
+  -- Right: the expandable subzone checklist -- a real scrollable widget
+  -- list (checkbox + name, green/checked once discovered) instead of the
+  -- old tooltip's plain text lines. Hovering an entry highlights just that
+  -- area's own tiles on the mosaic (ShowZoneMapHighlight below).
+  local listBg = CreateFrame("Frame", nil, f)
+  listBg:SetPoint("TOPLEFT", mapFrame, "TOPRIGHT", 14, 0)
+  listBg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -18, 20)
+  listBg:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 }
+  })
+  listBg:SetBackdropColor(0, 0, 0, 0.6)
+  listBg:SetBackdropBorderColor(0.42, 0.31, 0.12, 1)
+
+  local checkScroll = CreateFrame("ScrollFrame", nil, listBg)
+  checkScroll:SetPoint("TOPLEFT", listBg, "TOPLEFT", 8, -8)
+  checkScroll:SetPoint("BOTTOMRIGHT", listBg, "BOTTOMRIGHT", -8, 8)
+  checkScroll:EnableMouseWheel(true)
+  f.checkScroll = checkScroll
+
+  local checkChild = CreateFrame("Frame", nil, checkScroll)
+  checkChild:SetWidth(240)
+  checkChild:SetHeight(1)
+  checkScroll:SetScrollChild(checkChild)
+  f.checkChild = checkChild
+  f.checkRows = {}
+
+  -- Same reasoning as the main window's GetScrollMax (see above): compute
+  -- the max scroll from the frame heights directly rather than trusting
+  -- GetVerticalScrollRange(), which lagged behind child-height changes on
+  -- this client.
+  local function GetChecklistScrollMax()
+    return math.max(0, (checkChild:GetHeight() or 0) - (checkScroll:GetHeight() or 0))
+  end
+  checkScroll:SetScript("OnMouseWheel", function()
+    if this.UpdateScrollChildRect then this:UpdateScrollChildRect() end
+    local current = this:GetVerticalScroll()
+    local maxScroll = GetChecklistScrollMax()
+    local newScroll = current - (arg1 * 20)
+    if newScroll < 0 then newScroll = 0 end
+    if newScroll > maxScroll then newScroll = maxScroll end
+    this:SetVerticalScroll(newScroll)
+  end)
+
+  self.zoneMapFrame = f
+end
+
+-- Default map view for the currently-open zone: every area not yet
+-- discovered dimmed, everything else full brightness -- a fog-of-war style
+-- progress view built from criteria_areas/criteria_areaOverlays, not just a
+-- static preview. Background/whole-zone tiles that aren't tied to any
+-- checklist area (areaOverlays has no entry for them) are never dimmed.
+function LeafVE_AchTest.UI:ShowZoneMapPreview(ad)
+  if not self.zoneMapFrame then return end
+  local me = ShortName(UnitName("player") or "")
+  local discovered = LeafVE_AchTest_DB and LeafVE_AchTest_DB.exploredZones and LeafVE_AchTest_DB.exploredZones[me]
+  local dimSet = {}
+  for _, areaName in ipairs(ad.criteria_areas or {}) do
+    if not (discovered and discovered[areaName]) then
+      local ovs = ad.criteria_areaOverlays and ad.criteria_areaOverlays[areaName]
+      if ovs then
+        for _, ov in ipairs(ovs) do
+          if ov.tiles then
+            for _, t in ipairs(ov.tiles) do dimSet[t] = true end
+          end
+        end
+      end
+    end
+  end
+  LeafVE_AchTest.ZoneMapUI.LayoutMosaic(self.zoneMapFrame.mapFrame, ad.criteria_overlays, dimSet, ad.criteria_bounds)
+end
+
+-- Checklist-row hover: only that area's own overlay tiles at full
+-- brightness, everything else on the mosaic dimmed -- inverts
+-- ShowZoneMapPreview's dimSet (dim everything EXCEPT this one area) rather
+-- than checking explored state.
+function LeafVE_AchTest.UI:ShowZoneMapHighlight(highlightOverlays)
+  local zm = self.zoneMapFrame
+  local ad = zm and zm.currentAch
+  if not ad then return end
+  local keepSet = {}
+  if highlightOverlays then
+    for _, ov in ipairs(highlightOverlays) do
+      if ov.tiles then
+        for _, t in ipairs(ov.tiles) do keepSet[t] = true end
+      end
+    end
+  end
+  local dimSet = {}
+  for _, ov in ipairs(ad.criteria_overlays or {}) do
+    if ov.tiles then
+      for _, t in ipairs(ov.tiles) do
+        if not keepSet[t] then dimSet[t] = true end
+      end
+    end
+  end
+  LeafVE_AchTest.ZoneMapUI.LayoutMosaic(zm.mapFrame, ad.criteria_overlays, dimSet, ad.criteria_bounds)
+end
+
+function LeafVE_AchTest.UI:RestoreZoneMapPreview()
+  local zm = self.zoneMapFrame
+  if zm and zm.currentAch then
+    self:ShowZoneMapPreview(zm.currentAch)
+  end
+end
+
+function LeafVE_AchTest.UI:BuildZoneMapChecklistRow(index)
+  local zm = self.zoneMapFrame
+  local row = CreateFrame("Frame", nil, zm.checkChild)
+  row:SetWidth(224)
+  row:SetHeight(LeafVE_AchTest.ZoneMapUI.ROW_H - 4)
+  row:SetPoint("TOPLEFT", zm.checkChild, "TOPLEFT", 4, -((index - 1) * LeafVE_AchTest.ZoneMapUI.ROW_H) - 4)
+  row:EnableMouse(true)
+
+  local box = row:CreateTexture(nil, "ARTWORK")
+  box:SetWidth(14)
+  box:SetHeight(14)
+  box:SetPoint("LEFT", row, "LEFT", 0, 0)
+  box:SetTexture("Interface\\Buttons\\UI-CheckBox-Up")
+  row.box = box
+
+  local mark = row:CreateTexture(nil, "OVERLAY")
+  mark:SetAllPoints(box)
+  mark:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+  row.mark = mark
+
+  local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  label:SetPoint("LEFT", box, "RIGHT", 6, 0)
+  label:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+  label:SetJustifyH("LEFT")
+  row.label = label
+
+  row:SetScript("OnEnter", function()
+    if row.highlightOverlays then
+      LeafVE_AchTest.UI:ShowZoneMapHighlight(row.highlightOverlays)
+    end
+  end)
+  row:SetScript("OnLeave", function()
+    LeafVE_AchTest.UI:RestoreZoneMapPreview()
+  end)
+
+  row:Hide()
+  zm.checkRows[index] = row
+  return row
+end
+
+function LeafVE_AchTest.UI:PopulateZoneMapChecklist(ad)
+  local zm = self.zoneMapFrame
+  local me = ShortName(UnitName("player") or "")
+  local discovered = LeafVE_AchTest_DB and LeafVE_AchTest_DB.exploredZones and LeafVE_AchTest_DB.exploredZones[me]
+  local areas = ad.criteria_areas or {}
+
+  for i, areaName in ipairs(areas) do
+    local row = zm.checkRows[i] or self:BuildZoneMapChecklistRow(i)
+    row.label:SetText(areaName)
+    row.highlightOverlays = ad.criteria_areaOverlays and ad.criteria_areaOverlays[areaName]
+    if discovered and discovered[areaName] then
+      row.mark:Show()
+      row.label:SetTextColor(0.4, 0.85, 0.4, 1)
+    else
+      row.mark:Hide()
+      row.label:SetTextColor(0.75, 0.75, 0.75, 1)
+    end
+    row:Show()
+  end
+  for i = table.getn(areas) + 1, table.getn(zm.checkRows) do
+    zm.checkRows[i]:Hide()
+  end
+
+  zm.checkChild:SetHeight(math.max(10, table.getn(areas) * LeafVE_AchTest.ZoneMapUI.ROW_H + 8))
+  if zm.checkScroll.UpdateScrollChildRect then
+    zm.checkScroll:UpdateScrollChildRect()
+  end
+  zm.checkScroll:SetVerticalScroll(0)
+end
+
+function LeafVE_AchTest.UI:ShowZoneMapWindow(ad)
+  if not ad or not ad.criteria_overlays then return end
+  self:BuildZoneMapFrame()
+  local zm = self.zoneMapFrame
+  zm.currentAch = ad
+
+  local zoneName = string.gsub(ad.name or "Zone", "^Explorer of ", "")
+  zm.title:SetText(zoneName)
+
+  local me = ShortName(UnitName("player") or "")
+  local discovered = LeafVE_AchTest_DB and LeafVE_AchTest_DB.exploredZones and LeafVE_AchTest_DB.exploredZones[me]
+  local areas = ad.criteria_areas or {}
+  local found, total = 0, table.getn(areas)
+  if discovered then
+    for _, areaName in ipairs(areas) do
+      if discovered[areaName] then found = found + 1 end
+    end
+  end
+  zm.subtitle:SetText(found .. " / " .. total .. " locations discovered")
+
+  self:ShowZoneMapPreview(ad)
+  self:PopulateZoneMapChecklist(ad)
+  zm:Show()
+end
 
 function LeafVE_AchTest.UI:Build()
   if self.frame then
@@ -4606,6 +5491,9 @@ function LeafVE_AchTest.UI:Build()
   
   local f = CreateFrame("Frame", "LeafVE_AchTestFrame", UIParent)
   self.frame = f
+  if UISpecialFrames then
+    tinsert(UISpecialFrames, "LeafVE_AchTestFrame")
+  end
   f:SetPoint("CENTER", 0, 0)
   f:SetWidth(930)
   f:SetHeight(640)
@@ -4619,6 +5507,10 @@ function LeafVE_AchTest.UI:Build()
   f:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
   f:SetScript("OnHide", function()
     if LeafVE_AchTest.UI and LeafVE_AchTest.UI.HideMountCards then LeafVE_AchTest.UI:HideMountCards() end
+    if LeafVE_AchTest.UI and LeafVE_AchTest.UI.visibleZoneThumbFrames then
+      for thumb in pairs(LeafVE_AchTest.UI.visibleZoneThumbFrames) do thumb:Hide() end
+      LeafVE_AchTest.UI.visibleZoneThumbFrames = {}
+    end
   end)
   -- Border only. The full background is the Ashen Banner tiled TGA.
   f:SetBackdrop({
@@ -5560,28 +6452,68 @@ function LeafVE_AchTest.UI:Build()
   scrollFrame:SetScrollChild(scrollChild)
   self.scrollChild = scrollChild
   
-  local scrollbar = CreateFrame("Slider", nil, f)
-  scrollbar:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, -176)
-  scrollbar:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -18, 34)
-  scrollbar:SetWidth(16)
-  scrollbar:SetOrientation("VERTICAL")
-  scrollbar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-  scrollbar:SetBackdrop({
+  -- The native Slider's thumb positioning isn't reliable enough on this
+  -- client across every value range, so its texture is driven invisible
+  -- (it stays the real drag handle) and a hand-positioned knob graphic is
+  -- drawn on top instead.
+  local scrollTrack = CreateFrame("Frame", nil, f)
+  scrollTrack:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, -176)
+  scrollTrack:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -18, 34)
+  scrollTrack:SetWidth(20)
+  scrollTrack:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 8,
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
-  scrollbar:SetBackdropColor(0.10, 0.10, 0.10, 0.90)
+  scrollTrack:SetBackdropColor(0.10, 0.10, 0.10, 0.90)
+
+  local THUMB_W, THUMB_H = 20, 30
+  local scrollbar = CreateFrame("Slider", nil, scrollTrack)
+  scrollbar:SetAllPoints(scrollTrack)
+  scrollbar:SetWidth(20)
+  scrollbar:SetOrientation("VERTICAL")
+  scrollbar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+  local thumbTex = scrollbar:GetThumbTexture()
+  if thumbTex then
+    thumbTex:SetWidth(THUMB_W)
+    thumbTex:SetHeight(THUMB_H)
+    thumbTex:SetAlpha(0)
+  end
   scrollbar:SetMinMaxValues(0, 1)
   scrollbar:SetValue(0)
   scrollbar:SetValueStep(20)
   self.scrollbar = scrollbar
 
+  local scrollThumb = scrollTrack:CreateTexture(nil, "OVERLAY")
+  scrollThumb:SetTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+  scrollThumb:SetWidth(THUMB_W)
+  scrollThumb:SetHeight(THUMB_H)
+  scrollThumb:SetPoint("TOP", scrollTrack, "TOP", 0, 0)
+  self.scrollThumb = scrollThumb
+
+  function LeafVE_AchTest.UI:UpdateScrollThumb()
+    if not self.scrollbar or not self.scrollThumb or not self.scrollTrack then return end
+    local minV, maxV = self.scrollbar:GetMinMaxValues()
+    minV = minV or 0
+    maxV = maxV or 0
+    local val = self.scrollbar:GetValue() or 0
+    local frac = 0
+    if maxV > minV then
+      frac = (val - minV) / (maxV - minV)
+      if frac < 0 then frac = 0 end
+      if frac > 1 then frac = 1 end
+    end
+    local travel = math.max(0, (self.scrollTrack:GetHeight() or 0) - THUMB_H)
+    self.scrollThumb:ClearAllPoints()
+    self.scrollThumb:SetPoint("TOP", self.scrollTrack, "TOP", 0, -(frac * travel))
+  end
+  self.scrollTrack = scrollTrack
+
   local scrollUp = CreateFrame("Button", nil, f)
-  scrollUp:SetWidth(18)
-  scrollUp:SetHeight(18)
-  scrollUp:SetPoint("BOTTOM", scrollbar, "TOP", 0, 4)
+  scrollUp:SetWidth(22)
+  scrollUp:SetHeight(22)
+  scrollUp:SetPoint("BOTTOM", scrollTrack, "TOP", 0, 4)
   scrollUp:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
   scrollUp:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
   scrollUp:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
@@ -5589,9 +6521,9 @@ function LeafVE_AchTest.UI:Build()
   self.scrollUp = scrollUp
 
   local scrollDown = CreateFrame("Button", nil, f)
-  scrollDown:SetWidth(18)
-  scrollDown:SetHeight(18)
-  scrollDown:SetPoint("TOP", scrollbar, "BOTTOM", 0, -4)
+  scrollDown:SetWidth(22)
+  scrollDown:SetHeight(22)
+  scrollDown:SetPoint("TOP", scrollTrack, "BOTTOM", 0, -4)
   scrollDown:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
   scrollDown:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down")
   scrollDown:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Highlight")
@@ -5599,7 +6531,13 @@ function LeafVE_AchTest.UI:Build()
   self.scrollDown = scrollDown
   scrollbar:SetScript("OnValueChanged", function()
     if LeafVE_AchTest.UI and LeafVE_AchTest.UI.scrollFrame then
-      LeafVE_AchTest.UI.scrollFrame:SetVerticalScroll(this:GetValue())
+      local sf = LeafVE_AchTest.UI.scrollFrame
+      if sf.UpdateScrollChildRect then sf:UpdateScrollChildRect() end
+      local value = this:GetValue()
+      local maxScroll = LeafVE_AchTest.UI:GetScrollMax()
+      if value > maxScroll then value = maxScroll end
+      sf:SetVerticalScroll(value)
+      LeafVE_AchTest.UI:UpdateScrollThumb()
       if LeafVE_AchTest.UI:IsMountListView() then
         LeafVE_AchTest.UI:UpdateVisibleMounts()
       elseif LeafVE_AchTest.UI:IsAchievementListView() then
@@ -5624,10 +6562,11 @@ function LeafVE_AchTest.UI:Build()
     scrollbar:SetValue(newValue)
     if PlaySound then PlaySound("UChatScrollButton") end
   end)
-  
+
   scrollFrame:SetScript("OnMouseWheel", function()
+    if this.UpdateScrollChildRect then this:UpdateScrollChildRect() end
     local current = this:GetVerticalScroll()
-    local maxScroll = this:GetVerticalScrollRange()
+    local maxScroll = LeafVE_AchTest.UI and LeafVE_AchTest.UI:GetScrollMax() or this:GetVerticalScrollRange()
     local newScroll = current - (arg1 * 20)
     if newScroll < 0 then newScroll = 0 end
     if newScroll > maxScroll then newScroll = maxScroll end
@@ -5636,13 +6575,26 @@ function LeafVE_AchTest.UI:Build()
       LeafVE_AchTest.UI.scrollbar:SetValue(newScroll)
     end
   end)
-  
+
   self:Refresh()
+  self:UpdateScrollThumb()
+end
+
+-- GetVerticalScrollRange() can lag behind a scrollChild height change on this
+-- client even after UpdateScrollChildRect(), which let the scrollbar/mouse
+-- wheel clamp against a stale range from the previously selected category
+-- (cutting the new list short, or leaving blank space past its real end).
+-- Computing the range directly from the current frame heights sidesteps that.
+function LeafVE_AchTest.UI:GetScrollMax()
+  if not self.scrollChild or not self.scrollFrame then return 0 end
+  local m = (self.scrollChild:GetHeight() or 0) - (self.scrollFrame:GetHeight() or 0)
+  if m < 0 then m = 0 end
+  return m
 end
 
 function LeafVE_AchTest.UI:Refresh()
   if not self.frame or not self.scrollChild then return end
-  
+
   local me = ShortName(UnitName("player") or "")
   local totalPoints = LeafVE_AchTest:GetTotalAchievementPoints(me)
   local currentTitle = LeafVE_AchTest:GetCurrentTitle(me)
@@ -5898,8 +6850,9 @@ function LeafVE_AchTest.UI:Refresh()
   end
   
   if self.scrollFrame and self.scrollbar then
-    local maxScroll = self.scrollFrame:GetVerticalScrollRange()
+    local maxScroll = self:GetScrollMax()
     self.scrollbar:SetMinMaxValues(0, maxScroll > 0 and maxScroll or 1)
+    if (self.scrollbar:GetValue() or 0) > maxScroll then self.scrollbar:SetValue(maxScroll) end
   end
 end
 
@@ -5951,7 +6904,13 @@ function LeafVE_AchTest.UI:RefreshAchievements()
     if a.completed and not b.completed then return true end
     if not a.completed and b.completed then return false end
     if a.completed and b.completed then return a.timestamp > b.timestamp end
-    return a.data.points > b.data.points
+    -- Neither earned yet: most progress first, then least points to highest.
+    local aCur, aGoal = LeafVE_AchTest:GetUnifiedProgress(me, a.data)
+    local bCur, bGoal = LeafVE_AchTest:GetUnifiedProgress(me, b.data)
+    local aFrac = (aCur and aGoal and aGoal > 0) and (aCur / aGoal) or 0
+    local bFrac = (bCur and bGoal and bGoal > 0) and (bCur / bGoal) or 0
+    if aFrac ~= bFrac then return aFrac > bFrac end
+    return a.data.points < b.data.points
   end)
 
   -- Store the sorted list for virtual-scroll updates.
@@ -5961,11 +6920,14 @@ function LeafVE_AchTest.UI:RefreshAchievements()
   -- Set the scrollChild virtual height so the scrollbar range is correct.
   local totalHeight = math.max(10, table.getn(achievementList) * ACH_ROW_H + 10)
   self.scrollChild:SetHeight(totalHeight)
-  
+  if self.scrollFrame and self.scrollFrame.UpdateScrollChildRect then
+    self.scrollFrame:UpdateScrollChildRect()
+  end
 
   if self.scrollFrame and self.scrollbar then
-    local maxScroll = self.scrollFrame:GetVerticalScrollRange()
+    local maxScroll = self:GetScrollMax()
     self.scrollbar:SetMinMaxValues(0, maxScroll > 0 and maxScroll or 1)
+    if (self.scrollbar:GetValue() or 0) > maxScroll then self.scrollbar:SetValue(maxScroll) end
   end
 
   -- Ensure the recycled frame pool exists (created once, reused forever).
@@ -5989,6 +6951,10 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
         if self.achievementFrames[i] then self.achievementFrames[i]:Hide() end
       end
     end
+    if self.visibleZoneThumbFrames then
+      for thumb in pairs(self.visibleZoneThumbFrames) do thumb:Hide() end
+      self.visibleZoneThumbFrames = {}
+    end
     return
   end
   local list = self.currentAchList
@@ -6001,7 +6967,18 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
     if self.achievementFrames[i] then self.achievementFrames[i]:Hide() end
   end
 
-  if total == 0 then return end
+  -- thumbCache frames are cached per achievement id, not per pool slot, so
+  -- reconcile them: collect what's claimed this pass, hide whatever was
+  -- visible last pass but isn't now.
+  local newlyVisibleZoneThumbs = {}
+
+  if total == 0 then
+    if self.visibleZoneThumbFrames then
+      for thumb in pairs(self.visibleZoneThumbFrames) do thumb:Hide() end
+    end
+    self.visibleZoneThumbFrames = newlyVisibleZoneThumbs
+    return
+  end
 
   local scrollOff = self.scrollFrame:GetVerticalScroll() or 0
   -- First row index (1-based) that is at least partially visible.
@@ -6024,11 +7001,41 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
     frame.achTimestamp  = ach.timestamp
     frame.achPlayerName = me
 
-    local rowIconTex = ach.data.icon
-    if not rowIconTex or rowIconTex == "" then
-      rowIconTex = "Interface\\Icons\\INV_Misc_QuestionMark"
+    local isZoneMosaic = ach.data.criteria_type == "explore_zone_live" and ach.data.criteria_overlays
+    local zoneThumb = nil
+    if isZoneMosaic then
+      frame.icon:Hide()
+      -- Parented to scrollChild so it clips to the ScrollFrame's viewport
+      -- like the row textures, instead of bleeding out over the search bar.
+      zoneThumb = LeafVE_AchTest.ZoneMapUI.GetOrBuildThumbnail(ach.data, self.scrollChild)
+      zoneThumb:ClearAllPoints()
+      zoneThumb:SetPoint("LEFT", frame, "LEFT", 22, 0)
+      zoneThumb:SetFrameLevel(frame:GetFrameLevel() + 1)
+      zoneThumb:Show()
+      newlyVisibleZoneThumbs[zoneThumb] = true
+    else
+      frame.icon:Show()
+      local rowIconTex = ach.data.icon
+      -- Companion achievements are registered with a generic placeholder
+      -- icon (data\LeafVE_Ach_Companions.lua's catalog has no per-pet
+      -- icon field) -- the real icon only exists once the collections
+      -- panel has scanned it out of the player's own spellbook via
+      -- GetSpellTexture, saved under the same companion name. Prefer that
+      -- scanned icon here when it's available.
+      if ach.data.collectionType == "companion" and ach.data.companionType == "individual" then
+        local scanned = LeafVE_AchTest_DB and LeafVE_AchTest_DB.collections
+          and LeafVE_AchTest_DB.collections.companions
+          and LeafVE_AchTest_DB.collections.companions[ach.data.name]
+        if scanned and scanned.icon and scanned.icon ~= "" then
+          rowIconTex = scanned.icon
+        end
+      end
+      if not rowIconTex or rowIconTex == "" then
+        rowIconTex = "Interface\\Icons\\INV_Misc_QuestionMark"
+      end
+      frame.icon:SetTexture(rowIconTex)
     end
-    frame.icon:SetTexture(rowIconTex)
+
     if ach.completed then
       if frame.rowBg then frame.rowBg:SetVertexColor(1.0, 1.0, 1.0, 1.0) end
       frame.icon:SetDesaturated(false)
@@ -6048,6 +7055,8 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
       frame.emblem:SetVertexColor(1, 1, 1, 1)
       frame.emblem:SetAlpha(1)
       frame.points:SetText("|cFFFFD433"..ach.data.points.."|r")
+      frame.progressBar:Hide()
+      frame.progressBarBorder:Hide()
     else
       if frame.rowBg then frame.rowBg:SetVertexColor(0.82, 0.82, 0.82, 1.0) end
       frame.icon:SetDesaturated(true)
@@ -6062,9 +7071,37 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
       frame.emblem:SetVertexColor(0.45, 0.45, 0.45, 0.75)
       frame.emblem:SetAlpha(0.65)
       frame.points:SetText("|cFF888888"..ach.data.points.."|r")
+
+      local cur, goal = LeafVE_AchTest:GetUnifiedProgress(me, ach.data)
+      if cur and goal and goal > 0 then
+        frame.progressBar:SetMinMaxValues(0, goal)
+        frame.progressBar:SetValue(math.min(cur, goal))
+        frame.progressBarText:SetText(cur.." / "..goal)
+        frame.progressBar:Show()
+        frame.progressBarBorder:Show()
+      else
+        frame.progressBar:Hide()
+        frame.progressBarBorder:Hide()
+      end
     end
+
+    if zoneThumb then
+      local r, g, b, a = 1, 1, 1, 1
+      if not ach.completed then r, g, b, a = 0.55, 0.55, 0.55, 0.85 end
+      for i = 1, table.getn(zoneThumb.tiles) do
+        zoneThumb.tiles[i]:SetVertexColor(r, g, b, a)
+      end
+    end
+
     frame:Show()
   end
+
+  if self.visibleZoneThumbFrames then
+    for thumb in pairs(self.visibleZoneThumbFrames) do
+      if not newlyVisibleZoneThumbs[thumb] then thumb:Hide() end
+    end
+  end
+  self.visibleZoneThumbFrames = newlyVisibleZoneThumbs
 end
 
 function LeafVE_AchTest.UI:RefreshTitles()
@@ -6244,9 +7281,13 @@ function LeafVE_AchTest.UI:RefreshTitles()
   end
   
   if self.scrollChild then self.scrollChild:SetHeight(yOffset + 10) end
+  if self.scrollFrame and self.scrollFrame.UpdateScrollChildRect then
+    self.scrollFrame:UpdateScrollChildRect()
+  end
   if self.scrollFrame and self.scrollbar then
-    local maxScroll = self.scrollFrame:GetVerticalScrollRange()
+    local maxScroll = self:GetScrollMax()
     self.scrollbar:SetMinMaxValues(0, maxScroll > 0 and maxScroll or 1)
+    if (self.scrollbar:GetValue() or 0) > maxScroll then self.scrollbar:SetValue(maxScroll) end
   end
 end
 
@@ -7135,7 +8176,13 @@ local function HookChatWithTitles()
           hasExistingTitle = string.sub(msg, 1, string.len(ownPlainPrefix)) == ownPlainPrefix
             or string.sub(msg, 1, string.len(ownBracketedPrefix)) == ownBracketedPrefix
         end
-        if not hasExistingTitle and not string.find(msg, "^/") and not string.find(msg, " has earned the achievement ", 1, true) then
+        -- Other addons (pfQuest/Altoholic) send server-parsed commands like
+        -- ".queststatus" or "#command" over guild chat -- prepending a
+        -- title would break that exact match, so "." and "#" are excluded
+        -- the same way "/" already is.
+        if not hasExistingTitle and not string.find(msg, "^/") and not string.find(msg, "^%.")
+          and not string.find(msg, "^#")
+          and not string.find(msg, " has earned the achievement ", 1, true) then
           local titleLink = BuildAnnouncementTitleLink(title)
           if titleLink then
             msg = titleLink.." "..msg
@@ -7448,4 +8495,35 @@ end
 SLASH_LEAFVE_POPUP_DEBUG1 = "/achpopdebug"
 SlashCmdList["LEAFVE_POPUP_DEBUG"] = function(msg)
   LeafVE_AchTest:DebugPopupTexture(msg)
+end
+
+-- /achtoast [achievementId] -- previews the achievement toast without
+-- going through AwardAchievement (nothing written to DB, no guild
+-- announcement). Queues like a real award too.
+SLASH_LEAFVE_ACHTOAST1 = "/achtoast"
+SlashCmdList["LEAFVE_ACHTOAST"] = function(msg)
+  local achId = Trim and Trim(msg or "") or msg
+  local achievement
+  if achId and achId ~= "" then
+    achievement = ACHIEVEMENTS[achId]
+    if not achievement then
+      Print("No achievement with id '"..achId.."'. Leave blank for a random one.")
+      return
+    end
+  else
+    local pool = {}
+    for id, data in pairs(ACHIEVEMENTS) do
+      if data.hidden ~= true and data.disabled ~= true then
+        table.insert(pool, id)
+      end
+    end
+    if table.getn(pool) > 0 then
+      achievement = ACHIEVEMENTS[pool[math.random(table.getn(pool))]]
+    end
+  end
+  if not achievement then
+    Print("No achievements loaded to preview.")
+    return
+  end
+  LeafVE_AchTest:ShowAchievementPopup(achievement.id)
 end
