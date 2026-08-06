@@ -2217,6 +2217,8 @@ function ABC:BuildCollectionView(kind)
   local ui = LeafVE_AchTest.UI
   if not ui.frame or not ui.scrollChild then return end
 
+  if ui.summaryFrame then ui.summaryFrame:Hide() end
+  if ui.titleSummaryFrame then ui.titleSummaryFrame:Hide() end
   ReleaseActiveModels()
   HideOriginalFilters(ui)
   ClearScrollChild(ui)
@@ -2453,6 +2455,15 @@ function ABC:InstallHooks()
     if self.abcStableMountSearch then self.abcStableMountSearch:Hide() end
     if self.abcStableCompanionSearch then self.abcStableCompanionSearch:Hide() end
 
+    -- The mounts/companions branches below return before oldRefresh ever
+    -- runs, so the base UI:Refresh's own summaryFrame/titleSummaryFrame
+    -- :Hide() calls (added for the two Summary tabs) never get a chance
+    -- to fire on those two views -- their recent-item icons/mosaics
+    -- stayed visible on top of the collection grid. Hidden here
+    -- unconditionally instead, before either early return.
+    if self.summaryFrame then self.summaryFrame:Hide() end
+    if self.titleSummaryFrame then self.titleSummaryFrame:Hide() end
+
     if self.currentView == "mounts" then
       ABC:BuildCollectionView("mount")
       ABC:UpdateTabVisuals()
@@ -2471,10 +2482,10 @@ function ABC:InstallHooks()
     -- Defensively enforce the base addon's independent searches as well.
     -- Achievements gets only the achievement search, Titles gets only the
     -- title search, and Admin/other views get neither.
-    if self.currentView == "achievements" then
+    if self.currentView == "achievements" and self.selectedCategory ~= "Summary" then
       ShowFrame(self.searchLabel); ShowFrame(self.searchBox); ShowFrame(self.clearBtn)
       HideFrame(self.titleSearchLabel); HideFrame(self.titleSearchBox); HideFrame(self.titleClearBtn)
-    elseif self.currentView == "titles" then
+    elseif self.currentView == "titles" and self.titleCategoryFilter ~= "Summary" then
       HideFrame(self.searchLabel); HideFrame(self.searchBox); HideFrame(self.clearBtn)
       ShowFrame(self.titleSearchLabel); ShowFrame(self.titleSearchBox); ShowFrame(self.titleClearBtn)
     else
@@ -4242,6 +4253,12 @@ function ABC:BuildCollectionView(kind)
       if ui.achievementFrames[i] then ui.achievementFrames[i]:Hide() end
     end
   end
+  -- Many call sites (filter-chip clicks on this same tab, etc.) call this
+  -- directly rather than through UI:Refresh, so its own summaryFrame:Hide()
+  -- never runs for those -- hidden here too so nothing from the Summary
+  -- tab can be left showing regardless of how this got called.
+  if ui.summaryFrame then ui.summaryFrame:Hide() end
+  if ui.titleSummaryFrame then ui.titleSummaryFrame:Hide() end
 
   ABC_StableEnsureDB()
   if ABC.modelLabFrame then ABC.modelLabFrame:Hide() end

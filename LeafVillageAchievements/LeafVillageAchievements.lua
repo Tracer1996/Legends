@@ -1046,7 +1046,7 @@ local TITLES = {
 }
 
 local TRACKED_GUILD_RANKS = {
-  {rankName="Member: Born", achievement="guild_rank_member_born", title="title_member_born"},
+  {rankName="Born", achievement="guild_rank_member_born", title="title_member_born"},
   {rankName="Flamebound", achievement="guild_rank_flamebound", title="title_flamebound"},
   {rankName="Oath Captain", achievement="guild_rank_oath_captain", title="title_oath_captain"},
   {rankName="Banner Warden", achievement="guild_rank_banner_warden", title="title_banner_warden"},
@@ -1060,6 +1060,12 @@ for i, rankData in ipairs(TRACKED_GUILD_RANKS) do
   TRACKED_GUILD_RANK_INDEX[NormalizeGuildRankName(rankData.rankName)] = i
   TRACKED_GUILD_RANK_TITLE_IDS[rankData.title] = true
 end
+
+-- Forces the first CheckGuildRankAchievements of the session silent even if
+-- it's triggered by a GUILD_ROSTER_UPDATE rather than the login backfill --
+-- e.g. guild info isn't populated yet at PLAYER_ENTERING_WORLD and only
+-- resolves a moment later. Only genuine rank changes after that are loud.
+LeafVE_AchTest.guildRankSeeded = false
 
 local DIRECTED_GUILD_EMOTE_ACHIEVEMENTS = {
   methl = {
@@ -2006,7 +2012,8 @@ function LeafVE_AchTest:CheckGuildRankAchievements(silent)
   if not me then return false end
 
   EnsureDB()
-  local awardSilent = true
+  local awardSilent = silent or not LeafVE_AchTest.guildRankSeeded
+  LeafVE_AchTest.guildRankSeeded = true
 
   local guildName, rankName = GetGuildInfo("player")
   local normalizedRank = NormalizeGuildRankName(rankName)
@@ -3605,10 +3612,10 @@ end
 
 LeafVE_AchTest.UI = {}
 LeafVE_AchTest.UI.currentView = "achievements"
-LeafVE_AchTest.UI.selectedCategory = "All"
+LeafVE_AchTest.UI.selectedCategory = "Summary"
 LeafVE_AchTest.UI.searchText = ""
 LeafVE_AchTest.UI.titleSearchText = ""
-LeafVE_AchTest.UI.titleCategoryFilter = "All"
+LeafVE_AchTest.UI.titleCategoryFilter = "Summary"
 LeafVE_AchTest.UI.selectedCompanionFilter = "All"
 LeafVE_AchTest.UI.selectedMountFilter = "All"
 
@@ -4364,7 +4371,16 @@ end
 -- frame level -- level only breaks ties within the same strata.
 function LeafVE_AchTest.ZoneMapUI.GetOrBuildThumbnail(def, parent)
   local existing = LeafVE_AchTest.ZoneMapUI.thumbCache[def.id]
-  if existing then return existing end
+  if existing then
+    -- Reparent on every call, not just at creation: this cache is now
+    -- shared by the achievement row list (parent=scrollChild) and the
+    -- Summary tab's recent list (parent=summaryFrame) -- a frame's real
+    -- parent (not just its SetPoint anchor target) gates whether it
+    -- renders at all, so returning it still attached to whichever view
+    -- built it first would make it invisible in the other view.
+    existing:SetParent(parent or UIParent)
+    return existing
+  end
   local f = CreateFrame("Frame", nil, parent or UIParent)
   f:SetWidth(LeafVE_AchTest.ZoneMapUI.THUMB_SIZE)
   f:SetHeight(LeafVE_AchTest.ZoneMapUI.THUMB_SIZE)
@@ -4376,6 +4392,266 @@ function LeafVE_AchTest.ZoneMapUI.GetOrBuildThumbnail(def, parent)
 end
 
 -- Create one unstyled achievement row frame attached to `parent`.
+-- Shared achievement tooltip, built from whatever's set on `owner`
+-- (achData/achPlayerName/achCompleted/achTimestamp) -- used by both the
+-- achievement list rows and the Summary tab's recent-achievements rows,
+-- so both surfaces always show the exact same tooltip.
+function LeafVE_AchTest.UI:ShowAchievementRowTooltip(owner)
+  local ad = owner.achData
+  local me = owner.achPlayerName
+  if not ad then return end
+  GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+  GameTooltip:ClearLines()
+  if owner.achCompleted then
+    GameTooltip:SetText(ad.name, THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 1, true)
+    GameTooltip:AddLine("|cFF888888"..ad.category.."|r", 1, 1, 1)
+    GameTooltip:AddLine(ad.desc, 1, 1, 1, true)
+    GameTooltip:AddLine(" ", 1, 1, 1)
+    GameTooltip:AddLine("Earned: "..date("%m/%d/%Y", owner.achTimestamp), 0.5, 0.8, 0.5)
+  else
+    GameTooltip:SetText(ad.name, 0.6, 0.6, 0.6, 1, true)
+    GameTooltip:AddLine("|cFF888888"..ad.category.."|r", 1, 1, 1)
+    GameTooltip:AddLine(ad.desc, 0.7, 0.7, 0.7, true)
+    GameTooltip:AddLine(" ", 1, 1, 1)
+    local prog = GetAchievementProgress(me, ad.id)
+    if prog then
+      GameTooltip:AddLine(string.format("Progress: %d / %d", prog.current, prog.goal), 0.6, 0.8, 1.0)
+    end
+    if ad.manual then
+      GameTooltip:AddLine("|cFFFF8800Requires officer grant: /achgrant <name> "..ad.id.."|r", 1, 1, 1, true)
+    else
+      GameTooltip:AddLine("Not yet earned", 0.8, 0.4, 0.4)
+    end
+  end
+  GameTooltip:AddLine(" ", 1, 1, 1)
+  GameTooltip:AddLine(ad.points.." Achievement Points", 1.0, 0.5, 0.0)
+  -- â”€â”€ Dungeon / Raid boss criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  if ad.criteria_key and (ad.criteria_type == "dungeon" or ad.criteria_type == "raid") then
+    local bossList, progress
+    if ad.criteria_type == "dungeon" then
+      bossList = DUNGEON_CLEAR_BOSSES[ad.criteria_key]
+      local dp = LeafVE_AchTest_DB and LeafVE_AchTest_DB.dungeonProgress
+      progress = dp and dp[me] and dp[me][ad.criteria_key]
+    elseif ad.criteria_type == "raid" then
+      bossList = RAID_CLEAR_BOSSES[ad.criteria_key]
+      local rp = LeafVE_AchTest_DB and LeafVE_AchTest_DB.raidProgress
+      progress = rp and rp[me] and rp[me][ad.criteria_key]
+    end
+    if bossList then
+      local killed, total = 0, table.getn(bossList)
+      GameTooltip:AddLine(" ", 1, 1, 1)
+      for _, bossName in ipairs(bossList) do
+        if progress and progress[bossName] then
+          killed = killed + 1
+          GameTooltip:AddLine("|cFF00CC00[x]|r "..bossName, 0.9, 0.9, 0.9)
+        else
+          GameTooltip:AddLine("|cFF666666[ ]|r "..bossName, 0.5, 0.5, 0.5)
+        end
+      end
+      GameTooltip:AddLine(string.format("Criteria: %d / %d bosses", killed, total), 1.0, 0.82, 0.2)
+    end
+  end
+  -- â”€â”€ Dungeon Completionist meta criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  if ad.criteria_type == "dungeon_meta" then
+    local done, total = 0, table.getn(ALL_DUNGEON_COMPLETE_IDS)
+    GameTooltip:AddLine(" ", 1, 1, 1)
+    for _, dachId in ipairs(ALL_DUNGEON_COMPLETE_IDS) do
+      local dach = ACHIEVEMENTS[dachId]
+      if dach then
+        if LeafVE_AchTest:HasAchievement(me, dachId) then
+          done = done + 1
+          GameTooltip:AddLine("|cFF00CC00[x]|r "..dach.name, 0.9, 0.9, 0.9)
+        else
+          GameTooltip:AddLine("|cFF666666[ ]|r "..dach.name, 0.5, 0.5, 0.5)
+        end
+      end
+    end
+    GameTooltip:AddLine(string.format("Criteria: %d / %d dungeons", done, total), 1.0, 0.82, 0.2)
+  end
+  -- â”€â”€ Raid Completionist meta criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  if ad.criteria_type == "raid_meta" then
+    local done, total = 0, table.getn(ALL_RAID_COMPLETE_IDS)
+    GameTooltip:AddLine(" ", 1, 1, 1)
+    for _, rachId in ipairs(ALL_RAID_COMPLETE_IDS) do
+      local rach = ACHIEVEMENTS[rachId]
+      if rach then
+        if LeafVE_AchTest:HasAchievement(me, rachId) then
+          done = done + 1
+          GameTooltip:AddLine("|cFF00CC00[x]|r "..rach.name, 0.9, 0.9, 0.9)
+        else
+          GameTooltip:AddLine("|cFF666666[ ]|r "..rach.name, 0.5, 0.5, 0.5)
+        end
+      end
+    end
+    GameTooltip:AddLine(string.format("Criteria: %d / %d raids", done, total), 1.0, 0.82, 0.2)
+  end
+  -- â”€â”€ Zone-group exploration criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  if ad.criteria_type == "zone_group" and ad.criteria_key then
+    local zones = ZONE_GROUP_ZONES[ad.criteria_key]
+    if zones then
+      local pz = LeafVE_AchTest_DB and LeafVE_AchTest_DB.exploredZones
+      local myZones = pz and pz[me]
+      local found, total = 0, table.getn(zones)
+      GameTooltip:AddLine(" ", 1, 1, 1)
+      for _, z in ipairs(zones) do
+        if myZones and myZones[z] then
+          found = found + 1
+          GameTooltip:AddLine("|cFF00CC00[x]|r "..z, 0.9, 0.9, 0.9)
+        else
+          GameTooltip:AddLine("|cFF666666[ ]|r "..z, 0.5, 0.5, 0.5)
+        end
+      end
+      GameTooltip:AddLine(string.format("Discovered: %d / %d locations", found, total), 1.0, 0.82, 0.2)
+    end
+  end
+  -- â”€â”€ Live per-zone exploration criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  -- Full checklist + live map mosaic live in the Zone Map window instead
+  -- (click the row) -- the tooltip just shows the summary count.
+  if ad.criteria_type == "explore_zone_live" and ad.criteria_areas then
+    local pz = LeafVE_AchTest_DB and LeafVE_AchTest_DB.exploredZones
+    local myZones = pz and pz[me]
+    local found, total = 0, table.getn(ad.criteria_areas)
+    for _, z in ipairs(ad.criteria_areas) do
+      if myZones and myZones[z] then found = found + 1 end
+    end
+    GameTooltip:AddLine(" ", 1, 1, 1)
+    GameTooltip:AddLine(string.format("Discovered: %d / %d locations", found, total), 1.0, 0.82, 0.2)
+    GameTooltip:AddLine("Click to view the map", 0.6, 0.6, 0.6)
+  end
+  -- â”€â”€ Total-areas-discovered tiers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  if ad.criteria_type == "explore_count" and ad.criteria_goal then
+    local pz = LeafVE_AchTest_DB and LeafVE_AchTest_DB.exploredZones
+    local myZones = pz and pz[me]
+    local count = 0
+    if myZones then for _ in pairs(myZones) do count = count + 1 end end
+    GameTooltip:AddLine(" ", 1, 1, 1)
+    GameTooltip:AddLine(string.format("Progress: %d / %d areas", math.min(count, ad.criteria_goal), ad.criteria_goal), 0.6, 0.8, 1.0)
+  end
+  -- â”€â”€ Zones-visited meta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  if ad.criteria_type == "zone_visited_count" and ad.criteria_goal then
+    local zv = LeafVE_AchTest_DB and LeafVE_AchTest_DB.zonesVisited
+    local myZones = zv and zv[me]
+    local count = 0
+    if myZones then for _ in pairs(myZones) do count = count + 1 end end
+    GameTooltip:AddLine(" ", 1, 1, 1)
+    GameTooltip:AddLine(string.format("Progress: %d / %d zones", math.min(count, ad.criteria_goal), ad.criteria_goal), 0.6, 0.8, 1.0)
+  end
+  -- â”€â”€ Quest chain step criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  if ad._questSteps then
+    local cq = LeafVE_AchTest_DB and LeafVE_AchTest_DB.completedQuests
+    local myQ = cq and cq[me]
+    local done, total = 0, 0
+    local normalizeQuestKey = LeafVE_AchTest and LeafVE_AchTest.NormalizeQuestStepKey
+    GameTooltip:AddLine(" ", 1, 1, 1)
+    for _, step in ipairs(ad._questSteps) do
+      local stepName = step
+      local needed = 1
+      if type(step) == "table" then
+        stepName = step.name or step[1]
+        needed = tonumber(step.count) or tonumber(step.required) or 1
+        if needed < 1 then needed = 1 end
+      end
+      if type(stepName) == "string" and stepName ~= "" then
+        local key = normalizeQuestKey and normalizeQuestKey(stepName) or string.lower(stepName)
+        local stepDone = 0
+        local v = myQ and key and myQ[key]
+        if type(v) == "number" then
+          stepDone = v
+        elseif v then
+          stepDone = 1
+        end
+        if stepDone <= 0 and myQ then
+          -- Backward compatibility for pre-normalized quest keys.
+          local legacy = myQ[string.lower(stepName)]
+          if type(legacy) == "number" then
+            stepDone = legacy
+          elseif legacy then
+            stepDone = 1
+          end
+        end
+
+        local contribution = stepDone
+        if contribution > needed then contribution = needed end
+        done = done + contribution
+        total = total + needed
+
+        local label = stepName
+        if needed > 1 then
+          label = string.format("%s (%d/%d)", stepName, contribution, needed)
+        end
+
+        if stepDone >= needed then
+          GameTooltip:AddLine("|cFF00CC00[x]|r "..label, 0.9, 0.9, 0.9)
+        else
+          GameTooltip:AddLine("|cFF666666[ ]|r "..label, 0.5, 0.5, 0.5)
+        end
+      end
+    end
+    GameTooltip:AddLine(string.format("Progress: %d / %d quests", done, total), 1.0, 0.82, 0.2)
+  end
+  -- â”€â”€ Achievement meta criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  if ad.criteria_type == "ach_meta" and ad.criteria_ids then
+    local done, total = 0, table.getn(ad.criteria_ids)
+    GameTooltip:AddLine(" ", 1, 1, 1)
+    for _, reqId in ipairs(ad.criteria_ids) do
+      local reqAch = ACHIEVEMENTS[reqId]
+      local reqName = reqAch and reqAch.name or reqId
+      if LeafVE_AchTest:HasAchievement(me, reqId) then
+        done = done + 1
+        GameTooltip:AddLine("|cFF00CC00[x]|r "..reqName, 0.9, 0.9, 0.9)
+      else
+        GameTooltip:AddLine("|cFF666666[ ]|r "..reqName, 0.5, 0.5, 0.5)
+      end
+    end
+    GameTooltip:AddLine(string.format("Criteria: %d / %d achievements", done, total), 1.0, 0.82, 0.2)
+  end
+  GameTooltip:Show()
+end
+
+-- Shared title tooltip, mirroring ShowAchievementRowTooltip above --
+-- used by both the title list rows and the Titles Summary tab's recent
+-- rows, built from owner.titleData/owner.titleEarned.
+function LeafVE_AchTest.UI:ShowTitleRowTooltip(owner)
+  local td = owner.titleData
+  if not td then return end
+  local achData = ACHIEVEMENTS[td.achievement]
+  GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+  GameTooltip:ClearLines()
+  if owner.titleEarned then
+    GameTooltip:SetText(td.name, THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 1, true)
+    GameTooltip:AddLine("|cFF888888Title|r", 1, 1, 1)
+    if td.desc and td.desc ~= "" then
+      GameTooltip:AddLine(td.desc, 0.95, 0.95, 0.95, true)
+    end
+    if achData then
+      GameTooltip:AddLine("Requires: "..achData.name, 1, 1, 1, true)
+    end
+    GameTooltip:AddLine(" ", 1, 1, 1)
+    -- Titles have no earned-record of their own -- "earned" is purely
+    -- derived from the linked achievement (IsTitleUnlocked), so its
+    -- timestamp is the only date available, same as RefreshTitleSummary.
+    local me = ShortName(UnitName("player") or "")
+    local rec = td.achievement and LeafVE_AchTest:GetPlayerAchievements(me)[td.achievement]
+    if rec and rec.timestamp and date then
+      GameTooltip:AddLine("Earned: "..date("%m/%d/%Y", rec.timestamp), 0.5, 0.8, 0.5)
+    else
+      GameTooltip:AddLine("Earned", 0.5, 0.8, 0.5)
+    end
+  else
+    GameTooltip:SetText(td.name, 0.6, 0.6, 0.6, 1, true)
+    GameTooltip:AddLine("|cFF888888Title|r", 1, 1, 1)
+    if td.desc and td.desc ~= "" then
+      GameTooltip:AddLine(td.desc, 0.85, 0.85, 0.85, true)
+    end
+    if achData then
+      GameTooltip:AddLine("Requires: "..achData.name, 0.7, 0.7, 0.7, true)
+    end
+    GameTooltip:AddLine(" ", 1, 1, 1)
+    GameTooltip:AddLine("Not yet earned", 0.8, 0.4, 0.4)
+  end
+  GameTooltip:Show()
+end
+
 local function CreateAchievementRow(parent)
   local frame = CreateFrame("Frame", nil, parent)
   frame:SetWidth(690)
@@ -4413,6 +4689,27 @@ local function CreateAchievementRow(parent)
   checkmark:SetPoint("TOPRIGHT", icon, "TOPRIGHT", 3, 3)
   checkmark:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
   frame.checkmark = checkmark
+
+  -- Soft pulsing glow over the whole row banner, shown by
+  -- FlashAchievementRow when navigating here from the Summary or a Title.
+  -- Reuses the row's own banner art at the row's exact size, additive-
+  -- blended, so the glow follows the banner's own silhouette instead of
+  -- spilling into neighboring rows. On its own frame raised well above
+  -- the row's own frame level (same fix as the zone-mosaic thumbnail
+  -- occlusion) so it draws on top of the row's opaque background and
+  -- icon/mosaic instead of being hidden behind them.
+  local rowGlowFrame = CreateFrame("Frame", nil, frame)
+  rowGlowFrame:SetAllPoints(frame)
+  rowGlowFrame:SetFrameLevel(frame:GetFrameLevel() + 10)
+  local rowGlow = rowGlowFrame:CreateTexture(nil, "OVERLAY")
+  rowGlow:SetAllPoints(frame)
+  rowGlow:SetTexture(TEX.ashenRow)
+  rowGlow:SetTexCoord(0, 1, 0, 1)
+  rowGlow:SetVertexColor(1, 0.82, 0.2, 1)
+  rowGlow:SetAlpha(0)
+  rowGlow:SetBlendMode("ADD")
+  rowGlow:Hide()
+  frame.rowGlow = rowGlow
 
   local name = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   name:SetPoint("TOPLEFT", frame, "TOPLEFT", 78, -20)
@@ -4476,215 +4773,7 @@ local function CreateAchievementRow(parent)
 
   frame:EnableMouse(true)
   frame:SetScript("OnEnter", function()
-    local ad = this.achData
-    local me = this.achPlayerName
-    if not ad then return end
-    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:ClearLines()
-    if this.achCompleted then
-      GameTooltip:SetText(ad.name, THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 1, true)
-      GameTooltip:AddLine("|cFF888888"..ad.category.."|r", 1, 1, 1)
-      GameTooltip:AddLine(ad.desc, 1, 1, 1, true)
-      GameTooltip:AddLine(" ", 1, 1, 1)
-      GameTooltip:AddLine("Earned: "..date("%m/%d/%Y", this.achTimestamp), 0.5, 0.8, 0.5)
-    else
-      GameTooltip:SetText(ad.name, 0.6, 0.6, 0.6, 1, true)
-      GameTooltip:AddLine("|cFF888888"..ad.category.."|r", 1, 1, 1)
-      GameTooltip:AddLine(ad.desc, 0.7, 0.7, 0.7, true)
-      GameTooltip:AddLine(" ", 1, 1, 1)
-      local prog = GetAchievementProgress(me, ad.id)
-      if prog then
-        GameTooltip:AddLine(string.format("Progress: %d / %d", prog.current, prog.goal), 0.6, 0.8, 1.0)
-      end
-      if ad.manual then
-        GameTooltip:AddLine("|cFFFF8800Requires officer grant: /achgrant <name> "..ad.id.."|r", 1, 1, 1, true)
-      else
-        GameTooltip:AddLine("Not yet earned", 0.8, 0.4, 0.4)
-      end
-    end
-    GameTooltip:AddLine(" ", 1, 1, 1)
-    GameTooltip:AddLine(ad.points.." Achievement Points", 1.0, 0.5, 0.0)
-    -- â”€â”€ Dungeon / Raid boss criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    if ad.criteria_key and (ad.criteria_type == "dungeon" or ad.criteria_type == "raid") then
-      local bossList, progress
-      if ad.criteria_type == "dungeon" then
-        bossList = DUNGEON_CLEAR_BOSSES[ad.criteria_key]
-        local dp = LeafVE_AchTest_DB and LeafVE_AchTest_DB.dungeonProgress
-        progress = dp and dp[me] and dp[me][ad.criteria_key]
-      elseif ad.criteria_type == "raid" then
-        bossList = RAID_CLEAR_BOSSES[ad.criteria_key]
-        local rp = LeafVE_AchTest_DB and LeafVE_AchTest_DB.raidProgress
-        progress = rp and rp[me] and rp[me][ad.criteria_key]
-      end
-      if bossList then
-        local killed, total = 0, table.getn(bossList)
-        GameTooltip:AddLine(" ", 1, 1, 1)
-        for _, bossName in ipairs(bossList) do
-          if progress and progress[bossName] then
-            killed = killed + 1
-            GameTooltip:AddLine("|cFF00CC00[x]|r "..bossName, 0.9, 0.9, 0.9)
-          else
-            GameTooltip:AddLine("|cFF666666[ ]|r "..bossName, 0.5, 0.5, 0.5)
-          end
-        end
-        GameTooltip:AddLine(string.format("Criteria: %d / %d bosses", killed, total), 1.0, 0.82, 0.2)
-      end
-    end
-    -- â”€â”€ Dungeon Completionist meta criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    if ad.criteria_type == "dungeon_meta" then
-      local done, total = 0, table.getn(ALL_DUNGEON_COMPLETE_IDS)
-      GameTooltip:AddLine(" ", 1, 1, 1)
-      for _, dachId in ipairs(ALL_DUNGEON_COMPLETE_IDS) do
-        local dach = ACHIEVEMENTS[dachId]
-        if dach then
-          if LeafVE_AchTest:HasAchievement(me, dachId) then
-            done = done + 1
-            GameTooltip:AddLine("|cFF00CC00[x]|r "..dach.name, 0.9, 0.9, 0.9)
-          else
-            GameTooltip:AddLine("|cFF666666[ ]|r "..dach.name, 0.5, 0.5, 0.5)
-          end
-        end
-      end
-      GameTooltip:AddLine(string.format("Criteria: %d / %d dungeons", done, total), 1.0, 0.82, 0.2)
-    end
-    -- â”€â”€ Raid Completionist meta criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    if ad.criteria_type == "raid_meta" then
-      local done, total = 0, table.getn(ALL_RAID_COMPLETE_IDS)
-      GameTooltip:AddLine(" ", 1, 1, 1)
-      for _, rachId in ipairs(ALL_RAID_COMPLETE_IDS) do
-        local rach = ACHIEVEMENTS[rachId]
-        if rach then
-          if LeafVE_AchTest:HasAchievement(me, rachId) then
-            done = done + 1
-            GameTooltip:AddLine("|cFF00CC00[x]|r "..rach.name, 0.9, 0.9, 0.9)
-          else
-            GameTooltip:AddLine("|cFF666666[ ]|r "..rach.name, 0.5, 0.5, 0.5)
-          end
-        end
-      end
-      GameTooltip:AddLine(string.format("Criteria: %d / %d raids", done, total), 1.0, 0.82, 0.2)
-    end
-    -- â”€â”€ Zone-group exploration criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    if ad.criteria_type == "zone_group" and ad.criteria_key then
-      local zones = ZONE_GROUP_ZONES[ad.criteria_key]
-      if zones then
-        local pz = LeafVE_AchTest_DB and LeafVE_AchTest_DB.exploredZones
-        local myZones = pz and pz[me]
-        local found, total = 0, table.getn(zones)
-        GameTooltip:AddLine(" ", 1, 1, 1)
-        for _, z in ipairs(zones) do
-          if myZones and myZones[z] then
-            found = found + 1
-            GameTooltip:AddLine("|cFF00CC00[x]|r "..z, 0.9, 0.9, 0.9)
-          else
-            GameTooltip:AddLine("|cFF666666[ ]|r "..z, 0.5, 0.5, 0.5)
-          end
-        end
-        GameTooltip:AddLine(string.format("Discovered: %d / %d locations", found, total), 1.0, 0.82, 0.2)
-      end
-    end
-    -- â”€â”€ Live per-zone exploration criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    -- Full checklist + live map mosaic live in the Zone Map window instead
-    -- (click the row) -- the tooltip just shows the summary count.
-    if ad.criteria_type == "explore_zone_live" and ad.criteria_areas then
-      local pz = LeafVE_AchTest_DB and LeafVE_AchTest_DB.exploredZones
-      local myZones = pz and pz[me]
-      local found, total = 0, table.getn(ad.criteria_areas)
-      for _, z in ipairs(ad.criteria_areas) do
-        if myZones and myZones[z] then found = found + 1 end
-      end
-      GameTooltip:AddLine(" ", 1, 1, 1)
-      GameTooltip:AddLine(string.format("Discovered: %d / %d locations", found, total), 1.0, 0.82, 0.2)
-      GameTooltip:AddLine("Click to view the map", 0.6, 0.6, 0.6)
-    end
-    -- â”€â”€ Total-areas-discovered tiers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    if ad.criteria_type == "explore_count" and ad.criteria_goal then
-      local pz = LeafVE_AchTest_DB and LeafVE_AchTest_DB.exploredZones
-      local myZones = pz and pz[me]
-      local count = 0
-      if myZones then for _ in pairs(myZones) do count = count + 1 end end
-      GameTooltip:AddLine(" ", 1, 1, 1)
-      GameTooltip:AddLine(string.format("Progress: %d / %d areas", math.min(count, ad.criteria_goal), ad.criteria_goal), 0.6, 0.8, 1.0)
-    end
-    -- â”€â”€ Zones-visited meta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    if ad.criteria_type == "zone_visited_count" and ad.criteria_goal then
-      local zv = LeafVE_AchTest_DB and LeafVE_AchTest_DB.zonesVisited
-      local myZones = zv and zv[me]
-      local count = 0
-      if myZones then for _ in pairs(myZones) do count = count + 1 end end
-      GameTooltip:AddLine(" ", 1, 1, 1)
-      GameTooltip:AddLine(string.format("Progress: %d / %d zones", math.min(count, ad.criteria_goal), ad.criteria_goal), 0.6, 0.8, 1.0)
-    end
-    -- â”€â”€ Quest chain step criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    if ad._questSteps then
-      local cq = LeafVE_AchTest_DB and LeafVE_AchTest_DB.completedQuests
-      local myQ = cq and cq[me]
-      local done, total = 0, 0
-      local normalizeQuestKey = LeafVE_AchTest and LeafVE_AchTest.NormalizeQuestStepKey
-      GameTooltip:AddLine(" ", 1, 1, 1)
-      for _, step in ipairs(ad._questSteps) do
-        local stepName = step
-        local needed = 1
-        if type(step) == "table" then
-          stepName = step.name or step[1]
-          needed = tonumber(step.count) or tonumber(step.required) or 1
-          if needed < 1 then needed = 1 end
-        end
-        if type(stepName) == "string" and stepName ~= "" then
-          local key = normalizeQuestKey and normalizeQuestKey(stepName) or string.lower(stepName)
-          local stepDone = 0
-          local v = myQ and key and myQ[key]
-          if type(v) == "number" then
-            stepDone = v
-          elseif v then
-            stepDone = 1
-          end
-          if stepDone <= 0 and myQ then
-            -- Backward compatibility for pre-normalized quest keys.
-            local legacy = myQ[string.lower(stepName)]
-            if type(legacy) == "number" then
-              stepDone = legacy
-            elseif legacy then
-              stepDone = 1
-            end
-          end
-
-          local contribution = stepDone
-          if contribution > needed then contribution = needed end
-          done = done + contribution
-          total = total + needed
-
-          local label = stepName
-          if needed > 1 then
-            label = string.format("%s (%d/%d)", stepName, contribution, needed)
-          end
-
-          if stepDone >= needed then
-            GameTooltip:AddLine("|cFF00CC00[x]|r "..label, 0.9, 0.9, 0.9)
-          else
-            GameTooltip:AddLine("|cFF666666[ ]|r "..label, 0.5, 0.5, 0.5)
-          end
-        end
-      end
-      GameTooltip:AddLine(string.format("Progress: %d / %d quests", done, total), 1.0, 0.82, 0.2)
-    end
-    -- â”€â”€ Achievement meta criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    if ad.criteria_type == "ach_meta" and ad.criteria_ids then
-      local done, total = 0, table.getn(ad.criteria_ids)
-      GameTooltip:AddLine(" ", 1, 1, 1)
-      for _, reqId in ipairs(ad.criteria_ids) do
-        local reqAch = ACHIEVEMENTS[reqId]
-        local reqName = reqAch and reqAch.name or reqId
-        if LeafVE_AchTest:HasAchievement(me, reqId) then
-          done = done + 1
-          GameTooltip:AddLine("|cFF00CC00[x]|r "..reqName, 0.9, 0.9, 0.9)
-        else
-          GameTooltip:AddLine("|cFF666666[ ]|r "..reqName, 0.5, 0.5, 0.5)
-        end
-      end
-      GameTooltip:AddLine(string.format("Criteria: %d / %d achievements", done, total), 1.0, 0.82, 0.2)
-    end
-    GameTooltip:Show()
+    LeafVE_AchTest.UI:ShowAchievementRowTooltip(this)
   end)
   frame:SetScript("OnLeave", function()
     GameTooltip:Hide()
@@ -5496,7 +5585,14 @@ function LeafVE_AchTest.UI:Build()
   end
   f:SetPoint("CENTER", 0, 0)
   f:SetWidth(930)
-  f:SetHeight(640)
+  -- +20 over the original 640 -- gives the Summary panel's Category
+  -- Progress grid (2 columns x 9 rows) enough room for the last row
+  -- (Legendary, being last in SIDEBAR_CATS) to fully fit within the
+  -- panel's own bounds instead of getting clipped at the bottom edge.
+  -- The sidebar/achievement list/other views are all anchored with
+  -- dynamic TOPLEFT/BOTTOMRIGHT points, so they just gain the same
+  -- extra room rather than needing any changes of their own.
+  f:SetHeight(660)
   f:SetFrameStrata("FULLSCREEN_DIALOG")
   f:SetFrameLevel(100)
   f:SetToplevel(true)
@@ -5990,6 +6086,7 @@ function LeafVE_AchTest.UI:Build()
 
   -- Ordered list of categories shown in the sidebar
   local SIDEBAR_CATS = {
+    {display="Summary",        filter="Summary"},
     {display="All",            filter="All"},
     {display="Leveling",       filter="Leveling"},
     {display="Quests",         filter="Quests"},
@@ -6362,6 +6459,7 @@ function LeafVE_AchTest.UI:Build()
   self.titleSidebarFrame = titleSidebarFrame
 
   local TITLE_SIDEBAR_CATS = {
+    {display="Summary",      filter="Summary"},
     {display="All",          filter="All"},
     {display="Obtained",     filter="Obtained"},
     {display="Leveling",     filter="Leveling"},
@@ -6376,6 +6474,7 @@ function LeafVE_AchTest.UI:Build()
     {display="Companions",   filter="Companions"},
     {display="Roleplay",     filter="Roleplay"},
     {display="Quests",       filter="Quests"},
+    {display="Guild",        filter="Guild"},
     {display="Legendary",    filter="Legendary"},
   }
   self.titleCategoryButtons = {}
@@ -6576,6 +6675,412 @@ function LeafVE_AchTest.UI:Build()
     end
   end)
 
+  -- Summary view -- unlike scrollFrame/contentArt (158,-158 to -26,12),
+  -- starts at -110 instead of -158: with the search bar hidden on this
+  -- tab (see Refresh below), there's nothing else in that 48px band, so
+  -- it lines up with the top of the sidebar's own category buttons
+  -- instead of leaving that space empty. The extra height goes toward
+  -- more generous row/bar spacing below rather than blank padding.
+  local summaryFrame = CreateFrame("Frame", nil, f)
+  summaryFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -110)
+  summaryFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, 12)
+  self.summaryFrame = summaryFrame
+
+  -- Own copy of the darkened content-panel art, sized to summaryFrame's
+  -- own (taller) rect -- the shared contentArt used by the other views
+  -- still starts at -158, so it wouldn't cover the extra 48px this panel
+  -- now extends upward into, leaving that band unbacked.
+  local summaryBg = summaryFrame:CreateTexture(nil, "BACKGROUND")
+  summaryBg:SetAllPoints(summaryFrame)
+  summaryBg:SetTexture(TEX.ashenBg)
+  summaryBg:SetVertexColor(1, 1, 1, 1)
+
+  local recentHeader = summaryFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  recentHeader:SetPoint("TOPLEFT", summaryFrame, "TOPLEFT", 10, -10)
+  recentHeader:SetText("Recent Achievements")
+  recentHeader:SetTextColor(THEME.gold[1], THEME.gold[2], THEME.gold[3])
+
+  local noRecentText = summaryFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  noRecentText:SetPoint("TOPLEFT", recentHeader, "BOTTOMLEFT", 4, -8)
+  noRecentText:SetText("No achievements earned yet.")
+  noRecentText:SetTextColor(0.6, 0.6, 0.6)
+  noRecentText:Hide()
+  self.summaryNoRecentText = noRecentText
+
+  -- 10 rows in 2 columns of 5. The achievement list's row background is
+  -- 690x92; this row is 335x~40, roughly half the linear size -- so
+  -- icon/iconFrame/emblem are scaled to half the achievement row's own
+  -- sizes (not the same absolute pixel size), which is what actually
+  -- keeps them the same size *relative to their own row background* as
+  -- on the achievement list, instead of looking oversized against a
+  -- background that's much smaller here.
+  local RECENT_ROW_W = 335
+  local RECENT_ROW_H = 40
+  local RECENT_ROW_SPACING = 52
+  local RECENT_COL_X = {10, 355}
+  self.summaryRecentRows = {}
+  for i = 1, 10 do
+    local col = math.floor((i - 1) / 5)
+    local rowIdx = (i - 1) - col * 5
+    local row = CreateFrame("Frame", nil, summaryFrame)
+    row:SetPoint("TOPLEFT", summaryFrame, "TOPLEFT", RECENT_COL_X[col + 1], -34 - rowIdx * RECENT_ROW_SPACING)
+    row:SetWidth(RECENT_ROW_W)
+    row:SetHeight(RECENT_ROW_H)
+    -- Kept even though the (now smaller) emblem shouldn't meaningfully
+    -- overflow into the next row anymore -- harmless safety net against
+    -- any residual overlap, so a row still always draws over whatever
+    -- pokes down from the row above it.
+    row:SetFrameLevel(summaryFrame:GetFrameLevel() + 1 + rowIdx)
+    row:EnableMouse(true)
+
+    -- Same row-panel art the achievement list uses, so a Summary row reads
+    -- as the same kind of object instead of a plain unstyled strip.
+    local rowBg = row:CreateTexture(nil, "BACKGROUND")
+    rowBg:SetAllPoints(row)
+    rowBg:SetTexture(TEX.ashenRow)
+    rowBg:SetTexCoord(0, 1, 0, 1)
+    rowBg:SetVertexColor(1, 1, 1, 1)
+    row.rowBg = rowBg
+
+    local hi = row:CreateTexture(nil, "BACKGROUND")
+    hi:SetAllPoints(row)
+    hi:SetTexture(TEX.categoryHi)
+    hi:SetVertexColor(1, 1, 1, 0.35)
+    hi:Hide()
+    row.highlight = hi
+
+    -- Half the achievement row's own icon size/padding (44px/22px) to
+    -- match the row background's own ~half scale here.
+    local icon = row:CreateTexture(nil, "OVERLAY")
+    icon:SetWidth(22)
+    icon:SetHeight(22)
+    icon:SetPoint("LEFT", row, "LEFT", 11, 0)
+    icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    row.icon = icon
+
+    -- Same decorative ring asset, half the achievement row's own size.
+    local iconFrame = row:CreateTexture(nil, "OVERLAY")
+    iconFrame:SetWidth(26)
+    iconFrame:SetHeight(26)
+    iconFrame:SetPoint("CENTER", icon, "CENTER", 0, 0)
+    iconFrame:SetTexture(TEX.iconFrame)
+    iconFrame:SetVertexColor(1, 1, 1, 0.92)
+    row.iconFrame = iconFrame
+
+    -- Dedicated mosaic frame for exploration achievements, same approach
+    -- the toast popup uses (its own iconMosaic, not the shared row-list
+    -- thumbnail cache) -- that cache's tiles are laid out for a fixed
+    -- 44px canvas, so reusing/resizing it here would distort them.
+    -- Sized to match icon, same as everywhere else this pairing is used.
+    local iconMosaic = CreateFrame("Frame", nil, row)
+    iconMosaic:SetWidth(22)
+    iconMosaic:SetHeight(22)
+    iconMosaic:SetPoint("CENTER", icon, "CENTER", 0, 0)
+    iconMosaic:SetFrameLevel(row:GetFrameLevel() + 1)
+    iconMosaic.tiles = {}
+    iconMosaic:Hide()
+    row.iconMosaic = iconMosaic
+
+    -- Name and date stacked rather than side by side, so there's still
+    -- room for the name text next to the emblem in a narrow 2-column row.
+    local name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    name:SetPoint("LEFT", icon, "RIGHT", 10, 9)
+    name:SetWidth(245)
+    name:SetJustifyH("LEFT")
+    row.name = name
+
+    local dateText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    dateText:SetPoint("LEFT", icon, "RIGHT", 10, -9)
+    dateText:SetWidth(245)
+    dateText:SetJustifyH("LEFT")
+    dateText:SetTextColor(0.6, 0.6, 0.6)
+    row.dateText = dateText
+
+    -- Same banner-emblem asset, half the achievement row's own size/padding
+    -- (50x74px / -16px) to match the row background's own ~half scale here.
+    local emblem = row:CreateTexture(nil, "ARTWORK")
+    emblem:SetWidth(25)
+    emblem:SetHeight(37)
+    emblem:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+    emblem:SetTexture(TEX.ashenBanner)
+    emblem:SetTexCoord(0, 1, 0, 1)
+    emblem:SetVertexColor(1, 1, 1, 1)
+    row.emblem = emblem
+
+    local points = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    points:SetPoint("CENTER", emblem, "CENTER", 0, -1)
+    points:SetTextColor(1, 0.83, 0.22, 1)
+    row.points = points
+
+    row:SetScript("OnEnter", function()
+      this.highlight:Show()
+      LeafVE_AchTest.UI:ShowAchievementRowTooltip(this)
+    end)
+    row:SetScript("OnLeave", function()
+      this.highlight:Hide()
+      GameTooltip:Hide()
+    end)
+    row:SetScript("OnMouseDown", function()
+      LeafVE_AchTest.UI:JumpToAchievement(this.achID, this.achData)
+    end)
+    row:Hide()
+
+    self.summaryRecentRows[i] = row
+  end
+
+  local catHeader = summaryFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  catHeader:SetPoint("TOPLEFT", summaryFrame, "TOPLEFT", 10, -300)
+  catHeader:SetText("Category Progress")
+  catHeader:SetTextColor(THEME.gold[1], THEME.gold[2], THEME.gold[3])
+
+  -- 2 columns x 9 rows for the 18 non-Summary/All categories.
+  self.summaryCatBars = {}
+  local catIndex = 0
+  for _, cat in ipairs(SIDEBAR_CATS) do
+    if cat.filter ~= "Summary" and cat.filter ~= "All" then
+      local col = math.floor(catIndex / 9)
+      local row = catIndex - col * 9
+      local barFrame = CreateFrame("Frame", nil, summaryFrame)
+      barFrame:SetPoint("TOPLEFT", summaryFrame, "TOPLEFT", 10 + col * 350, -328 - row * 22)
+      barFrame:SetWidth(340)
+      barFrame:SetHeight(20)
+      barFrame:EnableMouse(true)
+      barFrame.categoryFilter = cat.filter
+
+      local label = barFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      label:SetPoint("LEFT", barFrame, "LEFT", 0, 0)
+      label:SetWidth(110)
+      label:SetJustifyH("LEFT")
+      label:SetText(cat.display)
+      label:SetTextColor(0.92, 0.78, 0.26)
+      barFrame.label = label
+
+      local bar = CreateFrame("StatusBar", nil, barFrame)
+      bar:SetPoint("LEFT", label, "RIGHT", 4, 0)
+      bar:SetWidth(160)
+      bar:SetHeight(16)
+      bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+      bar:SetStatusBarColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 1)
+      bar:SetMinMaxValues(0, 1)
+      bar:SetValue(0)
+      barFrame.bar = bar
+
+      local barBg = bar:CreateTexture(nil, "BACKGROUND")
+      barBg:SetAllPoints(bar)
+      barBg:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+      barBg:SetVertexColor(0.12, 0.11, 0.08, 0.9)
+
+      local barBorder = CreateFrame("Frame", nil, barFrame)
+      barBorder:SetPoint("TOPLEFT", bar, "TOPLEFT", -1, 1)
+      barBorder:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 1, -1)
+      barBorder:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 6,
+      })
+      barBorder:SetBackdropBorderColor(THEME.border[1], THEME.border[2], THEME.border[3], 1)
+
+      local barText = barFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      barText:SetPoint("LEFT", bar, "RIGHT", 6, 0)
+      barText:SetWidth(60)
+      barText:SetJustifyH("LEFT")
+      barText:SetTextColor(0.95, 0.93, 0.85, 1)
+      barFrame.barText = barText
+
+      barFrame:SetScript("OnEnter", function() this.label:SetTextColor(1, 1, 1) end)
+      barFrame:SetScript("OnLeave", function() this.label:SetTextColor(0.92, 0.78, 0.26) end)
+      barFrame:SetScript("OnMouseDown", function()
+        PlaySound("igMainMenuOptionCheckBoxOn")
+        LeafVE_AchTest.UI.selectedCategory = this.categoryFilter
+        LeafVE_AchTest.UI:Refresh()
+      end)
+
+      table.insert(self.summaryCatBars, barFrame)
+      catIndex = catIndex + 1
+    end
+  end
+
+  -- Titles Summary tab -- same layout/construction as the achievements
+  -- Summary above (own darkened background at -110 since the search bar
+  -- is hidden here too, 10 recent rows in 2 columns of 5 sized/padded to
+  -- half the title list's own row, a Category Progress grid), just built
+  -- from TITLES/IsTitleUnlocked instead of ACHIEVEMENTS. Titles have no
+  -- points of their own, so the emblem shows the *linked achievement's*
+  -- points -- what earning it actually required.
+  local titleSummaryFrame = CreateFrame("Frame", nil, f)
+  titleSummaryFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -110)
+  titleSummaryFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, 12)
+  self.titleSummaryFrame = titleSummaryFrame
+
+  local titleSummaryBg = titleSummaryFrame:CreateTexture(nil, "BACKGROUND")
+  titleSummaryBg:SetAllPoints(titleSummaryFrame)
+  titleSummaryBg:SetTexture(TEX.ashenBg)
+  titleSummaryBg:SetVertexColor(1, 1, 1, 1)
+
+  local titleRecentHeader = titleSummaryFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  titleRecentHeader:SetPoint("TOPLEFT", titleSummaryFrame, "TOPLEFT", 10, -10)
+  titleRecentHeader:SetText("Recent Titles")
+  titleRecentHeader:SetTextColor(THEME.gold[1], THEME.gold[2], THEME.gold[3])
+
+  local titleNoRecentText = titleSummaryFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  titleNoRecentText:SetPoint("TOPLEFT", titleRecentHeader, "BOTTOMLEFT", 4, -8)
+  titleNoRecentText:SetText("No titles earned yet.")
+  titleNoRecentText:SetTextColor(0.6, 0.6, 0.6)
+  titleNoRecentText:Hide()
+  self.titleSummaryNoRecentText = titleNoRecentText
+
+  self.titleSummaryRecentRows = {}
+  for i = 1, 10 do
+    local col = math.floor((i - 1) / 5)
+    local rowIdx = (i - 1) - col * 5
+    local row = CreateFrame("Frame", nil, titleSummaryFrame)
+    row:SetPoint("TOPLEFT", titleSummaryFrame, "TOPLEFT", RECENT_COL_X[col + 1], -34 - rowIdx * RECENT_ROW_SPACING)
+    row:SetWidth(RECENT_ROW_W)
+    row:SetHeight(RECENT_ROW_H)
+    row:SetFrameLevel(titleSummaryFrame:GetFrameLevel() + 1 + rowIdx)
+    row:EnableMouse(true)
+
+    local rowBg = row:CreateTexture(nil, "BACKGROUND")
+    rowBg:SetAllPoints(row)
+    rowBg:SetTexture(TEX.ashenRow)
+    rowBg:SetTexCoord(0, 1, 0, 1)
+    rowBg:SetVertexColor(1, 1, 1, 1)
+    row.rowBg = rowBg
+
+    local hi = row:CreateTexture(nil, "BACKGROUND")
+    hi:SetAllPoints(row)
+    hi:SetTexture(TEX.categoryHi)
+    hi:SetVertexColor(1, 1, 1, 0.35)
+    hi:Hide()
+    row.highlight = hi
+
+    local icon = row:CreateTexture(nil, "OVERLAY")
+    icon:SetWidth(22)
+    icon:SetHeight(22)
+    icon:SetPoint("LEFT", row, "LEFT", 11, 0)
+    icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    row.icon = icon
+
+    local iconFrame = row:CreateTexture(nil, "OVERLAY")
+    iconFrame:SetWidth(26)
+    iconFrame:SetHeight(26)
+    iconFrame:SetPoint("CENTER", icon, "CENTER", 0, 0)
+    iconFrame:SetTexture(TEX.iconFrame)
+    iconFrame:SetVertexColor(1, 1, 1, 0.92)
+    row.iconFrame = iconFrame
+
+    local name = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    name:SetPoint("LEFT", icon, "RIGHT", 10, 9)
+    name:SetWidth(245)
+    name:SetJustifyH("LEFT")
+    row.name = name
+
+    local dateText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    dateText:SetPoint("LEFT", icon, "RIGHT", 10, -9)
+    dateText:SetWidth(245)
+    dateText:SetJustifyH("LEFT")
+    dateText:SetTextColor(0.6, 0.6, 0.6)
+    row.dateText = dateText
+
+    local emblem = row:CreateTexture(nil, "ARTWORK")
+    emblem:SetWidth(25)
+    emblem:SetHeight(37)
+    emblem:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+    emblem:SetTexture(TEX.ashenBanner)
+    emblem:SetTexCoord(0, 1, 0, 1)
+    emblem:SetVertexColor(1, 1, 1, 1)
+    row.emblem = emblem
+
+    local points = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    points:SetPoint("CENTER", emblem, "CENTER", 0, -1)
+    points:SetTextColor(1, 0.83, 0.22, 1)
+    row.points = points
+
+    row:SetScript("OnEnter", function()
+      this.highlight:Show()
+      LeafVE_AchTest.UI:ShowTitleRowTooltip(this)
+    end)
+    row:SetScript("OnLeave", function()
+      this.highlight:Hide()
+      GameTooltip:Hide()
+    end)
+    row:SetScript("OnMouseDown", function()
+      LeafVE_AchTest.UI:JumpToTitle(this.titleData)
+    end)
+    row:Hide()
+
+    self.titleSummaryRecentRows[i] = row
+  end
+
+  local titleCatHeader = titleSummaryFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  titleCatHeader:SetPoint("TOPLEFT", titleSummaryFrame, "TOPLEFT", 10, -300)
+  titleCatHeader:SetText("Category Progress")
+  titleCatHeader:SetTextColor(THEME.gold[1], THEME.gold[2], THEME.gold[3])
+
+  self.titleSummaryCatBars = {}
+  local titleCatIndex = 0
+  for _, cat in ipairs(TITLE_SIDEBAR_CATS) do
+    if cat.filter ~= "Summary" and cat.filter ~= "All" and cat.filter ~= "Obtained" then
+      local col = math.floor(titleCatIndex / 9)
+      local row = titleCatIndex - col * 9
+      local barFrame = CreateFrame("Frame", nil, titleSummaryFrame)
+      barFrame:SetPoint("TOPLEFT", titleSummaryFrame, "TOPLEFT", 10 + col * 350, -328 - row * 22)
+      barFrame:SetWidth(340)
+      barFrame:SetHeight(20)
+      barFrame:EnableMouse(true)
+      barFrame.categoryFilter = cat.filter
+
+      local label = barFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      label:SetPoint("LEFT", barFrame, "LEFT", 0, 0)
+      label:SetWidth(110)
+      label:SetJustifyH("LEFT")
+      label:SetText(cat.display)
+      label:SetTextColor(0.92, 0.78, 0.26)
+      barFrame.label = label
+
+      local bar = CreateFrame("StatusBar", nil, barFrame)
+      bar:SetPoint("LEFT", label, "RIGHT", 4, 0)
+      bar:SetWidth(160)
+      bar:SetHeight(16)
+      bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+      bar:SetStatusBarColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 1)
+      bar:SetMinMaxValues(0, 1)
+      bar:SetValue(0)
+      barFrame.bar = bar
+
+      local barBg = bar:CreateTexture(nil, "BACKGROUND")
+      barBg:SetAllPoints(bar)
+      barBg:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+      barBg:SetVertexColor(0.12, 0.11, 0.08, 0.9)
+
+      local barBorder = CreateFrame("Frame", nil, barFrame)
+      barBorder:SetPoint("TOPLEFT", bar, "TOPLEFT", -1, 1)
+      barBorder:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 1, -1)
+      barBorder:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 6,
+      })
+      barBorder:SetBackdropBorderColor(THEME.border[1], THEME.border[2], THEME.border[3], 1)
+
+      local barText = barFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      barText:SetPoint("LEFT", bar, "RIGHT", 6, 0)
+      barText:SetWidth(60)
+      barText:SetJustifyH("LEFT")
+      barText:SetTextColor(0.95, 0.93, 0.85, 1)
+      barFrame.barText = barText
+
+      barFrame:SetScript("OnEnter", function() this.label:SetTextColor(1, 1, 1) end)
+      barFrame:SetScript("OnLeave", function() this.label:SetTextColor(0.92, 0.78, 0.26) end)
+      barFrame:SetScript("OnMouseDown", function()
+        PlaySound("igMainMenuOptionCheckBoxOn")
+        LeafVE_AchTest.UI.titleCategoryFilter = this.categoryFilter
+        LeafVE_AchTest.UI:Refresh()
+      end)
+
+      table.insert(self.titleSummaryCatBars, barFrame)
+      titleCatIndex = titleCatIndex + 1
+    end
+  end
+
   self:Refresh()
   self:UpdateScrollThumb()
 end
@@ -6650,7 +7155,14 @@ function LeafVE_AchTest.UI:Refresh()
       if self.titleFrames[i] then self.titleFrames[i]:Hide() end
     end
   end
-  
+
+  -- Unconditional, not just inside the achievements/titles branches' own
+  -- else-cases -- switching straight from one Summary tab to Companions/
+  -- Mounts/Admin/the other list skips those branches entirely, so these
+  -- would otherwise stay shown on top of whatever view comes next.
+  if self.summaryFrame then self.summaryFrame:Hide() end
+  if self.titleSummaryFrame then self.titleSummaryFrame:Hide() end
+
   if self.scrollFrame then self.scrollFrame:SetVerticalScroll(0) end
   if self.scrollbar then self.scrollbar:SetValue(0) end
   
@@ -6698,7 +7210,24 @@ function LeafVE_AchTest.UI:Refresh()
         end
       end
     end
-    self:RefreshAchievements()
+    if self.selectedCategory == "Summary" then
+      if self.scrollFrame then self.scrollFrame:Hide() end
+      if self.scrollbar then self.scrollbar:Hide() end
+      if self.scrollUp then self.scrollUp:Hide() end
+      if self.scrollDown then self.scrollDown:Hide() end
+      if self.scrollTrack then self.scrollTrack:Hide() end
+      if self.scrollThumb then self.scrollThumb:Hide() end
+      if self.searchLabel then self.searchLabel:Hide() end
+      if self.searchBox then self.searchBox:Hide() end
+      if self.clearBtn then self.clearBtn:Hide() end
+      if self.summaryFrame then self.summaryFrame:Show() end
+      self:RefreshSummary()
+    else
+      if self.summaryFrame then self.summaryFrame:Hide() end
+      if self.scrollTrack then self.scrollTrack:Show() end
+      if self.scrollThumb then self.scrollThumb:Show() end
+      self:RefreshAchievements()
+    end
   elseif self.currentView == "companions" then
     if self.achTab then self.achTab:Enable() end
     if self.companionTab then self.companionTab:Disable() end
@@ -6846,7 +7375,24 @@ function LeafVE_AchTest.UI:Refresh()
         end
       end
     end
-    self:RefreshTitles()
+    if self.titleCategoryFilter == "Summary" then
+      if self.scrollFrame then self.scrollFrame:Hide() end
+      if self.scrollbar then self.scrollbar:Hide() end
+      if self.scrollUp then self.scrollUp:Hide() end
+      if self.scrollDown then self.scrollDown:Hide() end
+      if self.scrollTrack then self.scrollTrack:Hide() end
+      if self.scrollThumb then self.scrollThumb:Hide() end
+      if self.titleSearchLabel then self.titleSearchLabel:Hide() end
+      if self.titleSearchBox then self.titleSearchBox:Hide() end
+      if self.titleClearBtn then self.titleClearBtn:Hide() end
+      if self.titleSummaryFrame then self.titleSummaryFrame:Show() end
+      self:RefreshTitleSummary()
+    else
+      if self.titleSummaryFrame then self.titleSummaryFrame:Hide() end
+      if self.scrollTrack then self.scrollTrack:Show() end
+      if self.scrollThumb then self.scrollThumb:Show() end
+      self:RefreshTitles()
+    end
   end
   
   if self.scrollFrame and self.scrollbar then
@@ -7104,6 +7650,284 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
   self.visibleZoneThumbFrames = newlyVisibleZoneThumbs
 end
 
+-- Summary tab: the 5 most-recently-earned achievements, plus a progress
+-- bar per category. Both are clickable -- see JumpToAchievement below and
+-- the category bars' own OnMouseDown (set up in Build()).
+function LeafVE_AchTest.UI:RefreshSummary()
+  if not self.summaryFrame then return end
+  local me = ShortName(UnitName("player") or "")
+  local playerAchievements = LeafVE_AchTest:GetPlayerAchievements(me)
+
+  local recent = {}
+  for achID, rec in pairs(playerAchievements) do
+    local achData = ACHIEVEMENTS[achID]
+    if achData and achData.hidden ~= true then
+      table.insert(recent, {id = achID, data = achData, timestamp = rec.timestamp or 0})
+    end
+  end
+  table.sort(recent, function(a, b) return a.timestamp > b.timestamp end)
+
+  if self.summaryRecentRows then
+    for i = 1, table.getn(self.summaryRecentRows) do
+      local row = self.summaryRecentRows[i]
+      local entry = recent[i]
+      if entry then
+        row.achID = entry.id
+        row.achData = entry.data
+        row.achCompleted = true
+        row.achPlayerName = me
+        row.achTimestamp = entry.timestamp
+        row.name:SetText(entry.data.name)
+        -- Same completed-row colors the achievement list uses: red for
+        -- Legendary, cream everywhere else; points in the same gold hex.
+        if entry.data.category == "Legendary" then
+          row.name:SetTextColor(1, 0, 0)
+        else
+          row.name:SetTextColor(0.90, 0.88, 0.84)
+        end
+        row.points:SetText("|cFFFFD433"..entry.data.points.."|r")
+        row.dateText:SetText(date and date("%m/%d/%Y", entry.timestamp) or "")
+
+        -- Same mosaic-vs-icon and companion-scanned-icon handling as the
+        -- achievement row list (UpdateVisibleAchievements) and the toast
+        -- popup (AchPopup.StartNext).
+        local isZoneMosaic = entry.data.criteria_type == "explore_zone_live" and entry.data.criteria_overlays
+        if isZoneMosaic then
+          row.icon:Hide()
+          row.iconFrame:Hide()
+          LeafVE_AchTest.ZoneMapUI.LayoutThumbnail(row.iconMosaic, entry.data.criteria_overlays, entry.data.criteria_bounds, 22)
+          row.iconMosaic:Show()
+        else
+          row.iconMosaic:Hide()
+          row.icon:Show()
+          row.iconFrame:Show()
+          local rowIconTex = entry.data.icon
+          if entry.data.collectionType == "companion" and entry.data.companionType == "individual" then
+            local scanned = LeafVE_AchTest_DB and LeafVE_AchTest_DB.collections
+              and LeafVE_AchTest_DB.collections.companions
+              and LeafVE_AchTest_DB.collections.companions[entry.data.name]
+            if scanned and scanned.icon and scanned.icon ~= "" then
+              rowIconTex = scanned.icon
+            end
+          end
+          if not rowIconTex or rowIconTex == "" then
+            rowIconTex = "Interface\\Icons\\INV_Misc_QuestionMark"
+          end
+          row.icon:SetTexture(rowIconTex)
+        end
+        row:Show()
+      else
+        row:Hide()
+        if row.iconMosaic then row.iconMosaic:Hide() end
+      end
+    end
+  end
+  if self.summaryNoRecentText then
+    if table.getn(recent) == 0 then
+      self.summaryNoRecentText:Show()
+    else
+      self.summaryNoRecentText:Hide()
+    end
+  end
+
+  if self.summaryCatBars then
+    for _, barFrame in ipairs(self.summaryCatBars) do
+      local cat = barFrame.categoryFilter
+      local total, earned = 0, 0
+      for achID, achData in pairs(ACHIEVEMENTS) do
+        if achData.hidden ~= true and achData.category == cat then
+          total = total + 1
+          if playerAchievements[achID] then earned = earned + 1 end
+        end
+      end
+      barFrame.bar:SetMinMaxValues(0, total > 0 and total or 1)
+      barFrame.bar:SetValue(earned)
+      barFrame.barText:SetText(earned.." / "..total)
+    end
+  end
+end
+
+-- Switches to the achievement's own category and scrolls the list so it's
+-- the first visible row, then briefly highlights it. Used by the Summary
+-- tab's recent-achievements list; category bars just set selectedCategory
+-- directly (same as clicking a sidebar button) since there's no single row
+-- to jump to.
+function LeafVE_AchTest.UI:JumpToAchievement(achID, achData)
+  if not achID or not achData then return end
+  PlaySound("igMainMenuOptionCheckBoxOn")
+  self.selectedCategory = achData.category or "All"
+  self:Refresh()
+  if not self.currentAchList then return end
+  local idx = nil
+  for i, entry in ipairs(self.currentAchList) do
+    if entry.id == achID then idx = i break end
+  end
+  if not idx then return end
+  local target = (idx - 1) * ACH_ROW_H
+  local maxScroll = self:GetScrollMax()
+  if target > maxScroll then target = maxScroll end
+  if target < 0 then target = 0 end
+  if self.scrollFrame then self.scrollFrame:SetVerticalScroll(target) end
+  if self.scrollbar then self.scrollbar:SetValue(target) end
+  self:UpdateScrollThumb()
+  self:UpdateVisibleAchievements()
+  self:FlashAchievementRow(achID)
+end
+
+-- Brief highlight on whichever pooled row frame ends up displaying achID
+-- after a jump, so the destination is obvious rather than just "the list
+-- scrolled somewhere."
+function LeafVE_AchTest.UI:FlashAchievementRow(achID)
+  if not self.achievementFrames then return end
+  for i = 1, table.getn(self.achievementFrames) do
+    local frame = self.achievementFrames[i]
+    if frame and frame:IsShown() and frame.achData and frame.achData.id == achID then
+      frame.flashElapsed = 0
+      if frame.rowGlow then
+        frame.rowGlow:Show()
+        frame.rowGlow:SetAlpha(0)
+      end
+      frame:SetScript("OnUpdate", function()
+        this.flashElapsed = (this.flashElapsed or 0) + arg1
+        local FLASH_TIME = 3.5
+        local fadeStart = FLASH_TIME - 1.0
+        local pulse = 0.5 + math.sin(this.flashElapsed * 4) * 0.5
+        if this.flashElapsed > fadeStart then
+          pulse = pulse * (1 - (this.flashElapsed - fadeStart) / (FLASH_TIME - fadeStart))
+        end
+        if pulse < 0 then pulse = 0 end
+        this.rowBg:SetVertexColor(1 + pulse * 0.3, 1 + pulse * 0.1, 1 - pulse * 0.4, 1)
+        if this.rowGlow then this.rowGlow:SetAlpha(pulse * 0.6) end
+        if this.flashElapsed >= FLASH_TIME then
+          this.rowBg:SetVertexColor(1, 1, 1, 1)
+          if this.rowGlow then this.rowGlow:Hide() end
+          this:SetScript("OnUpdate", nil)
+        end
+      end)
+      break
+    end
+  end
+end
+
+-- Clicking a title row jumps to the achievement required to earn it, so
+-- players can see how to unlock a title straight from the Titles tab.
+function LeafVE_AchTest.UI:JumpToAchievementFromTitle(titleData)
+  if not titleData or not titleData.achievement then return end
+  local achData = ACHIEVEMENTS[titleData.achievement]
+  if not achData then return end
+  self.currentView = "achievements"
+  self:JumpToAchievement(titleData.achievement, achData)
+end
+
+-- Switches to the title's own category and scrolls the (non-virtualized,
+-- one frame per filtered title) title list so it's visible, then briefly
+-- highlights it. Mirrors JumpToAchievement.
+function LeafVE_AchTest.UI:JumpToTitle(titleData)
+  if not titleData then return end
+  PlaySound("igMainMenuOptionCheckBoxOn")
+  self.titleCategoryFilter = titleData.category or "All"
+  self:Refresh()
+  if not self.currentTitleList then return end
+  local idx = nil
+  for i, entry in ipairs(self.currentTitleList) do
+    if entry == titleData then idx = i break end
+  end
+  if not idx then return end
+  local target = (idx - 1) * 96
+  local maxScroll = self:GetScrollMax()
+  if target > maxScroll then target = maxScroll end
+  if target < 0 then target = 0 end
+  if self.scrollFrame then self.scrollFrame:SetVerticalScroll(target) end
+  if self.scrollbar then self.scrollbar:SetValue(target) end
+  self:UpdateScrollThumb()
+  if self.titleFrames then self:FlashTitleRow(self.titleFrames[idx]) end
+end
+
+-- Mirrors FlashAchievementRow, but title rows aren't pooled/virtualized
+-- (one frame per filtered title, positioned directly), so the target
+-- frame is already known by index rather than needing a search.
+function LeafVE_AchTest.UI:FlashTitleRow(frame)
+  if not frame then return end
+  frame.rowBg:SetVertexColor(1.3, 1.1, 0.6, 1)
+  frame.flashElapsed = 0
+  frame:SetScript("OnUpdate", function()
+    this.flashElapsed = (this.flashElapsed or 0) + arg1
+    if this.flashElapsed >= 1.2 then
+      this.rowBg:SetVertexColor(1, 1, 1, 1)
+      this:SetScript("OnUpdate", nil)
+    end
+  end)
+end
+
+-- Titles Summary tab: the 10 most-recently-earned titles (using the
+-- linked achievement's timestamp, since titles have no earned-record of
+-- their own -- see the "is there a date for titles" answer this mirrors),
+-- plus a progress bar per title category.
+function LeafVE_AchTest.UI:RefreshTitleSummary()
+  if not self.titleSummaryFrame then return end
+  local me = ShortName(UnitName("player") or "")
+  local playerAchievements = LeafVE_AchTest:GetPlayerAchievements(me)
+
+  local recent = {}
+  for _, titleData in ipairs(TITLES) do
+    if IsTitleUnlocked(me, titleData) and titleData.achievement then
+      local rec = playerAchievements[titleData.achievement]
+      if rec then
+        table.insert(recent, {data = titleData, timestamp = rec.timestamp or 0})
+      end
+    end
+  end
+  table.sort(recent, function(a, b) return a.timestamp > b.timestamp end)
+
+  if self.titleSummaryRecentRows then
+    for i = 1, table.getn(self.titleSummaryRecentRows) do
+      local row = self.titleSummaryRecentRows[i]
+      local entry = recent[i]
+      if entry then
+        local td = entry.data
+        local achData = ACHIEVEMENTS[td.achievement]
+        row.titleData = td
+        row.titleEarned = true
+        row.name:SetText(td.name)
+        if td.legendary then
+          row.name:SetTextColor(1, 0, 0)
+        else
+          row.name:SetTextColor(0.90, 0.88, 0.84)
+        end
+        row.points:SetText("|cFFFFD433"..(achData and achData.points or 0).."|r")
+        row.dateText:SetText(date and date("%m/%d/%Y", entry.timestamp) or "")
+        row.icon:SetTexture(td.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        row:Show()
+      else
+        row:Hide()
+      end
+    end
+  end
+  if self.titleSummaryNoRecentText then
+    if table.getn(recent) == 0 then
+      self.titleSummaryNoRecentText:Show()
+    else
+      self.titleSummaryNoRecentText:Hide()
+    end
+  end
+
+  if self.titleSummaryCatBars then
+    for _, barFrame in ipairs(self.titleSummaryCatBars) do
+      local cat = barFrame.categoryFilter
+      local total, earned = 0, 0
+      for _, titleData in ipairs(TITLES) do
+        if titleData.category == cat then
+          total = total + 1
+          if IsTitleUnlocked(me, titleData) then earned = earned + 1 end
+        end
+      end
+      barFrame.bar:SetMinMaxValues(0, total > 0 and total or 1)
+      barFrame.bar:SetValue(earned)
+      barFrame.barText:SetText(earned.." / "..total)
+    end
+  end
+end
+
 function LeafVE_AchTest.UI:RefreshTitles()
   if not self.scrollChild then return end
   local me = ShortName(UnitName("player") or "")
@@ -7138,7 +7962,29 @@ function LeafVE_AchTest.UI:RefreshTitles()
       end
     end
   end
-  
+
+  -- Earned titles first, most recently obtained first (using the linked
+  -- achievement's timestamp -- titles have no earned-record of their
+  -- own), same as the achievement list's own completed-first-by-recency
+  -- sort. Not-yet-earned titles are sorted alphabetically.
+  local playerAchievements = LeafVE_AchTest:GetPlayerAchievements(me)
+  table.sort(filteredTitles, function(a, b)
+    local aEarned = IsTitleUnlocked(me, a)
+    local bEarned = IsTitleUnlocked(me, b)
+    if aEarned and not bEarned then return true end
+    if not aEarned and bEarned then return false end
+    if aEarned and bEarned then
+      local aTs = (a.achievement and playerAchievements[a.achievement] and playerAchievements[a.achievement].timestamp) or 0
+      local bTs = (b.achievement and playerAchievements[b.achievement] and playerAchievements[b.achievement].timestamp) or 0
+      return aTs > bTs
+    end
+    return string.lower(a.name or "") < string.lower(b.name or "")
+  end)
+
+  -- Stored for JumpToTitle (Titles Summary tab's recent-titles list) to
+  -- find a title's row index without recomputing the filtered list.
+  self.currentTitleList = filteredTitles
+
   local yOffset = 0
   for i, titleData in ipairs(filteredTitles) do
     local frame = self.titleFrames[i]
@@ -7187,38 +8033,13 @@ function LeafVE_AchTest.UI:RefreshTitles()
       -- Tooltip
       frame:EnableMouse(true)
       frame:SetScript("OnEnter", function()
-        if not this.titleData then return end
-        local td = this.titleData
-        local achData = ACHIEVEMENTS[td.achievement]
-        GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-        GameTooltip:ClearLines()
-        if this.titleEarned then
-          GameTooltip:SetText(td.name, THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 1, true)
-          GameTooltip:AddLine("|cFF888888Title|r", 1, 1, 1)
-          if td.desc and td.desc ~= "" then
-            GameTooltip:AddLine(td.desc, 0.95, 0.95, 0.95, true)
-          end
-          if achData then
-            GameTooltip:AddLine("Requires: "..achData.name, 1, 1, 1, true)
-          end
-          GameTooltip:AddLine(" ", 1, 1, 1)
-          GameTooltip:AddLine("Earned", 0.5, 0.8, 0.5)
-        else
-          GameTooltip:SetText(td.name, 0.6, 0.6, 0.6, 1, true)
-          GameTooltip:AddLine("|cFF888888Title|r", 1, 1, 1)
-          if td.desc and td.desc ~= "" then
-            GameTooltip:AddLine(td.desc, 0.85, 0.85, 0.85, true)
-          end
-          if achData then
-            GameTooltip:AddLine("Requires: "..achData.name, 0.7, 0.7, 0.7, true)
-          end
-          GameTooltip:AddLine(" ", 1, 1, 1)
-          GameTooltip:AddLine("Not yet earned", 0.8, 0.4, 0.4)
-        end
-        GameTooltip:Show()
+        LeafVE_AchTest.UI:ShowTitleRowTooltip(this)
       end)
       frame:SetScript("OnLeave", function()
         GameTooltip:Hide()
+      end)
+      frame:SetScript("OnMouseDown", function()
+        LeafVE_AchTest.UI:JumpToAchievementFromTitle(this.titleData)
       end)
       table.insert(self.titleFrames, frame)
     end
@@ -7497,6 +8318,10 @@ ef:SetScript("OnEvent", function()
     lastResurrectRequester = nil
     lastResurrectRequestTime = 0
     LeafVE_AchTest.initialized = true
+    -- Silently request /played so the server's death/quest counter line
+    -- (Turtle WoW addition, caught above in CHAT_MSG_SYSTEM) calibrates
+    -- the tracked counters shortly after login.
+    if RequestTimePlayed then RequestTimePlayed() end
   end
   if event == "PLAYER_TARGET_CHANGED" then
     local tname = UnitName("target")
@@ -7525,7 +8350,7 @@ ef:SetScript("OnEvent", function()
   end
   if event == "PLAYER_MONEY" and LeafVE_AchTest.initialized then LeafVE_AchTest:CheckGoldAchievements() end
   if event == "GUILD_ROSTER_UPDATE" and LeafVE_AchTest.initialized then
-    LeafVE_AchTest:CheckGuildRankAchievements(true)
+    LeafVE_AchTest:CheckGuildRankAchievements(false)
   end
   if event == "UPDATE_FACTION" and LeafVE_AchTest.initialized then
     LeafVE_AchTest:CaptureReputationSnapshot(true)
@@ -7685,6 +8510,32 @@ ef:SetScript("OnEvent", function()
         RecordQuestTurnIn(me, completedQuestName)
       end
     end
+    -- Turtle WoW's server appends this line to the stock /played reply
+    -- (RequestTimePlayed, triggered silently at login -- see
+    -- PLAYER_ENTERING_WORLD below). It's a server-authoritative lifetime
+    -- total, so use it to calibrate/correct the client-tracked counters
+    -- the same way GetNumQuestsCompleted already does for quests -- never
+    -- let it regress a higher already-tracked value.
+    local deathCount, questCount = smatch(msg, "^Death counter: (%d+) | Quests completed: (%d+)")
+    if deathCount then
+      local me = ShortName(UnitName("player"))
+      if me then
+        deathCount = tonumber(deathCount)
+        questCount = tonumber(questCount)
+        local pc = LeafVE_AchTest_DB.progressCounters[me]
+        local trackedDeaths = (pc and pc.deaths) or 0
+        local trackedQuests = (pc and pc.quests) or 0
+        if deathCount > trackedDeaths then
+          SetCounter(me, "deaths", deathCount)
+          if deathCount >= 50  then LeafVE_AchTest:AwardAchievement("casual_deaths_50",  true) end
+          if deathCount >= 100 then LeafVE_AchTest:AwardAchievement("casual_deaths_100", true) end
+        end
+        if questCount > trackedQuests then
+          SetCounter(me, "quests", questCount)
+          LeafVE_AchTest:CheckQuestAchievements(true)
+        end
+      end
+    end
     local winner, loser = smatch(msg, "^(.-) has defeated (.+) in a duel$")
     if winner then
       local me = ShortName(UnitName("player"))
@@ -7768,6 +8619,21 @@ ef:SetScript("OnEvent", function()
       Debug("TRADE_CLOSED: not a completed trade (armed="..tostring(tradeArmed).." candidate="..tostring(tradeCandidate).." fired="..tostring(firedThisTrade)..")")
     end
     tradeArmed = false
+  end
+end)
+
+-- GUILD_ROSTER_UPDATE only fires in response to a GuildRoster() request, it is
+-- not pushed automatically when an officer changes your own rank while you're
+-- online. Poll GuildRoster() (throttled server-side to ~10s) so rank changes
+-- (e.g. demotions) are picked up and CheckGuildRankAchievements can re-run.
+LeafVE_AchTest.guildPollFrame = CreateFrame("Frame")
+LeafVE_AchTest.guildPollElapsed = 0
+LeafVE_AchTest.guildPollFrame:SetScript("OnUpdate", function()
+  if not LeafVE_AchTest.initialized then return end
+  LeafVE_AchTest.guildPollElapsed = LeafVE_AchTest.guildPollElapsed + arg1
+  if LeafVE_AchTest.guildPollElapsed >= 15 then
+    LeafVE_AchTest.guildPollElapsed = 0
+    if IsInGuild and IsInGuild() and GuildRoster then GuildRoster() end
   end
 end)
 
@@ -8311,12 +9177,12 @@ Print("Minimap button loaded!")
 -- (GetSubZoneText) so that both continent-level (Kalimdor/Eastern Kingdoms)
 -- and fine-grained (Elwynn Forest/Barrens) tracking work correctly.
 -- ---------------------------------------------------------------------------
-local zoneDiscFrame = CreateFrame("Frame")
-zoneDiscFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-zoneDiscFrame:RegisterEvent("ZONE_CHANGED")
-zoneDiscFrame:RegisterEvent("ZONE_CHANGED_INDOORS")
-zoneDiscFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-zoneDiscFrame:SetScript("OnEvent", function()
+LeafVE_AchTest.zoneDiscFrame = CreateFrame("Frame")
+LeafVE_AchTest.zoneDiscFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+LeafVE_AchTest.zoneDiscFrame:RegisterEvent("ZONE_CHANGED")
+LeafVE_AchTest.zoneDiscFrame:RegisterEvent("ZONE_CHANGED_INDOORS")
+LeafVE_AchTest.zoneDiscFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+LeafVE_AchTest.zoneDiscFrame:SetScript("OnEvent", function()
   -- Skip discovery while on a taxi/flight path; subzone transitions during
   -- flight should not count as explored for achievement purposes.
   if isOnTaxi or (UnitOnTaxi and UnitOnTaxi("player")) then return end
