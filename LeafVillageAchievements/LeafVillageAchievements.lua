@@ -2637,7 +2637,7 @@ function LeafVE_AchTest:CheckExplorationAchievements(silent, newlyDiscovered)
   end
 
   if self.CheckExploreCountAchievements then
-    self:CheckExploreCountAchievements()
+    self:CheckExploreCountAchievements(silent)
   end
 end
 
