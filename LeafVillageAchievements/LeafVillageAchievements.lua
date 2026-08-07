@@ -7279,7 +7279,18 @@ function LeafVE_AchTest.UI:GetScrollMax()
   if self.currentView == "mounts" or self.currentView == "companions" or self.currentView == "toys" then
     return 0
   end
-  local m = (self.scrollChild:GetHeight() or 0) - (self.scrollFrame:GetHeight() or 0)
+  -- scrollFrame's own height comes from its TOPLEFT/BOTTOMRIGHT anchors
+  -- (158/-12 insets on the fixed 660px-tall window, see Build() above),
+  -- not an explicit SetHeight -- so GetHeight() can still return 0 the
+  -- very first time this runs in a session, before the frame has been
+  -- laid out even once. That silently clamped every scroll target to 0,
+  -- which is why jumping to an achievement from a title link (right after
+  -- opening the window, before ever visiting the Achievements tab) landed
+  -- on the first row of the category instead of the actual target. Falls
+  -- back to the same 660-158-12=490 the anchors are meant to produce.
+  local viewportHeight = self.scrollFrame:GetHeight()
+  if not viewportHeight or viewportHeight <= 0 then viewportHeight = 490 end
+  local m = (self.scrollChild:GetHeight() or 0) - viewportHeight
   if m < 0 then m = 0 end
   return m
 end
@@ -7916,56 +7927,92 @@ function LeafVE_AchTest.UI:JumpToAchievement(achID, achData)
   PlaySound("igMainMenuOptionCheckBoxOn")
   self.selectedCategory = achData.category or "All"
   self:Refresh()
-  if not self.currentAchList then return end
-  local idx = nil
-  for i, entry in ipairs(self.currentAchList) do
-    if entry.id == achID then idx = i break end
-  end
-  if not idx then return end
-  local target = (idx - 1) * ACH_ROW_H
-  local maxScroll = self:GetScrollMax()
-  if target > maxScroll then target = maxScroll end
-  if target < 0 then target = 0 end
-  if self.scrollFrame then self.scrollFrame:SetVerticalScroll(target) end
-  if self.scrollbar then self.scrollbar:SetValue(target) end
-  self:UpdateScrollThumb()
-  self:UpdateVisibleAchievements()
-  self:FlashAchievementRow(achID)
+  if not self.scrollChild then return end
+  -- Deferred one OnUpdate tick: right after the window's first-ever
+  -- Refresh() in a session, scrollFrame:GetHeight() is still unreliable
+  -- (its height comes from anchors, not an explicit SetHeight, so it
+  -- hasn't been laid out yet) -- and Blizzard's own ScrollFrame internally
+  -- re-clamps SetVerticalScroll against a range it derives from that same
+  -- not-yet-laid-out height, regardless of how correct our own target math
+  -- is or how many times UpdateScrollChildRect gets called in the same
+  -- frame. That's what was landing the flash on row 1 (the clamp forced
+  -- the scroll to 0) instead of the real target on first load. Waiting one
+  -- tick lets WoW finish laying the frame out first, same fix as the
+  -- one-frame-late GetHeight() case GetScrollMax() falls back for.
+  self.scrollChild:SetScript("OnUpdate", function()
+    this:SetScript("OnUpdate", nil)
+    local ui = LeafVE_AchTest.UI
+    if not ui.currentAchList then return end
+    local idx = nil
+    for i, entry in ipairs(ui.currentAchList) do
+      if entry.id == achID then idx = i break end
+    end
+    if not idx then return end
+    local target = (idx - 1) * ACH_ROW_H
+    local maxScroll = ui:GetScrollMax()
+    if target > maxScroll then target = maxScroll end
+    if target < 0 then target = 0 end
+    if ui.scrollFrame then ui.scrollFrame:SetVerticalScroll(target) end
+    if ui.scrollbar then ui.scrollbar:SetValue(target) end
+    ui:UpdateScrollThumb()
+    ui:UpdateVisibleAchievements()
+    ui:FlashAchievementRow(achID)
+  end)
 end
 
 -- Brief highlight on whichever pooled row frame ends up displaying achID
 -- after a jump, so the destination is obvious rather than just "the list
 -- scrolled somewhere."
+-- Tracked by achievement ID rather than by pooled frame slot. Virtual
+-- scrolling recycles the same frame objects for whatever achievement
+-- scrolls into that slot -- attaching the pulse timer directly to a frame
+-- (the old approach) left it glowing on whatever achievement later ended
+-- up in that slot instead of following the actual target (or stopping)
+-- as the list scrolled. This re-checks every pooled frame each tick and
+-- only glows whichever one currently displays the flashing achievement,
+-- if any.
 function LeafVE_AchTest.UI:FlashAchievementRow(achID)
-  if not self.achievementFrames then return end
-  for i = 1, table.getn(self.achievementFrames) do
-    local frame = self.achievementFrames[i]
-    if frame and frame:IsShown() and frame.achData and frame.achData.id == achID then
-      frame.flashElapsed = 0
-      if frame.rowGlow then
-        frame.rowGlow:Show()
-        frame.rowGlow:SetAlpha(0)
-      end
-      frame:SetScript("OnUpdate", function()
-        this.flashElapsed = (this.flashElapsed or 0) + arg1
-        local FLASH_TIME = 3.5
-        local fadeStart = FLASH_TIME - 1.0
-        local pulse = 0.5 + math.sin(this.flashElapsed * 4) * 0.5
-        if this.flashElapsed > fadeStart then
-          pulse = pulse * (1 - (this.flashElapsed - fadeStart) / (FLASH_TIME - fadeStart))
-        end
-        if pulse < 0 then pulse = 0 end
-        this.rowBg:SetVertexColor(1 + pulse * 0.3, 1 + pulse * 0.1, 1 - pulse * 0.4, 1)
-        if this.rowGlow then this.rowGlow:SetAlpha(pulse * 0.6) end
-        if this.flashElapsed >= FLASH_TIME then
-          this.rowBg:SetVertexColor(1, 1, 1, 1)
-          if this.rowGlow then this.rowGlow:Hide() end
-          this:SetScript("OnUpdate", nil)
-        end
-      end)
-      break
+  if not self.scrollChild then return end
+  self.flashingAchID = achID
+  self.flashElapsed = 0
+  self.scrollChild:SetScript("OnUpdate", function()
+    local ui = LeafVE_AchTest.UI
+    if not ui.flashingAchID then
+      this:SetScript("OnUpdate", nil)
+      return
     end
-  end
+    ui.flashElapsed = (ui.flashElapsed or 0) + arg1
+    local FLASH_TIME = 3.5
+    local fadeStart = FLASH_TIME - 1.0
+    local elapsed = ui.flashElapsed
+    local pulse = 0.5 + math.sin(elapsed * 4) * 0.5
+    if elapsed > fadeStart then
+      pulse = pulse * (1 - (elapsed - fadeStart) / (FLASH_TIME - fadeStart))
+    end
+    if pulse < 0 then pulse = 0 end
+    local done = elapsed >= FLASH_TIME
+    if ui.achievementFrames then
+      for i = 1, table.getn(ui.achievementFrames) do
+        local frame = ui.achievementFrames[i]
+        if frame then
+          if not done and frame:IsShown() and frame.achData and frame.achData.id == ui.flashingAchID then
+            frame.rowBg:SetVertexColor(1 + pulse * 0.3, 1 + pulse * 0.1, 1 - pulse * 0.4, 1)
+            if frame.rowGlow then
+              frame.rowGlow:Show()
+              frame.rowGlow:SetAlpha(pulse * 0.6)
+            end
+          else
+            frame.rowBg:SetVertexColor(1, 1, 1, 1)
+            if frame.rowGlow then frame.rowGlow:Hide() end
+          end
+        end
+      end
+    end
+    if done then
+      ui.flashingAchID = nil
+      this:SetScript("OnUpdate", nil)
+    end
+  end)
 end
 
 -- Clicking a title row jumps to the achievement required to earn it, so
