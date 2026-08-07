@@ -812,7 +812,7 @@ local ACHIEVEMENTS = {
   casual_mount_60={id="casual_mount_60",name="First Mount",desc="Obtain your first mount",category="Casual",points=10,icon="Interface\\Icons\\Ability_Mount_Raptor"},
   casual_hearthstone_use={id="casual_hearthstone_use",name="Frequent Traveler",desc="Use your hearthstone 50 times",category="Casual",points=10,icon="Interface\\Icons\\INV_Misc_Rune_01"},
   casual_guild_join={id="casual_guild_join",name="Guild Member",desc="Join a guild",category="Casual",points=5,icon="Interface\\Icons\\INV_Shirt_GuildTabard_01"},
-  guild_rank_member_born={id="guild_rank_member_born",name="Member: Born",desc="Attain the guild rank of Member: Born in The Ashen Banner.",category="Guild",points=5,icon="Interface\\Icons\\INV_Shirt_GuildTabard_01"},
+  guild_rank_member_born={id="guild_rank_member_born",name="Born",desc="Attain the guild rank of Born in The Ashen Banner.",category="Guild",points=5,icon="Interface\\Icons\\INV_Shirt_GuildTabard_01"},
   guild_rank_flamebound={id="guild_rank_flamebound",name="Flamebound",desc="Attain the guild rank of Flamebound in The Ashen Banner.",category="Guild",points=10,icon="Interface\\Icons\\Spell_Fire_Immolation"},
   guild_rank_oath_captain={id="guild_rank_oath_captain",name="Oath Captain",desc="Attain the guild rank of Oath Captain in The Ashen Banner.",category="Guild",points=20,icon="Interface\\Icons\\INV_Sword_62"},
   guild_rank_banner_warden={id="guild_rank_banner_warden",name="Banner Warden",desc="Attain the guild rank of Banner Warden in The Ashen Banner.",category="Guild",points=35,icon="Interface\\Icons\\INV_BannerPVP_02"},
@@ -904,7 +904,7 @@ local TITLES = {
   {id="title_elder",name="the Elder",achievement="lvl_60",prefix=false,category="Leveling",icon="Interface\\Icons\\Spell_Holy_BlessingOfStrength"},
 
   -- Guild Rank Titles
-  {id="title_member_born",name="Member: Born",chatName="Born",achievement="guild_rank_member_born",prefix=true,category="Guild",icon="Interface\\Icons\\INV_Shirt_GuildTabard_01",guild=true,desc="A new ember of The Ashen Banner, beginning their path beneath its flame and oath."},
+  {id="title_member_born",name="Born",chatName="Born",achievement="guild_rank_member_born",prefix=true,category="Guild",icon="Interface\\Icons\\INV_Shirt_GuildTabard_01",guild=true,desc="A new ember of The Ashen Banner, beginning their path beneath its flame and oath."},
   {id="title_flamebound",name="Flamebound",chatName="Bound",achievement="guild_rank_flamebound",prefix=true,category="Guild",icon="Interface\\Icons\\Spell_Fire_Immolation",guild=true,desc="A proven warrior bound to the Banner's flame through loyalty, skill, and battle."},
   {id="title_oath_captain",name="Oath Captain",chatName="Captain",achievement="guild_rank_oath_captain",prefix=true,category="Guild",icon="Interface\\Icons\\INV_Sword_62",guild=true,desc="Keeper of class discipline and raid readiness, leading their sworn allies by example."},
   {id="title_banner_warden",name="Banner Warden",chatName="Warden",achievement="guild_rank_banner_warden",prefix=true,category="Guild",icon="Interface\\Icons\\INV_BannerPVP_02",guild=true,desc="Protector of the Banner's order, enforcing standards and supporting the guild's members."},
@@ -1015,7 +1015,7 @@ local TITLES = {
   -- Casual Titles
   {id="title_loremaster",name="Loremaster",achievement="casual_quest_1000",prefix=false,category="Casual",icon="Interface\\Icons\\INV_Misc_Book_09"},
   {id="title_angler",name="Angler",achievement="casual_fish_1000",prefix=false,category="Casual",icon="Interface\\Icons\\Trade_Fishing"},
-  {id="title_pet_collector",name="Handler",chatName="Handler",achievement="casual_pet_fanatic",prefix=false,category="Companions",icon="Interface\\Icons\\INV_Misc_Toy_07",desc="Awarded for collecting 25 Turtle WoW companions."},
+  {id="title_pet_collector",name="Handler",chatName="Handler",achievement="casual_pet_fanatic",prefix=false,category="Companions",icon="Interface\\Icons\\Ability_Hunter_BeastCall",desc="Awarded for collecting 25 Turtle WoW companions."},
   {id="title_banker",name="the Banker",achievement="gold_5000",prefix=false,category="Casual",icon="Interface\\Icons\\INV_Misc_Coin_17"},
   {id="title_death_prone",name="Doomed",achievement="casual_deaths_100",prefix=false,category="Casual",icon="Interface\\Icons\\Spell_Shadow_DeathScream"},
   {id="title_clumsy",name="the Clumsy",achievement="casual_fall_death",prefix=false,category="Casual",icon="Interface\\Icons\\Ability_Rogue_FeintedStrike"},
@@ -2912,6 +2912,39 @@ function LeafVE_AchTest.AchPopup.Build()
   return popup
 end
 
+-- Hung off LeafVE_AchTest rather than new top-level locals -- this file is
+-- already at Lua's 200-local-per-chunk ceiling for its main chunk.
+LeafVE_AchTest.COLLECTION_ICON_DB_KEY = { companion = "companions", toy = "toys", mount = "mounts" }
+LeafVE_AchTest.COLLECTION_ICON_SUBTYPE_FIELD = { companion = "companionType", toy = "toyType", mount = "mountType" }
+
+-- Companion/toy achievements are registered with a generic placeholder icon
+-- (their data-file catalogs have no per-item icon field); mount achievements
+-- start with a real per-mount icon from the catalog, but it's shared across
+-- a whole family (e.g. every mechanostrider looks the same) until the exact
+-- mount is collected. In all three cases, prefer (in order): the icon
+-- scanned out of the player's own spellbook (LeafVE_AchTest_DB.collections.
+-- mounts/companions/toys, only populated once collected), then the item's
+-- real icon looked up by itemID via the Collections module (accurate even
+-- before collection), then whatever's already on the achievement
+-- definition. Used by the toast popup, achievement row list, and the
+-- Summary tab's recent-achievements list so all three stay consistent.
+function LeafVE_AchTest.ResolveMissingCollectionIcon(achData)
+  if not achData then return nil end
+  local dbKey = LeafVE_AchTest.COLLECTION_ICON_DB_KEY[achData.collectionType]
+  local subtypeField = dbKey and LeafVE_AchTest.COLLECTION_ICON_SUBTYPE_FIELD[achData.collectionType]
+  if dbKey and (not subtypeField or achData[subtypeField] == "individual") then
+    local scanned = LeafVE_AchTest_DB and LeafVE_AchTest_DB.collections
+      and LeafVE_AchTest_DB.collections[dbKey]
+      and LeafVE_AchTest_DB.collections[dbKey][achData.name]
+    if scanned and scanned.icon and scanned.icon ~= "" then return scanned.icon end
+    if achData.itemID and LeafVE_AchTest.Collections and LeafVE_AchTest.Collections.GetItemIconForAchievement then
+      local itemIcon = LeafVE_AchTest.Collections.GetItemIconForAchievement(achData.itemID)
+      if itemIcon and itemIcon ~= "" then return itemIcon end
+    end
+  end
+  return achData.icon
+end
+
 function LeafVE_AchTest.AchPopup.StartNext()
   local achievement = table.remove(LeafVE_AchTest.AchPopup.queue, 1)
   if not achievement then
@@ -2933,19 +2966,7 @@ function LeafVE_AchTest.AchPopup.StartNext()
     popup.iconMosaic:Show()
   else
     popup.iconMosaic:Hide()
-    local popupIconTex = achievement.icon
-    -- Same fallback as the achievement row: companion achievements carry
-    -- a generic placeholder icon, so prefer the real one scanned out of
-    -- the player's spellbook (LeafVE_AchTest_DB.collections.companions)
-    -- when it's available.
-    if achievement.collectionType == "companion" and achievement.companionType == "individual" then
-      local scanned = LeafVE_AchTest_DB and LeafVE_AchTest_DB.collections
-        and LeafVE_AchTest_DB.collections.companions
-        and LeafVE_AchTest_DB.collections.companions[achievement.name]
-      if scanned and scanned.icon and scanned.icon ~= "" then
-        popupIconTex = scanned.icon
-      end
-    end
+    local popupIconTex = LeafVE_AchTest.ResolveMissingCollectionIcon(achievement)
     if not popupIconTex or popupIconTex == "" then
       popupIconTex = "Interface\\Icons\\INV_Misc_QuestionMark"
     end
@@ -5720,8 +5741,19 @@ function LeafVE_AchTest.UI:Build()
   end)
   self.titlesTab = titlesTab
 
+  local toyTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  toyTab:SetPoint("LEFT", titlesTab, "RIGHT", 5, 0)
+  toyTab:SetWidth(65)
+  toyTab:SetHeight(28)
+  toyTab:SetText("Toys")
+  toyTab:SetScript("OnClick", function()
+    LeafVE_AchTest.UI.currentView = "toys"
+    LeafVE_AchTest.UI:Refresh()
+  end)
+  self.toyTab = toyTab
+
   local adminTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  adminTab:SetPoint("LEFT", titlesTab, "RIGHT", 5, 0)
+  adminTab:SetPoint("LEFT", toyTab, "RIGHT", 5, 0)
   adminTab:SetWidth(60)
   adminTab:SetHeight(28)
   adminTab:SetText("Admin")
@@ -6081,10 +6113,14 @@ function LeafVE_AchTest.UI:Build()
   end
 
   -- â”€â”€ Left sidebar: category navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  -- Sidebar is narrower than the 158px gap it sits in (window edge to the
+  -- content area's own TOPLEFT at x=158) and centered within that gap --
+  -- 18px on both sides -- rather than pinned flush to the window edge with
+  -- the leftover space dumped entirely on the content side.
   local sidebarFrame = CreateFrame("Frame", nil, f)
-  sidebarFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -110)
-  sidebarFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 10)
-  sidebarFrame:SetWidth(140)
+  sidebarFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -110)
+  sidebarFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 18, 10)
+  sidebarFrame:SetWidth(122)
   sidebarFrame:SetBackdrop({
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 8,
@@ -6102,81 +6138,134 @@ function LeafVE_AchTest.UI:Build()
   sidebarFrame.bg = sidebarBg
   self.sidebarFrame = sidebarFrame
 
-  -- Ordered list of categories shown in the sidebar
+  -- Ordered list of categories shown in the sidebar, grouped under small
+  -- section headers with dividers between groups instead of one flat wall
+  -- of 22 identical buttons -- Summary/All are pinned above the first
+  -- divider since they're views, not real achievement categories.
   local SIDEBAR_CATS = {
-    {display="Summary",        filter="Summary"},
-    {display="All",            filter="All"},
-    {display="Leveling",       filter="Leveling"},
-    {display="Quests",         filter="Quests"},
-    {display="Professions",    filter="Professions"},
-    {display="Skills",         filter="Skills"},
-    {display="Dungeons",       filter="Dungeons"},
-    {display="Raids",          filter="Raids"},
-    {display="Exploration",    filter="Exploration"},
-    {display="PvP",            filter="PvP"},
-    {display="Gold",           filter="Gold"},
-    {display="Elite",          filter="Elite"},
-    {display="Casual",         filter="Casual"},
-    {display="Mounts",         filter="Mounts"},
-    {display="Companions",     filter="Companions"},
-    {display="Roleplay",       filter="Roleplay"},
-    {display="Kills",          filter="Kills"},
-    {display="Identity",       filter="Identity"},
-    {display="Reputation",     filter="Reputation"},
-    {display="Legendary",      filter="Legendary"},
+    {type="cat",    display="Summary",     filter="Summary"},
+    {type="cat",    display="All",         filter="All"},
+    {type="divider"},
+    {type="header", display="Character"},
+    {type="cat",    display="Leveling",    filter="Leveling"},
+    {type="cat",    display="Professions", filter="Professions"},
+    {type="cat",    display="Skills",      filter="Skills"},
+    {type="cat",    display="Identity",    filter="Identity"},
+    {type="divider"},
+    {type="header", display="Content"},
+    {type="cat",    display="Quests",      filter="Quests"},
+    {type="cat",    display="Dungeons",    filter="Dungeons"},
+    {type="cat",    display="Raids",       filter="Raids"},
+    {type="cat",    display="Exploration", filter="Exploration"},
+    {type="cat",    display="PvP",         filter="PvP"},
+    {type="divider"},
+    {type="header", display="Collections"},
+    {type="cat",    display="Mounts",      filter="Mounts"},
+    {type="cat",    display="Companions",  filter="Companions"},
+    {type="cat",    display="Toys",        filter="Toys"},
+    {type="divider"},
+    {type="header", display="Guild & Community"},
+    {type="cat",    display="Guild",       filter="Guild"},
+    {type="cat",    display="Roleplay",    filter="Roleplay"},
+    {type="cat",    display="Reputation",  filter="Reputation"},
+    {type="divider"},
+    {type="header", display="Milestones"},
+    {type="cat",    display="Gold",        filter="Gold"},
+    {type="cat",    display="Elite",       filter="Elite"},
+    {type="cat",    display="Casual",      filter="Casual"},
+    {type="cat",    display="Kills",       filter="Kills"},
+    {type="cat",    display="Legendary",   filter="Legendary"},
   }
   self.categoryButtons = {}
-  for i, cat in ipairs(SIDEBAR_CATS) do
-    local filterVal = cat.filter
-    local btn = CreateFrame("Frame", nil, sidebarFrame)
-    btn:SetPoint("TOPLEFT", sidebarFrame, "TOPLEFT", 4, -(i-1)*27 - 4)
-    btn:SetWidth(132)
-    btn:SetHeight(24)
-    btn:EnableMouse(true)
-    btn:SetBackdrop({
-      bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-      tile = true, tileSize = 8,
-      insets = {left=2, right=2, top=2, bottom=2},
-    })
-    btn:SetBackdropColor(0, 0, 0, 0)
-    local lbl = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    lbl:SetAllPoints(btn)
-    lbl:SetJustifyH("CENTER")
-    lbl:SetText(cat.display)
-    lbl:SetTextColor(0.92, 0.78, 0.26)
-    btn.label     = lbl
-    btn.filterValue = filterVal
-    local hi = btn:CreateTexture(nil, "BACKGROUND")
-    hi:SetAllPoints(btn)
-    hi:SetTexture(TEX.categoryHi)
-    hi:SetVertexColor(1, 1, 1, 0.70)
-    hi:Hide()
-    btn.highlight = hi
-    btn:SetScript("OnMouseDown", function()
-      PlaySound("igMainMenuOptionCheckBoxOn")
-      LeafVE_AchTest.UI.selectedCategory = this.filterValue
-      LeafVE_AchTest.UI:Refresh()
-    end)
-    btn:SetScript("OnEnter", function()
-      if this.highlight then
-        this.highlight:SetVertexColor(1, 1, 1, 0.82)
-        this.highlight:Show()
-      end
-      if this.label then this.label:SetTextColor(1, 1, 1) end
-    end)
-    btn:SetScript("OnLeave", function()
-      if this.filterValue ~= LeafVE_AchTest.UI.selectedCategory then
-        if this.highlight then this.highlight:Hide() end
-        if this.label then this.label:SetTextColor(0.92, 0.78, 0.26) end
-      else
-        if this.highlight then
-          this.highlight:SetVertexColor(1, 1, 1, 0.88)
-          this.highlight:Show()
+  -- Row heights are derived from the sidebar's own fixed height
+  -- (SetHeight(660) on the window, minus the -110/+10 anchor insets below
+  -- = 540px of usable space) rather than a fixed 27px-per-row assumption,
+  -- which was tuned for exactly 20 flat categories and silently overflowed
+  -- past the bottom of the sidebar the moment a 21st was added -- growing
+  -- the window to compensate is the wrong fix, the sidebar should always
+  -- fit within the window's existing fixed size. Headers/dividers are
+  -- given proportionally less room than a full category row (weights
+  -- below) since they carry a lot less visual content.
+  local SIDEBAR_AVAILABLE_HEIGHT = 540
+  local ROW_WEIGHT = { cat = 1.0, header = 0.8, divider = 0.45 }
+  local totalWeight = 0
+  for _, cat in ipairs(SIDEBAR_CATS) do
+    totalWeight = totalWeight + (ROW_WEIGHT[cat.type] or 1.0)
+  end
+  local unitHeight = (SIDEBAR_AVAILABLE_HEIGHT - 4) / math.max(totalWeight, 1)
+  if unitHeight > 27 then unitHeight = 27 end
+  local catBtnHeight = unitHeight * ROW_WEIGHT.cat
+  if catBtnHeight > 24 then catBtnHeight = 24 end
+  if catBtnHeight < 14 then catBtnHeight = 14 end
+  local headerHeight = unitHeight * ROW_WEIGHT.header
+  if headerHeight < 12 then headerHeight = 12 end
+  local dividerHeight = unitHeight * ROW_WEIGHT.divider
+  if dividerHeight < 6 then dividerHeight = 6 end
+
+  local sidebarY = -4
+  for _, cat in ipairs(SIDEBAR_CATS) do
+    if cat.type == "divider" then
+      local line = sidebarFrame:CreateTexture(nil, "ARTWORK")
+      line:SetPoint("TOPLEFT", sidebarFrame, "TOPLEFT", 10, sidebarY - dividerHeight/2)
+      line:SetPoint("TOPRIGHT", sidebarFrame, "TOPRIGHT", -10, sidebarY - dividerHeight/2)
+      line:SetHeight(1)
+      line:SetTexture("Interface\\Buttons\\WHITE8x8")
+      line:SetVertexColor(THEME.border[1], THEME.border[2], THEME.border[3], 0.9)
+      sidebarY = sidebarY - dividerHeight
+    elseif cat.type == "header" then
+      local hdr = sidebarFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      hdr:SetPoint("TOPLEFT", sidebarFrame, "TOPLEFT", 10, sidebarY)
+      hdr:SetWidth(104)
+      hdr:SetJustifyH("LEFT")
+      hdr:SetText(string.upper(cat.display))
+      hdr:SetTextColor(0.60, 0.52, 0.32)
+      sidebarY = sidebarY - headerHeight
+    else
+      local filterVal = cat.filter
+      local btn = CreateFrame("Frame", nil, sidebarFrame)
+      btn:SetPoint("TOPLEFT", sidebarFrame, "TOPLEFT", 6, sidebarY)
+      btn:SetWidth(110)
+      btn:SetHeight(catBtnHeight)
+      btn:EnableMouse(true)
+      local lbl = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      lbl:SetPoint("LEFT", btn, "LEFT", 8, 0)
+      lbl:SetWidth(100)
+      lbl:SetJustifyH("LEFT")
+      lbl:SetText(cat.display)
+      lbl:SetTextColor(0.92, 0.78, 0.26)
+      btn.label     = lbl
+      btn.filterValue = filterVal
+      -- Same hover treatment as the Companions collection-tab sidebar
+      -- (ABC:EnsureCompanionSidebar in LeafVillageAchievementsCollections.lua):
+      -- a full-row amber UI-Listbox-Highlight, shown/hidden rather than
+      -- alpha-animated, with rust-orange text for the selected row.
+      local hi = btn:CreateTexture(nil, "ARTWORK")
+      hi:SetAllPoints(btn)
+      hi:SetTexture("Interface\\Buttons\\UI-Listbox-Highlight")
+      hi:SetVertexColor(0.72, 0.28, 0.08, 0.65)
+      hi:Hide()
+      btn.highlight = hi
+      btn:SetScript("OnMouseDown", function()
+        PlaySound("igMainMenuOptionCheckBoxOn")
+        LeafVE_AchTest.UI.selectedCategory = this.filterValue
+        LeafVE_AchTest.UI:Refresh()
+      end)
+      btn:SetScript("OnEnter", function()
+        if this.highlight then this.highlight:Show() end
+        if this.label then this.label:SetTextColor(1, 1, 1) end
+      end)
+      btn:SetScript("OnLeave", function()
+        if this.filterValue ~= LeafVE_AchTest.UI.selectedCategory then
+          if this.highlight then this.highlight:Hide() end
+          if this.label then this.label:SetTextColor(0.92, 0.78, 0.26) end
+        else
+          if this.highlight then this.highlight:Show() end
+          if this.label then this.label:SetTextColor(1.0, 0.45, 0.18) end
         end
-        if this.label then this.label:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3]) end
-      end
-    end)
-    table.insert(self.categoryButtons, btn)
+      end)
+      table.insert(self.categoryButtons, btn)
+      sidebarY = sidebarY - catBtnHeight
+    end
   end
 
   local companionSidebarFrame = CreateFrame("Frame", nil, f)
@@ -6447,6 +6536,7 @@ function LeafVE_AchTest.UI:Build()
   LeafVE_SkinAshenButton(achTab)
   LeafVE_SkinAshenButton(companionTab)
   LeafVE_SkinAshenButton(mountsTab)
+  LeafVE_SkinAshenButton(toyTab)
   LeafVE_SkinAshenButton(titlesTab)
   LeafVE_SkinAshenButton(adminTab)
   LeafVE_SkinAshenButton(awardBtn)
@@ -6456,9 +6546,9 @@ function LeafVE_AchTest.UI:Build()
 
   -- â”€â”€ Left sidebar for title category navigation (same layout as achievement sidebar) â”€â”€
   local titleSidebarFrame = CreateFrame("Frame", nil, f)
-  titleSidebarFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -110)
-  titleSidebarFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 10)
-  titleSidebarFrame:SetWidth(140)
+  titleSidebarFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -110)
+  titleSidebarFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 18, 10)
+  titleSidebarFrame:SetWidth(122)
   titleSidebarFrame:SetBackdrop({
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 8,
@@ -6476,77 +6566,126 @@ function LeafVE_AchTest.UI:Build()
   titleSidebarFrame:Hide()
   self.titleSidebarFrame = titleSidebarFrame
 
+  -- Same grouped/flattened treatment as the achievements sidebar (see
+  -- SIDEBAR_CATS above) -- Summary/All/Obtained pinned as views, the rest
+  -- clustered under small section headers with dividers between groups.
   local TITLE_SIDEBAR_CATS = {
-    {display="Summary",      filter="Summary"},
-    {display="All",          filter="All"},
-    {display="Obtained",     filter="Obtained"},
-    {display="Leveling",     filter="Leveling"},
-    {display="Raids",        filter="Raids"},
-    {display="Dungeons",     filter="Dungeons"},
-    {display="PvP",          filter="PvP"},
-    {display="Professions",  filter="Professions"},
-    {display="Elite",        filter="Elite"},
-    {display="Gold",         filter="Gold"},
-    {display="Exploration",  filter="Exploration"},
-    {display="Casual",       filter="Casual"},
-    {display="Companions",   filter="Companions"},
-    {display="Roleplay",     filter="Roleplay"},
-    {display="Quests",       filter="Quests"},
-    {display="Guild",        filter="Guild"},
-    {display="Legendary",    filter="Legendary"},
+    {type="cat",    display="Summary",     filter="Summary"},
+    {type="cat",    display="All",         filter="All"},
+    {type="cat",    display="Obtained",    filter="Obtained"},
+    {type="divider"},
+    {type="header", display="Character"},
+    {type="cat",    display="Leveling",    filter="Leveling"},
+    {type="cat",    display="Professions", filter="Professions"},
+    {type="divider"},
+    {type="header", display="Content"},
+    {type="cat",    display="Quests",      filter="Quests"},
+    {type="cat",    display="Dungeons",    filter="Dungeons"},
+    {type="cat",    display="Raids",       filter="Raids"},
+    {type="cat",    display="Exploration", filter="Exploration"},
+    {type="cat",    display="PvP",         filter="PvP"},
+    {type="divider"},
+    {type="header", display="Collections"},
+    {type="cat",    display="Mounts",      filter="Mounts"},
+    {type="cat",    display="Companions",  filter="Companions"},
+    {type="cat",    display="Toys",        filter="Toys"},
+    {type="divider"},
+    {type="header", display="Guild & Community"},
+    {type="cat",    display="Guild",       filter="Guild"},
+    {type="cat",    display="Roleplay",    filter="Roleplay"},
+    {type="divider"},
+    {type="header", display="Milestones"},
+    {type="cat",    display="Gold",        filter="Gold"},
+    {type="cat",    display="Elite",       filter="Elite"},
+    {type="cat",    display="Casual",      filter="Casual"},
+    {type="cat",    display="Legendary",   filter="Legendary"},
   }
   self.titleCategoryButtons = {}
-  for i, cat in ipairs(TITLE_SIDEBAR_CATS) do
-    local filterVal = cat.filter
-    local btn = CreateFrame("Frame", nil, titleSidebarFrame)
-    btn:SetPoint("TOPLEFT", titleSidebarFrame, "TOPLEFT", 4, -(i-1)*27 - 4)
-    btn:SetWidth(132)
-    btn:SetHeight(24)
-    btn:EnableMouse(true)
-    btn:SetBackdrop({
-      bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-      tile = true, tileSize = 8,
-      insets = {left=2, right=2, top=2, bottom=2},
-    })
-    btn:SetBackdropColor(0, 0, 0, 0)
-    local lbl = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    lbl:SetAllPoints(btn)
-    lbl:SetJustifyH("CENTER")
-    lbl:SetText(cat.display)
-    lbl:SetTextColor(0.92, 0.78, 0.26)
-    btn.label = lbl
-    btn.filterValue = filterVal
-    local hi = btn:CreateTexture(nil, "BACKGROUND")
-    hi:SetAllPoints(btn)
-    hi:SetTexture(TEX.categoryHi)
-    hi:SetVertexColor(1, 1, 1, 0.70)
-    hi:Hide()
-    btn.highlight = hi
-    btn:SetScript("OnMouseDown", function()
-      PlaySound("igMainMenuOptionCheckBoxOn")
-      LeafVE_AchTest.UI.titleCategoryFilter = this.filterValue
-      LeafVE_AchTest.UI:Refresh()
-    end)
-    btn:SetScript("OnEnter", function()
-      if this.highlight then
-        this.highlight:SetVertexColor(1, 1, 1, 0.82)
-        this.highlight:Show()
-      end
-      if this.label then this.label:SetTextColor(1, 1, 1) end
-    end)
-    btn:SetScript("OnLeave", function()
-      if this.filterValue ~= LeafVE_AchTest.UI.titleCategoryFilter then
-        if this.highlight then this.highlight:Hide() end
-        if this.label then this.label:SetTextColor(0.92, 0.78, 0.26) end
-      else
-        if this.highlight then
-          this.highlight:SetVertexColor(1, 1, 1, 0.88)
-          this.highlight:Show()
+  -- Same weighted-height math as the achievements sidebar, kept as its own
+  -- copy (matching how the companion/mount/toy sidebars are each their own
+  -- block too) rather than a shared helper, since each sidebar's frame and
+  -- filter state are locals scoped to this Build() call.
+  local TITLE_SIDEBAR_AVAILABLE_HEIGHT = 540
+  local TITLE_ROW_WEIGHT = { cat = 1.0, header = 0.8, divider = 0.45 }
+  local titleTotalWeight = 0
+  for _, cat in ipairs(TITLE_SIDEBAR_CATS) do
+    titleTotalWeight = titleTotalWeight + (TITLE_ROW_WEIGHT[cat.type] or 1.0)
+  end
+  local titleUnitHeight = (TITLE_SIDEBAR_AVAILABLE_HEIGHT - 4) / math.max(titleTotalWeight, 1)
+  if titleUnitHeight > 27 then titleUnitHeight = 27 end
+  local titleCatBtnHeight = titleUnitHeight * TITLE_ROW_WEIGHT.cat
+  if titleCatBtnHeight > 24 then titleCatBtnHeight = 24 end
+  if titleCatBtnHeight < 14 then titleCatBtnHeight = 14 end
+  local titleHeaderHeight = titleUnitHeight * TITLE_ROW_WEIGHT.header
+  if titleHeaderHeight < 12 then titleHeaderHeight = 12 end
+  local titleDividerHeight = titleUnitHeight * TITLE_ROW_WEIGHT.divider
+  if titleDividerHeight < 6 then titleDividerHeight = 6 end
+
+  local titleSidebarY = -4
+  for _, cat in ipairs(TITLE_SIDEBAR_CATS) do
+    if cat.type == "divider" then
+      local line = titleSidebarFrame:CreateTexture(nil, "ARTWORK")
+      line:SetPoint("TOPLEFT", titleSidebarFrame, "TOPLEFT", 10, titleSidebarY - titleDividerHeight/2)
+      line:SetPoint("TOPRIGHT", titleSidebarFrame, "TOPRIGHT", -10, titleSidebarY - titleDividerHeight/2)
+      line:SetHeight(1)
+      line:SetTexture("Interface\\Buttons\\WHITE8x8")
+      line:SetVertexColor(THEME.border[1], THEME.border[2], THEME.border[3], 0.9)
+      titleSidebarY = titleSidebarY - titleDividerHeight
+    elseif cat.type == "header" then
+      local hdr = titleSidebarFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      hdr:SetPoint("TOPLEFT", titleSidebarFrame, "TOPLEFT", 10, titleSidebarY)
+      hdr:SetWidth(104)
+      hdr:SetJustifyH("LEFT")
+      hdr:SetText(string.upper(cat.display))
+      hdr:SetTextColor(0.60, 0.52, 0.32)
+      titleSidebarY = titleSidebarY - titleHeaderHeight
+    else
+      local filterVal = cat.filter
+      local btn = CreateFrame("Frame", nil, titleSidebarFrame)
+      btn:SetPoint("TOPLEFT", titleSidebarFrame, "TOPLEFT", 6, titleSidebarY)
+      btn:SetWidth(110)
+      btn:SetHeight(titleCatBtnHeight)
+      btn:EnableMouse(true)
+      local lbl = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+      lbl:SetPoint("LEFT", btn, "LEFT", 8, 0)
+      lbl:SetWidth(100)
+      lbl:SetJustifyH("LEFT")
+      lbl:SetText(cat.display)
+      lbl:SetTextColor(0.92, 0.78, 0.26)
+      btn.label = lbl
+      btn.filterValue = filterVal
+      -- Same hover treatment as the Companions collection-tab sidebar
+      -- (ABC:EnsureCompanionSidebar in LeafVillageAchievementsCollections.lua)
+      -- and the achievements sidebar above: a full-row amber
+      -- UI-Listbox-Highlight, shown/hidden rather than alpha-animated, with
+      -- rust-orange text for the selected row.
+      local hi = btn:CreateTexture(nil, "ARTWORK")
+      hi:SetAllPoints(btn)
+      hi:SetTexture("Interface\\Buttons\\UI-Listbox-Highlight")
+      hi:SetVertexColor(0.72, 0.28, 0.08, 0.65)
+      hi:Hide()
+      btn.highlight = hi
+      btn:SetScript("OnMouseDown", function()
+        PlaySound("igMainMenuOptionCheckBoxOn")
+        LeafVE_AchTest.UI.titleCategoryFilter = this.filterValue
+        LeafVE_AchTest.UI:Refresh()
+      end)
+      btn:SetScript("OnEnter", function()
+        if this.highlight then this.highlight:Show() end
+        if this.label then this.label:SetTextColor(1, 1, 1) end
+      end)
+      btn:SetScript("OnLeave", function()
+        if this.filterValue ~= LeafVE_AchTest.UI.titleCategoryFilter then
+          if this.highlight then this.highlight:Hide() end
+          if this.label then this.label:SetTextColor(0.92, 0.78, 0.26) end
+        else
+          if this.highlight then this.highlight:Show() end
+          if this.label then this.label:SetTextColor(1.0, 0.45, 0.18) end
         end
-        if this.label then this.label:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3]) end
-      end
-    end)
-    table.insert(self.titleCategoryButtons, btn)
+      end)
+      table.insert(self.titleCategoryButtons, btn)
+      titleSidebarY = titleSidebarY - titleCatBtnHeight
+    end
   end
   
   local scrollFrame = CreateFrame("ScrollFrame", nil, f)
@@ -6851,17 +6990,38 @@ function LeafVE_AchTest.UI:Build()
   catHeader:SetText("Category Progress")
   catHeader:SetTextColor(THEME.gold[1], THEME.gold[2], THEME.gold[3])
 
-  -- 2 columns x 9 rows for the 18 non-Summary/All categories.
+  -- 2 fixed-width columns (the summaryFrame isn't wide enough for a 3rd),
+  -- with however many rows the current category count needs -- rather than
+  -- a hardcoded 9 rows tuned for exactly 18 categories, which silently
+  -- pushed a 19th category into an off-screen 3rd column.
+  local summaryCatList = {}
+  for _, cat in ipairs(SIDEBAR_CATS) do
+    if cat.type == "cat" and cat.filter ~= "Summary" and cat.filter ~= "All" then table.insert(summaryCatList, cat) end
+  end
+  local summaryCatRowsPerCol = math.ceil(table.getn(summaryCatList) / 2)
+  if summaryCatRowsPerCol < 1 then summaryCatRowsPerCol = 1 end
+  -- Available vertical space below the header (see catHeader/bars anchors
+  -- below) within the fixed-height summaryFrame, same fixed-window
+  -- reasoning as the achievement sidebar's row spacing above.
+  local summaryCatRowSpacing = math.floor(210 / summaryCatRowsPerCol)
+  if summaryCatRowSpacing > 22 then summaryCatRowSpacing = 22 end
+  local summaryCatBarHeight = summaryCatRowSpacing - 3
+  if summaryCatBarHeight > 20 then summaryCatBarHeight = 20 end
+  if summaryCatBarHeight < 12 then summaryCatBarHeight = 12 end
+  local summaryCatBarInnerHeight = summaryCatBarHeight - 4
+  if summaryCatBarInnerHeight > 16 then summaryCatBarInnerHeight = 16 end
+  if summaryCatBarInnerHeight < 8 then summaryCatBarInnerHeight = 8 end
+
   self.summaryCatBars = {}
   local catIndex = 0
-  for _, cat in ipairs(SIDEBAR_CATS) do
-    if cat.filter ~= "Summary" and cat.filter ~= "All" then
-      local col = math.floor(catIndex / 9)
-      local row = catIndex - col * 9
+  for _, cat in ipairs(summaryCatList) do
+    do
+      local col = math.floor(catIndex / summaryCatRowsPerCol)
+      local row = catIndex - col * summaryCatRowsPerCol
       local barFrame = CreateFrame("Frame", nil, summaryFrame)
-      barFrame:SetPoint("TOPLEFT", summaryFrame, "TOPLEFT", 10 + col * 350, -328 - row * 22)
+      barFrame:SetPoint("TOPLEFT", summaryFrame, "TOPLEFT", 10 + col * 350, -328 - row * summaryCatRowSpacing)
       barFrame:SetWidth(340)
-      barFrame:SetHeight(20)
+      barFrame:SetHeight(summaryCatBarHeight)
       barFrame:EnableMouse(true)
       barFrame.categoryFilter = cat.filter
 
@@ -6876,7 +7036,7 @@ function LeafVE_AchTest.UI:Build()
       local bar = CreateFrame("StatusBar", nil, barFrame)
       bar:SetPoint("LEFT", label, "RIGHT", 4, 0)
       bar:SetWidth(160)
-      bar:SetHeight(16)
+      bar:SetHeight(summaryCatBarInnerHeight)
       bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
       bar:SetStatusBarColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 1)
       bar:SetMinMaxValues(0, 1)
@@ -7037,7 +7197,7 @@ function LeafVE_AchTest.UI:Build()
   self.titleSummaryCatBars = {}
   local titleCatIndex = 0
   for _, cat in ipairs(TITLE_SIDEBAR_CATS) do
-    if cat.filter ~= "Summary" and cat.filter ~= "All" and cat.filter ~= "Obtained" then
+    if cat.type == "cat" and cat.filter ~= "Summary" and cat.filter ~= "All" and cat.filter ~= "Obtained" then
       local col = math.floor(titleCatIndex / 9)
       local row = titleCatIndex - col * 9
       local barFrame = CreateFrame("Frame", nil, titleSummaryFrame)
@@ -7116,7 +7276,7 @@ function LeafVE_AchTest.UI:GetScrollMax()
   -- the height math to land exactly on-or-under the viewport every time,
   -- since a few px of drift there (font metrics, content variance) was
   -- previously enough to let the mouse wheel nudge the view slightly.
-  if self.currentView == "mounts" or self.currentView == "companions" then
+  if self.currentView == "mounts" or self.currentView == "companions" or self.currentView == "toys" then
     return 0
   end
   local m = (self.scrollChild:GetHeight() or 0) - (self.scrollFrame:GetHeight() or 0)
@@ -7226,11 +7386,8 @@ function LeafVE_AchTest.UI:Refresh()
     if self.categoryButtons then
       for _, btn in ipairs(self.categoryButtons) do
         if btn.filterValue == self.selectedCategory then
-          if btn.highlight then
-            btn.highlight:SetVertexColor(1, 1, 1, 0.88)
-            btn.highlight:Show()
-          end
-          btn.label:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3])
+          if btn.highlight then btn.highlight:Show() end
+          btn.label:SetTextColor(1.0, 0.45, 0.18)
         else
           if btn.highlight then btn.highlight:Hide() end
           btn.label:SetTextColor(0.92, 0.78, 0.26)
@@ -7391,11 +7548,8 @@ function LeafVE_AchTest.UI:Refresh()
     if self.titleCategoryButtons then
       for _, btn in ipairs(self.titleCategoryButtons) do
         if btn.filterValue == self.titleCategoryFilter then
-          if btn.highlight then
-            btn.highlight:SetVertexColor(1, 1, 1, 0.88)
-            btn.highlight:Show()
-          end
-          btn.label:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3])
+          if btn.highlight then btn.highlight:Show() end
+          btn.label:SetTextColor(1.0, 0.45, 0.18)
         else
           if btn.highlight then btn.highlight:Hide() end
           btn.label:SetTextColor(0.92, 0.78, 0.26)
@@ -7588,21 +7742,7 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
       newlyVisibleZoneThumbs[zoneThumb] = true
     else
       frame.icon:Show()
-      local rowIconTex = ach.data.icon
-      -- Companion achievements are registered with a generic placeholder
-      -- icon (data\LeafVE_Ach_Companions.lua's catalog has no per-pet
-      -- icon field) -- the real icon only exists once the collections
-      -- panel has scanned it out of the player's own spellbook via
-      -- GetSpellTexture, saved under the same companion name. Prefer that
-      -- scanned icon here when it's available.
-      if ach.data.collectionType == "companion" and ach.data.companionType == "individual" then
-        local scanned = LeafVE_AchTest_DB and LeafVE_AchTest_DB.collections
-          and LeafVE_AchTest_DB.collections.companions
-          and LeafVE_AchTest_DB.collections.companions[ach.data.name]
-        if scanned and scanned.icon and scanned.icon ~= "" then
-          rowIconTex = scanned.icon
-        end
-      end
+      local rowIconTex = LeafVE_AchTest.ResolveMissingCollectionIcon(ach.data)
       if not rowIconTex or rowIconTex == "" then
         rowIconTex = "Interface\\Icons\\INV_Misc_QuestionMark"
       end
@@ -7728,15 +7868,7 @@ function LeafVE_AchTest.UI:RefreshSummary()
           row.iconMosaic:Hide()
           row.icon:Show()
           row.iconFrame:Show()
-          local rowIconTex = entry.data.icon
-          if entry.data.collectionType == "companion" and entry.data.companionType == "individual" then
-            local scanned = LeafVE_AchTest_DB and LeafVE_AchTest_DB.collections
-              and LeafVE_AchTest_DB.collections.companions
-              and LeafVE_AchTest_DB.collections.companions[entry.data.name]
-            if scanned and scanned.icon and scanned.icon ~= "" then
-              rowIconTex = scanned.icon
-            end
-          end
+          local rowIconTex = LeafVE_AchTest.ResolveMissingCollectionIcon(entry.data)
           if not rowIconTex or rowIconTex == "" then
             rowIconTex = "Interface\\Icons\\INV_Misc_QuestionMark"
           end

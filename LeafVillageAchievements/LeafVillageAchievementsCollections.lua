@@ -21,7 +21,7 @@ ABC.version = "4.1.1-MOUNT-ICON-AUDIT"
 LeafVE_AchTest_DB = LeafVE_AchTest_DB or {}
 LeafVE_AchTest_DB.collectionSettings = LeafVE_AchTest_DB.collectionSettings or {}
 AshenBannerCollectionsDB = LeafVE_AchTest_DB.collectionSettings
-ABC.runtime = ABC.runtime or { mounts = {}, companions = {}, allSpells = {} }
+ABC.runtime = ABC.runtime or { mounts = {}, companions = {}, toys = {}, allSpells = {} }
 ABC.installedHooks = false
 ABC.pendingInstall = true
 ABC.scanCount = 0
@@ -71,6 +71,9 @@ local function EnsureDB()
   if type(AshenBannerCollectionsDB.companionFilter) ~= "string" then
     AshenBannerCollectionsDB.companionFilter = "All"
   end
+  if type(AshenBannerCollectionsDB.toyFilter) ~= "string" then
+    AshenBannerCollectionsDB.toyFilter = "All"
+  end
   if type(AshenBannerCollectionsDB.portraitView) ~= "table" then
     AshenBannerCollectionsDB.portraitView = { mounts = {}, companions = {} }
   end
@@ -100,6 +103,7 @@ local function EnsureDB()
   if type(LeafVE_AchTest_DB.collections) ~= "table" then LeafVE_AchTest_DB.collections = {} end
   if type(LeafVE_AchTest_DB.collections.mounts) ~= "table" then LeafVE_AchTest_DB.collections.mounts = {} end
   if type(LeafVE_AchTest_DB.collections.companions) ~= "table" then LeafVE_AchTest_DB.collections.companions = {} end
+  if type(LeafVE_AchTest_DB.collections.toys) ~= "table" then LeafVE_AchTest_DB.collections.toys = {} end
 end
 
 local function SafeCall(obj, method, a, b, c, d)
@@ -509,6 +513,24 @@ local function BuildMasterLists()
       itemID = (type(info) == "table" and info.itemID) or base.itemID,
     }
   end
+
+  ABC.masterToyList = {}
+  for name, info in pairs(LeafVE_Ach_ToysMaster or {}) do
+    ABC.masterToyList[name] = {
+      name = name,
+      source = info.source,
+      obtainedFrom = info.obtainedFrom,
+      sourceConfidence = info.sourceConfidence,
+      category = info.category or info.sourceCategory,
+      sourceCategory = info.sourceCategory,
+      points = info.points,
+      difficulty = info.difficulty,
+      achievementId = info.achievementId,
+      icon = info.icon,
+      itemID = info.itemID,
+      description = info.description,
+    }
+  end
 end
 BuildMasterLists()
 
@@ -614,6 +636,7 @@ function ABC:ScanSpellbook(verbose)
   if ABC.PurgeRejectedMountData then ABC:PurgeRejectedMountData() end
   ABC.runtime.mounts = {}
   ABC.runtime.companions = {}
+  ABC.runtime.toys = {}
   ABC.runtime.allSpells = {}
   ABC.scanCount = ABC.scanCount + 1
 
@@ -669,11 +692,13 @@ end
 local function GetSavedCollection(kind)
   EnsureDB()
   if kind == "mount" then return LeafVE_AchTest_DB.collections.mounts end
+  if kind == "toy" then return LeafVE_AchTest_DB.collections.toys end
   return LeafVE_AchTest_DB.collections.companions
 end
 
 local function GetRuntimeCollection(kind)
   if kind == "mount" then return ABC.runtime.mounts end
+  if kind == "toy" then return ABC.runtime.toys end
   return ABC.runtime.companions
 end
 
@@ -812,10 +837,13 @@ function ABC:EnsureMountSidebar(ui)
   if not ui or not ui.frame then return nil end
   if ui.abcMountSidebarFrame then return ui.abcMountSidebarFrame end
 
+  -- Sidebar is narrower than the 158px gap it sits in (window edge to the
+  -- content area's own TOPLEFT at x=158, same as the achievements/titles
+  -- sidebars) and centered within that gap -- 18px on both sides.
   local frame = CreateFrame("Frame", nil, ui.frame)
-  frame:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", 8, -110)
-  frame:SetPoint("BOTTOMLEFT", ui.frame, "BOTTOMLEFT", 8, 10)
-  frame:SetWidth(140)
+  frame:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", 18, -110)
+  frame:SetPoint("BOTTOMLEFT", ui.frame, "BOTTOMLEFT", 18, 10)
+  frame:SetWidth(122)
   frame:SetBackdrop({
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 8,
@@ -839,15 +867,12 @@ function ABC:EnsureMountSidebar(ui)
   for i = 1, table.getn(ABC_MOUNT_FILTERS) do
     local def = ABC_MOUNT_FILTERS[i]
     local btn = CreateFrame("Button", nil, frame)
-    btn:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -(i - 1) * 27 - 4)
-    btn:SetWidth(132)
+    -- Same row layout as the achievements/titles sidebars (SIDEBAR_CATS in
+    -- LeafVillageAchievements.lua): left-aligned label instead of centered,
+    -- no per-row backdrop box.
+    btn:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -(i - 1) * 27 - 4)
+    btn:SetWidth(110)
     btn:SetHeight(24)
-    btn:SetBackdrop({
-      bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-      tile = true, tileSize = 8,
-      insets = { left = 2, right = 2, top = 2, bottom = 2 },
-    })
-    btn:SetBackdropColor(0, 0, 0, 0)
     btn.filterValue = def.value
 
     local hi = btn:CreateTexture(nil, "BACKGROUND")
@@ -858,8 +883,9 @@ function ABC:EnsureMountSidebar(ui)
     btn.highlight = hi
 
     local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    label:SetAllPoints(btn)
-    label:SetJustifyH("CENTER")
+    label:SetPoint("LEFT", btn, "LEFT", 8, 0)
+    label:SetWidth(100)
+    label:SetJustifyH("LEFT")
     label:SetText(def.label)
     label:SetTextColor(0.92, 0.78, 0.26)
     btn.label = label
@@ -933,10 +959,13 @@ end
 function ABC:EnsureCompanionSidebar(ui)
   if not ui or not ui.frame then return nil end
   if ui.abcCompanionSidebarFrame then return ui.abcCompanionSidebarFrame end
+  -- Sidebar is narrower than the 158px gap it sits in (window edge to the
+  -- content area's own TOPLEFT at x=158, same as the achievements/titles
+  -- sidebars) and centered within that gap -- 18px on both sides.
   local frame=CreateFrame("Frame",nil,ui.frame)
-  frame:SetPoint("TOPLEFT",ui.frame,"TOPLEFT",8,-110)
-  frame:SetPoint("BOTTOMLEFT",ui.frame,"BOTTOMLEFT",8,10)
-  frame:SetWidth(140)
+  frame:SetPoint("TOPLEFT",ui.frame,"TOPLEFT",18,-110)
+  frame:SetPoint("BOTTOMLEFT",ui.frame,"BOTTOMLEFT",18,10)
+  frame:SetWidth(122)
   frame:SetBackdrop({edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",tile=true,tileSize=16,edgeSize=8,insets={left=2,right=2,top=2,bottom=2}})
   frame:SetBackdropColor(0,0,0,0); frame:SetBackdropBorderColor(0.55,0.42,0.18,1)
   local bg=frame:CreateTexture(nil,"BACKGROUND")
@@ -944,14 +973,16 @@ function ABC:EnsureCompanionSidebar(ui)
   if ui.companionSidebarFrame and ui.companionSidebarFrame.bg and ui.companionSidebarFrame.bg.GetTexture then bg:SetTexture(ui.companionSidebarFrame.bg:GetTexture())
   else bg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Background-Dark") end
   bg:SetVertexColor(1,1,1,1); frame.bg=bg; frame.buttons={}
+  -- Same row layout as the achievements/titles sidebars (SIDEBAR_CATS in
+  -- LeafVillageAchievements.lua): left-aligned label instead of centered,
+  -- no per-row backdrop box.
   for i=1,table.getn(ABC_COMPANION_FILTERS) do
     local def=ABC_COMPANION_FILTERS[i]
     local btn=CreateFrame("Button",nil,frame)
-    btn:SetPoint("TOPLEFT",frame,"TOPLEFT",4,-(i-1)*27-4); btn:SetWidth(132); btn:SetHeight(24)
-    btn:SetBackdrop({bgFile="Interface\\Tooltips\\UI-Tooltip-Background",tile=true,tileSize=8,insets={left=2,right=2,top=2,bottom=2}})
-    btn:SetBackdropColor(0,0,0,0); btn.filterValue=def.value
+    btn:SetPoint("TOPLEFT",frame,"TOPLEFT",6,-(i-1)*27-4); btn:SetWidth(110); btn:SetHeight(24)
+    btn.filterValue=def.value
     local hi=btn:CreateTexture(nil,"BACKGROUND"); hi:SetAllPoints(btn); hi:SetTexture("Interface\\Buttons\\UI-Listbox-Highlight"); hi:SetVertexColor(0.72,0.28,0.08,0.65); hi:Hide(); btn.highlight=hi
-    local label=btn:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); label:SetAllPoints(btn); label:SetJustifyH("CENTER"); label:SetText(def.label); label:SetTextColor(0.92,0.78,0.26); btn.label=label
+    local label=btn:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); label:SetPoint("LEFT",btn,"LEFT",8,0); label:SetWidth(100); label:SetJustifyH("LEFT"); label:SetText(def.label); label:SetTextColor(0.92,0.78,0.26); btn.label=label
     btn:SetScript("OnClick",function() EnsureDB(); AshenBannerCollectionsDB.companionFilter=this.filterValue or "All"; ABC.pages.companion=1; PlaySound("igMainMenuOptionCheckBoxOn"); ABC:BuildCollectionView("companion") end)
     btn:SetScript("OnEnter",function() if this.highlight then this.highlight:Show() end; if this.label then this.label:SetTextColor(1,1,1) end end)
     btn:SetScript("OnLeave",function() local selected=AshenBannerCollectionsDB and AshenBannerCollectionsDB.companionFilter or "All"; if this.filterValue~=selected then if this.highlight then this.highlight:Hide() end; if this.label then this.label:SetTextColor(0.92,0.78,0.26) end end end)
@@ -964,6 +995,67 @@ end
 function ABC:RefreshCompanionSidebar(ui)
   local frame=self:EnsureCompanionSidebar(ui); if not frame then return end
   EnsureDB(); local selected=AshenBannerCollectionsDB.companionFilter or "All"
+  for i=1,table.getn(frame.buttons or {}) do local btn=frame.buttons[i]
+    if btn.filterValue==selected then if btn.highlight then btn.highlight:Show() end; if btn.label then btn.label:SetTextColor(1.0,0.45,0.18) end
+    else if btn.highlight then btn.highlight:Hide() end; if btn.label then btn.label:SetTextColor(0.92,0.78,0.26) end end
+  end
+end
+
+local ABC_TOY_FILTERS = {
+  {label="All",value="All"}, {label="Collected",value="Collected"}, {label="Missing",value="Missing"},
+  {label="Music",value="Music"}, {label="Novelty",value="Novelty"},
+  {label="Utility",value="Utility"}, {label="Ambience",value="Ambience"},
+}
+
+local function ToyMatchesFilter(row,filterValue)
+  local filter=filterValue or "All"
+  if filter=="All" then return true end
+  if filter=="Collected" then return row and row.collected==true end
+  if filter=="Missing" then return not (row and row.collected==true) end
+  local cat=row and (row.sourceCategory or row.category) or ""
+  if cat==filter then return true end
+  return false
+end
+
+function ABC:EnsureToySidebar(ui)
+  if not ui or not ui.frame then return nil end
+  if ui.abcToySidebarFrame then return ui.abcToySidebarFrame end
+  -- Sidebar is narrower than the 158px gap it sits in (window edge to the
+  -- content area's own TOPLEFT at x=158, same as the achievements/titles
+  -- sidebars) and centered within that gap -- 18px on both sides.
+  local frame=CreateFrame("Frame",nil,ui.frame)
+  frame:SetPoint("TOPLEFT",ui.frame,"TOPLEFT",18,-110)
+  frame:SetPoint("BOTTOMLEFT",ui.frame,"BOTTOMLEFT",18,10)
+  frame:SetWidth(122)
+  frame:SetBackdrop({edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",tile=true,tileSize=16,edgeSize=8,insets={left=2,right=2,top=2,bottom=2}})
+  frame:SetBackdropColor(0,0,0,0); frame:SetBackdropBorderColor(0.55,0.42,0.18,1)
+  local bg=frame:CreateTexture(nil,"BACKGROUND")
+  bg:SetPoint("TOPLEFT",frame,"TOPLEFT",2,-2); bg:SetPoint("BOTTOMRIGHT",frame,"BOTTOMRIGHT",-2,2)
+  if ui.companionSidebarFrame and ui.companionSidebarFrame.bg and ui.companionSidebarFrame.bg.GetTexture then bg:SetTexture(ui.companionSidebarFrame.bg:GetTexture())
+  else bg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Background-Dark") end
+  bg:SetVertexColor(1,1,1,1); frame.bg=bg; frame.buttons={}
+  -- Same row layout as the achievements/titles sidebars (SIDEBAR_CATS in
+  -- LeafVillageAchievements.lua): left-aligned label instead of centered,
+  -- no per-row backdrop box.
+  for i=1,table.getn(ABC_TOY_FILTERS) do
+    local def=ABC_TOY_FILTERS[i]
+    local btn=CreateFrame("Button",nil,frame)
+    btn:SetPoint("TOPLEFT",frame,"TOPLEFT",6,-(i-1)*27-4); btn:SetWidth(110); btn:SetHeight(24)
+    btn.filterValue=def.value
+    local hi=btn:CreateTexture(nil,"BACKGROUND"); hi:SetAllPoints(btn); hi:SetTexture("Interface\\Buttons\\UI-Listbox-Highlight"); hi:SetVertexColor(0.72,0.28,0.08,0.65); hi:Hide(); btn.highlight=hi
+    local label=btn:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); label:SetPoint("LEFT",btn,"LEFT",8,0); label:SetWidth(100); label:SetJustifyH("LEFT"); label:SetText(def.label); label:SetTextColor(0.92,0.78,0.26); btn.label=label
+    btn:SetScript("OnClick",function() EnsureDB(); AshenBannerCollectionsDB.toyFilter=this.filterValue or "All"; ABC.pages.toy=1; PlaySound("igMainMenuOptionCheckBoxOn"); ABC:BuildCollectionView("toy") end)
+    btn:SetScript("OnEnter",function() if this.highlight then this.highlight:Show() end; if this.label then this.label:SetTextColor(1,1,1) end end)
+    btn:SetScript("OnLeave",function() local selected=AshenBannerCollectionsDB and AshenBannerCollectionsDB.toyFilter or "All"; if this.filterValue~=selected then if this.highlight then this.highlight:Hide() end; if this.label then this.label:SetTextColor(0.92,0.78,0.26) end end end)
+    table.insert(frame.buttons,btn)
+  end
+  ui.abcToySidebarFrame=frame
+  return frame
+end
+
+function ABC:RefreshToySidebar(ui)
+  local frame=self:EnsureToySidebar(ui); if not frame then return end
+  EnsureDB(); local selected=AshenBannerCollectionsDB.toyFilter or "All"
   for i=1,table.getn(frame.buttons or {}) do local btn=frame.buttons[i]
     if btn.filterValue==selected then if btn.highlight then btn.highlight:Show() end; if btn.label then btn.label:SetTextColor(1.0,0.45,0.18) end
     else if btn.highlight then btn.highlight:Hide() end; if btn.label then btn.label:SetTextColor(0.92,0.78,0.26) end end
@@ -1030,7 +1122,7 @@ end
 -- ---------------------------------------------------------------------------
 
 ABC.cardsPerPage = 6
-ABC.pages = ABC.pages or { mount = 1, companion = 1 }
+ABC.pages = ABC.pages or { mount = 1, companion = 1, toy = 1 }
 ABC.configMode = ABC.configMode or false
 ABC.activeModels = ABC.activeModels or {}
 ABC.activeCards = ABC.activeCards or {}
@@ -1937,7 +2029,25 @@ local function ABC_GetMountItemTexture(data)
   return nil
 end
 
+-- Exposed so the achievement row/toast/summary code in LeafVillageAchievements.lua
+-- (a separate file, loaded before this one, so it can't see this local
+-- directly) can resolve a real item icon for not-yet-collected mount/
+-- companion/toy achievements, instead of showing their generic catalog
+-- placeholder icon whenever a real one is available.
+function ABC.GetItemIconForAchievement(itemID)
+  if not itemID then return nil end
+  return ABC_GetMountItemTexture({ itemID = itemID })
+end
+
 local function ABC_ResolveCollectionIcon(data, kind)
+  if kind == "toy" then
+    if data and data.collected and data.icon and data.icon ~= "" then return data.icon, "spell icon" end
+    -- Toys have no creature model to guess a family from -- just the
+    -- item icon (via itemID), falling back to a flat placeholder.
+    local itemTexture = ABC_GetMountItemTexture(data)
+    if itemTexture and itemTexture ~= "" then return itemTexture, "toy item icon" end
+    return "Interface\\Icons\\INV_Misc_QuestionMark", "toy fallback icon"
+  end
   if kind ~= "mount" then
     if data and data.collected and data.icon and data.icon ~= "" then return data.icon, "spell icon" end
     -- Despite the name, ABC_GetMountItemTexture only depends on data.itemID
@@ -2902,6 +3012,7 @@ function ABC:UpdateTabVisuals()
   end
   set(ui.companionTab, current == "companions")
   set(ui.mountTab or ui.mountsTab, current == "mounts")
+  set(ui.toyTab, current == "toys")
   set(ui.achTab, current == "achievements")
   set(ui.titlesTab, current == "titles")
   set(ui.adminTab, current == "admin")
@@ -2972,8 +3083,9 @@ function ABC:InstallHooks()
     -- frame can never overlap Achievements, Titles, or Admin.
     if self.abcStableMountSearch then self.abcStableMountSearch:Hide() end
     if self.abcStableCompanionSearch then self.abcStableCompanionSearch:Hide() end
+    if self.abcStableToySearch then self.abcStableToySearch:Hide() end
 
-    -- The mounts/companions branches below return before oldRefresh ever
+    -- The mounts/companions/toys branches below return before oldRefresh ever
     -- runs, so the base UI:Refresh's own summaryFrame/titleSummaryFrame
     -- :Hide() calls (added for the two Summary tabs) never get a chance
     -- to fire on those two views -- their recent-item icons/mosaics
@@ -2990,10 +3102,15 @@ function ABC:InstallHooks()
       ABC:BuildCollectionView("companion")
       ABC:UpdateTabVisuals()
       return
+    elseif self.currentView == "toys" then
+      ABC:BuildCollectionView("toy")
+      ABC:UpdateTabVisuals()
+      return
     end
 
     HideFrame(self.abcMountSidebarFrame)
     HideFrame(self.abcCompanionSidebarFrame)
+    HideFrame(self.abcToySidebarFrame)
     if self.scrollChild then ClearScrollChild(self) end
     local result = oldRefresh(self)
 
@@ -4082,17 +4199,20 @@ end
 BuildSortedList = function(kind)
   local saved = GetSavedCollection(kind)
   local runtime = GetRuntimeCollection(kind)
-  local master = (kind == "mount") and ABC.masterMountList or ABC.masterCompanionList
+  local master = (kind == "mount") and ABC.masterMountList or (kind == "toy") and ABC.masterToyList or ABC.masterCompanionList
+  local function ApplyPointFallback(row)
+    if row.points or not LeafVE_AchTest then return end
+    if kind == "mount" and LeafVE_AchTest.GetMountPointValue then row.points = LeafVE_AchTest:GetMountPointValue(row.name, row.source)
+    elseif kind == "toy" and LeafVE_AchTest.GetToyPointValue then row.points = LeafVE_AchTest:GetToyPointValue(row.name)
+    elseif kind ~= "mount" and LeafVE_AchTest.GetCompanionPointValue then row.points = LeafVE_AchTest:GetCompanionPointValue(row.name) end
+  end
   local outMap = {}
   for name, mdata in pairs(master or {}) do
     local row = {}
     for k, v in pairs(mdata) do row[k] = v end
     row.name = name
     row.collected = false
-    if not row.points and LeafVE_AchTest then
-      if kind == "mount" and LeafVE_AchTest.GetMountPointValue then row.points = LeafVE_AchTest:GetMountPointValue(row.name, row.source)
-      elseif kind ~= "mount" and LeafVE_AchTest.GetCompanionPointValue then row.points = LeafVE_AchTest:GetCompanionPointValue(row.name) end
-    end
+    ApplyPointFallback(row)
     outMap[name] = row
   end
   for name, data in pairs(saved) do
@@ -4110,10 +4230,7 @@ BuildSortedList = function(kind)
       row.url = nil
       row.name = name
       row.collected = true
-      if not row.points and LeafVE_AchTest then
-        if kind == "mount" and LeafVE_AchTest.GetMountPointValue then row.points = LeafVE_AchTest:GetMountPointValue(row.name, row.source)
-        elseif kind ~= "mount" and LeafVE_AchTest.GetCompanionPointValue then row.points = LeafVE_AchTest:GetCompanionPointValue(row.name) end
-      end
+      ApplyPointFallback(row)
       outMap[name] = row
     end
   end
@@ -4472,8 +4589,14 @@ local function ABC_StableSetSearchText(kind, text)
   AshenBannerCollectionsDB.stableSearch[kind] = tostring(text or "")
 end
 
+local function ABC_StableSearchViewName(kind)
+  if kind == "mount" then return "mounts" end
+  if kind == "toy" then return "toys" end
+  return "companions"
+end
+
 local function ABC_StableGetSearchFrame(ui, kind)
-  local key = kind == "mount" and "abcStableMountSearch" or "abcStableCompanionSearch"
+  local key = kind == "mount" and "abcStableMountSearch" or kind == "toy" and "abcStableToySearch" or "abcStableCompanionSearch"
   if ui[key] then return ui[key] end
 
   local holder = CreateFrame("Frame", nil, ui.frame)
@@ -4501,7 +4624,7 @@ local function ABC_StableGetSearchFrame(ui, kind)
 
   local placeholder = holder:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   placeholder:SetPoint("LEFT", box, "LEFT", 12, 0)
-  placeholder:SetText(kind == "mount" and "name, source, item..." or "name or source...")
+  placeholder:SetText(kind == "mount" and "name, source, item..." or kind == "toy" and "name or source..." or "name or source...")
   placeholder:SetTextColor(0.40, 0.40, 0.40)
   holder.placeholder = placeholder
 
@@ -4555,7 +4678,7 @@ local function ABC_StableGetSearchFrame(ui, kind)
     if this._abcElapsed >= 0.22 then
       this._abcPending = false
       this._abcElapsed = 0
-      if LeafVE_AchTest and LeafVE_AchTest.UI and LeafVE_AchTest.UI.currentView == (kind == "mount" and "mounts" or "companions") then
+      if LeafVE_AchTest and LeafVE_AchTest.UI and LeafVE_AchTest.UI.currentView == ABC_StableSearchViewName(kind) then
         ABC:BuildCollectionView(kind)
       end
     end
@@ -4568,18 +4691,27 @@ end
 local function ABC_StableShowSearch(ui, kind)
   local mountSearch = ABC_StableGetSearchFrame(ui, "mount")
   local companionSearch = ABC_StableGetSearchFrame(ui, "companion")
-  if kind == "mount" then mountSearch:Show(); companionSearch:Hide()
-  else companionSearch:Show(); mountSearch:Hide() end
+  local toySearch = ABC_StableGetSearchFrame(ui, "toy")
+  mountSearch:Hide(); companionSearch:Hide(); toySearch:Hide()
+  if kind == "mount" then mountSearch:Show()
+  elseif kind == "toy" then toySearch:Show()
+  else companionSearch:Show() end
 end
 
 local function ABC_StableHideSearch(ui)
   if ui.abcStableMountSearch then ui.abcStableMountSearch:Hide() end
   if ui.abcStableCompanionSearch then ui.abcStableCompanionSearch:Hide() end
+  if ui.abcStableToySearch then ui.abcStableToySearch:Hide() end
 end
 
 local function ABC_StableMatch(row, kind)
-  if kind == "mount" and not MountMatchesFilter(row, AshenBannerCollectionsDB.mountFilter or "All") then return false end
-  if kind ~= "mount" and not CompanionMatchesFilter(row, AshenBannerCollectionsDB.companionFilter or "All") then return false end
+  if kind == "mount" then
+    if not MountMatchesFilter(row, AshenBannerCollectionsDB.mountFilter or "All") then return false end
+  elseif kind == "toy" then
+    if not ToyMatchesFilter(row, AshenBannerCollectionsDB.toyFilter or "All") then return false end
+  else
+    if not CompanionMatchesFilter(row, AshenBannerCollectionsDB.companionFilter or "All") then return false end
+  end
   local query = Lower(ABC_StableSearchText(kind))
   if query == "" then return true end
   local haystack = Lower(
@@ -4715,6 +4847,9 @@ local function ABC_StableCard(parent, index, data, kind)
     portraitRing:SetVertexColor(1, 1, 1, collected and 0.92 or 0.55)
   end
 
+  -- Toys have no verified acquisition source (the catalogue's obtainedFrom
+  -- is just generic boilerplate for every entry) -- the item's own flavor
+  -- description is far more useful here, so it takes this slot instead.
   local obtained = data and data.obtainedFrom or nil
   local sourceLabel = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   sourceLabel:SetPoint("TOPLEFT", portraitFrame, "BOTTOMLEFT", 2, -5)
@@ -4722,7 +4857,15 @@ local function ABC_StableCard(parent, index, data, kind)
   sourceLabel:SetHeight(30)
   sourceLabel:SetJustifyH("LEFT")
   sourceLabel:SetJustifyV("TOP")
-  if obtained and obtained ~= "" then
+  if kind == "toy" then
+    local description = data and data.description or nil
+    if description and description ~= "" then
+      sourceLabel:SetText(ABC_StableTrim(description, 78))
+      sourceLabel:SetTextColor(0.73, 0.69, 0.61)
+    else
+      sourceLabel:SetText("")
+    end
+  elseif obtained and obtained ~= "" then
     sourceLabel:SetText("Source: "..ABC_StableTrim(obtained, 78))
     sourceLabel:SetTextColor(0.73, 0.69, 0.61)
   else
@@ -4763,7 +4906,9 @@ local function ABC_StableCard(parent, index, data, kind)
     GameTooltip:AddLine("Achievement points: "..tostring(tonumber(data and data.points) or 25), 1.0, 0.72, 0.25)
     if data and data.difficulty then GameTooltip:AddLine("Difficulty tier: "..tostring(data.difficulty), 0.72, 0.72, 0.72) end
     if data and data.description and data.description ~= "" then GameTooltip:AddLine(data.description, 0.90, 0.90, 0.90, true) end
-    if obtained and obtained ~= "" then
+    -- Toys have no verified acquisition source -- obtainedFrom is just
+    -- generic boilerplate, so skip the redundant "Source" section for them.
+    if kind ~= "toy" and obtained and obtained ~= "" then
       GameTooltip:AddLine(" ")
       GameTooltip:AddLine("Source", 1.0, 0.72, 0.25)
       GameTooltip:AddLine(tostring(obtained), 0.84, 0.84, 0.82, true)
@@ -4836,15 +4981,24 @@ function ABC:BuildCollectionView(kind)
   -- active category list.
   HideFrame(ui.abcMountSidebarFrame)
   HideFrame(ui.abcCompanionSidebarFrame)
+  HideFrame(ui.abcToySidebarFrame)
 
   if kind == "mount" then
     HideFrame(ui.companionSidebarFrame)
     HideFrame(ui.abcCompanionSidebarFrame)
+    HideFrame(ui.abcToySidebarFrame)
     ShowFrame(self:EnsureMountSidebar(ui))
     self:RefreshMountSidebar(ui)
+  elseif kind == "toy" then
+    HideFrame(ui.companionSidebarFrame)
+    HideFrame(ui.abcMountSidebarFrame)
+    HideFrame(ui.abcCompanionSidebarFrame)
+    ShowFrame(self:EnsureToySidebar(ui))
+    self:RefreshToySidebar(ui)
   else
     HideFrame(ui.companionSidebarFrame)
     HideFrame(ui.abcMountSidebarFrame)
+    HideFrame(ui.abcToySidebarFrame)
     ShowFrame(self:EnsureCompanionSidebar(ui))
     self:RefreshCompanionSidebar(ui)
   end
@@ -4856,7 +5010,7 @@ function ABC:BuildCollectionView(kind)
 
   local header = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   header:SetPoint("TOPLEFT", ui.scrollChild, "TOPLEFT", 10, -4)
-  header:SetText(kind == "mount" and "Mount Collection" or "Companion Collection")
+  header:SetText(kind == "mount" and "Mount Collection" or kind == "toy" and "Toy Collection" or "Companion Collection")
   header:SetTextColor(1.0, 0.82, 0.36)
 
   local collected = 0
@@ -4873,7 +5027,7 @@ function ABC:BuildCollectionView(kind)
   -- frame already having been laid out once), which is what was showing
   -- up as a flash on first load. A reused bar has already been through
   -- that once, so updating its value never hits this.
-  local barKey = kind == "mount" and "abcMountBar" or "abcCompanionBar"
+  local barKey = kind == "mount" and "abcMountBar" or kind == "toy" and "abcToyBar" or "abcCompanionBar"
   local bar = ui[barKey]
   if not bar then
     bar = CreateFrame("StatusBar", nil, ui.scrollChild)
@@ -4902,7 +5056,7 @@ function ABC:BuildCollectionView(kind)
   refresh:SetScript("OnEnter", function()
     GameTooltip:SetOwner(this, "ANCHOR_LEFT")
     GameTooltip:SetText("Rescan Spellbook", 1, 0.82, 0.36)
-    GameTooltip:AddLine("Re-checks your spellbook for "..(kind == "mount" and "mounts" or "companions").." the addon may have missed.", 0.9, 0.9, 0.9, true)
+    GameTooltip:AddLine("Re-checks your spellbook for "..(kind == "mount" and "mounts" or kind == "toy" and "toys" or "companions").." the addon may have missed.", 0.9, 0.9, 0.9, true)
     GameTooltip:Show()
   end)
   refresh:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -4953,13 +5107,17 @@ function ABC:BuildCollectionView(kind)
     localIndex = localIndex + 1
   end
 
-  local shown = lastIndex - firstIndex + 1
-  local rows = math.ceil(shown / 3)
+  -- Pager position is derived from a full page's row count (perPage / 3
+  -- columns), not however many cards actually landed on this page -- a
+  -- last page with only 1 row of cards would otherwise pull the pager up
+  -- to sit right under that single row instead of staying anchored near
+  -- the bottom of the page like every other page.
+  local maxRows = math.ceil(perPage / 3)
 
   -- Page controls centered below the card grid, its own row instead of
   -- crammed into the header next to Rescan. Real spellbook page-turn
   -- arrows instead of plain text buttons.
-  local pagerY = firstCardY + rows * 187 + 8
+  local pagerY = firstCardY + maxRows * 187 + 8
 
   local pageText = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   pageText:SetWidth(70); pageText:SetJustifyH("CENTER")

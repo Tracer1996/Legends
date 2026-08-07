@@ -157,10 +157,10 @@ local COMPANION_MILESTONES = {
 }
 
 local COMPANION_TITLE_DEFS = {
-  {id="title_companion_tender", name="Tender", achievement="casual_pet_collector", desc="Awarded for collecting 10 Turtle WoW companions."},
-  {id="title_companion_tamer", name="Tamer", achievement="companion_collector_50", desc="Awarded for collecting 50 Turtle WoW companions."},
-  {id="title_companion_wrangler", name="Wrangler", achievement="companion_collector_75", desc="Awarded for collecting 75 Turtle WoW companions."},
-  {id="title_companion_menagerist", name="Menagerist", achievement="companion_collector_100", desc="Awarded for collecting 100 Turtle WoW companions."},
+  {id="title_companion_tender", name="Tender", achievement="casual_pet_collector", desc="Awarded for collecting 10 Turtle WoW companions.", icon="Interface\\Icons\\INV_Box_PetCarrier_01"},
+  {id="title_companion_tamer", name="Tamer", achievement="companion_collector_50", desc="Awarded for collecting 50 Turtle WoW companions.", icon="Interface\\Icons\\Ability_Hunter_Pet_Bear"},
+  {id="title_companion_wrangler", name="Wrangler", achievement="companion_collector_75", desc="Awarded for collecting 75 Turtle WoW companions.", icon="Interface\\Icons\\INV_Misc_MonsterClaw_04"},
+  {id="title_companion_menagerist", name="Menagerist", achievement="companion_collector_100", desc="Awarded for collecting 100 Turtle WoW companions.", icon="Interface\\Icons\\Ability_Hunter_Pet_Owl"},
 }
 
 local function Slugify(text)
@@ -248,7 +248,7 @@ end
 
 local COMPANION_TOTAL=table.getn(COMPANION_IDS)
 table.insert(COMPANION_MILESTONES,{id="companion_collector_all",name="A Complete Menagerie",desc="Collect all "..COMPANION_TOTAL.." Turtle WoW companions.",goal=COMPANION_TOTAL,points=500})
-table.insert(COMPANION_TITLE_DEFS,{id="title_companion_master",name="Petmaster",achievement="companion_collector_all",desc="Awarded for collecting every Turtle WoW companion."})
+table.insert(COMPANION_TITLE_DEFS,{id="title_companion_master",name="Petmaster",achievement="companion_collector_all",desc="Awarded for collecting every Turtle WoW companion.",icon="Interface\\Icons\\INV_Crown_02"})
 
 function LeafVE_AchTest:GetCompanionPointValue(name)
   local id=COMPANION_LOOKUP[Slugify(name)]
@@ -267,7 +267,7 @@ local function RegisterCompanionAchievements()
     LeafVE_AchTest:AddAchievement(achievementId,{
       id=data.id,name=data.name,desc=data.desc,category=data.category,points=data.points,icon=data.icon,
       companionType="individual",collectionType="companion",source=data.source,obtainedFrom=data.obtainedFrom,
-      sourceConfidence=data.sourceConfidence,difficulty=data.difficulty,
+      sourceConfidence=data.sourceConfidence,difficulty=data.difficulty,itemID=data.itemID,
     })
   end
   for _,milestone in ipairs(COMPANION_MILESTONES) do
@@ -276,7 +276,7 @@ local function RegisterCompanionAchievements()
   end
   if LeafVE_AchTest.AddTitle then
     for _,titleData in ipairs(COMPANION_TITLE_DEFS) do
-      LeafVE_AchTest:AddTitle({id=titleData.id,name=titleData.name,chatName=titleData.name,achievement=titleData.achievement,prefix=false,category=COMPANION_CATEGORY,icon=COMPANION_ICON,desc=titleData.desc})
+      LeafVE_AchTest:AddTitle({id=titleData.id,name=titleData.name,chatName=titleData.name,achievement=titleData.achievement,prefix=false,category=COMPANION_CATEGORY,icon=titleData.icon or COMPANION_ICON,desc=titleData.desc})
     end
   end
 end

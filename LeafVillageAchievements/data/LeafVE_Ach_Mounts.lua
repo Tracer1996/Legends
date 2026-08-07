@@ -222,6 +222,20 @@ local MOUNT_MILESTONES = {
   {id="mount_collector_100",name="A Hundred Saddles",goal=100,points=250},
 }
 
+local MOUNT_TOTAL=table.getn(MOUNT_CATALOG)
+table.insert(MOUNT_MILESTONES,{id="mount_collector_all",name="Master of the Stables",goal=MOUNT_TOTAL,points=500})
+
+-- Chat titles awarded alongside the milestone achievements above, mirroring
+-- COMPANION_TITLE_DEFS in LeafVE_Ach_Companions.lua.
+local MOUNT_TITLE_DEFS = {
+  {id="title_mount_rider",name="Rider",achievement="mount_collector_10",desc="Awarded for collecting 10 mounts.",icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
+  {id="title_mount_horseman",name="Horseman",achievement="mount_collector_25",desc="Awarded for collecting 25 mounts.",icon="Interface\\Icons\\Ability_Mount_MountainRam"},
+  {id="title_mount_cavalier",name="Cavalier",achievement="mount_collector_50",desc="Awarded for collecting 50 mounts.",icon="Interface\\Icons\\Ability_Mount_Raptor"},
+  {id="title_mount_steedmaster",name="Steedmaster",achievement="mount_collector_75",desc="Awarded for collecting 75 mounts.",icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
+  {id="title_mount_stablemaster",name="Stablemaster",achievement="mount_collector_100",desc="Awarded for collecting 100 mounts.",icon="Interface\\Icons\\Ability_Mount_Gryphon_01"},
+  {id="title_mount_ridemaster",name="Ridemaster",achievement="mount_collector_all",desc="Awarded for collecting every mount.",icon="Interface\\Icons\\Ability_Mount_Drake_Red"},
+}
+
 local MOUNT_MODEL_PRESETS = {
   -- Scales are intentionally close to 1.0. The previous 0.4-0.7 values made
   -- many creatures look like tiny silhouettes inside the preview box.
@@ -371,7 +385,7 @@ local function RegisterMountAchievement(entry)
     desc="Collect "..tostring(entry.name or "this mount")..". Source: "..tostring(entry.obtainedFrom or entry.source or "Mount collection")..".",
     category=MOUNT_CATEGORY,points=entry.points,icon=entry.icon or MOUNT_ICON,
     collectionType="mount",mountType="individual",source=entry.source,
-    obtainedFrom=entry.obtainedFrom,difficulty=entry.difficulty,
+    obtainedFrom=entry.obtainedFrom,difficulty=entry.difficulty,itemID=entry.itemID,
   })
 end
 
@@ -385,6 +399,11 @@ local function RegisterMountAchievements()
       collectionType="mount",mountType="milestone",
     })
     if LeafVE_AchTest.RegisterProgressDef then LeafVE_AchTest:RegisterProgressDef(milestone.id,{counter="mountCount",goal=milestone.goal}) end
+  end
+  if LeafVE_AchTest.AddTitle then
+    for _,titleData in ipairs(MOUNT_TITLE_DEFS) do
+      LeafVE_AchTest:AddTitle({id=titleData.id,name=titleData.name,chatName=titleData.name,achievement=titleData.achievement,prefix=false,category=MOUNT_CATEGORY,icon=titleData.icon or MOUNT_ICON,desc=titleData.desc})
+    end
   end
 end
 
