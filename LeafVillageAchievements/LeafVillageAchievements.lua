@@ -8256,6 +8256,7 @@ end
 local ef = CreateFrame("Frame")
 ef:RegisterEvent("ADDON_LOADED")
 ef:RegisterEvent("PLAYER_ENTERING_WORLD")
+ef:RegisterEvent("PLAYER_LOGIN")
 ef:RegisterEvent("PLAYER_LEVEL_UP")
 ef:RegisterEvent("PLAYER_MONEY")
 ef:RegisterEvent("CHAT_MSG_COMBAT_HOSTILE_DEATH")
@@ -8318,9 +8319,14 @@ ef:SetScript("OnEvent", function()
     lastResurrectRequester = nil
     lastResurrectRequestTime = 0
     LeafVE_AchTest.initialized = true
+  end
+  if event == "PLAYER_LOGIN" then
     -- Silently request /played so the server's death/quest counter line
-    -- (Turtle WoW addition, caught above in CHAT_MSG_SYSTEM) calibrates
-    -- the tracked counters shortly after login.
+    -- (Turtle WoW addition, caught below in CHAT_MSG_SYSTEM) calibrates the
+    -- tracked counters. PLAYER_LOGIN (unlike PLAYER_ENTERING_WORLD) fires
+    -- once per UI session -- not again on every subsequent zone change,
+    -- flight path, or instance transition -- so this only re-fires on an
+    -- actual login or /reload, not on every loading screen.
     if RequestTimePlayed then RequestTimePlayed() end
   end
   if event == "PLAYER_TARGET_CHANGED" then
