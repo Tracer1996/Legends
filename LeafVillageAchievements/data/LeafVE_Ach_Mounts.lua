@@ -6,45 +6,45 @@ local MOUNT_CATALOG = {
   {id="mount_ancona_chicken_mount", name="Ancona Chicken Mount", creatureId=7394, family="bird", source="Turtle WoW mount", icon="Interface\\Icons\\Spell_Magic_PolymorphChicken"},
   {id="mount_arctic_wolf", name="Arctic Wolf", creatureId=5198, family="wolf", source="Orc racial mount", icon="Interface\\Icons\\Ability_Mount_WhiteDireWolf"},
   {id="mount_bear_mount", name="Bear Mount", creatureId=1129, family="bear", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Mount_PolarBear_White"},
-  {id="mount_black_battlestrider", name="Black Battlestrider", creatureId=14334, family="mechanostrider", source="PvP reward mount", icon="Interface\\Icons\\Ability_Mount_MechaStrider"},
+  {id="mount_black_battlestrider", name="Black Battlestrider",itemID=18243, creatureId=14334, family="mechanostrider", source="PvP reward mount", icon="Interface\\Icons\\Ability_Mount_MechaStrider"},
   {id="mount_black_ostrich", name="Black Ostrich", creatureId=17476, family="bird", source="Turtle WoW mount", icon="Interface\\Icons\\Spell_Magic_PolymorphChicken"},
   {id="mount_black_panther", name="Black Panther", creatureId=977, family="cat", source="Night Elf racial mount", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
   {id="mount_black_ram", name="Black Ram", creatureId=12370, family="ram", source="Dwarf racial mount", icon="Interface\\Icons\\Ability_Mount_MountainRam"},
   {id="mount_black_skeletal_horse", name="Black Skeletal Horse", creatureId=6486, family="skeletal", source="Undead racial mount", icon="Interface\\Icons\\Ability_Mount_Undeadhorse"},
-  {id="mount_black_stallion", name="Black Stallion", creatureId=308, family="horse", source="Human racial mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
-  {id="mount_black_war_kodo", name="Black War Kodo", creatureId=14333, family="kodo", source="PvP reward mount", icon="Interface\\Icons\\Ability_Mount_Kodo_03"},
-  {id="mount_black_war_ram", name="Black War Ram", creatureId=14335, family="ram", source="PvP reward mount", icon="Interface\\Icons\\Ability_Mount_MountainRam"},
-  {id="mount_black_war_raptor", name="Black War Raptor", creatureId=14330, family="raptor", source="PvP reward mount", icon="Interface\\Icons\\Ability_Mount_Raptor"},
-  {id="mount_black_war_steed", name="Black War Steed", creatureId=14332, family="horse", source="PvP reward mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
-  {id="mount_black_war_tiger", name="Black War Tiger", creatureId=977, family="cat", source="PvP reward mount", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
-  {id="mount_black_war_wolf", name="Black War Wolf", creatureId=14329, family="wolf", source="PvP reward mount", icon="Interface\\Icons\\Ability_Mount_WhiteDireWolf"},
+  {id="mount_black_stallion", name="Black Stallion",itemID=2411, creatureId=308, family="horse", source="Human racial mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
+  {id="mount_black_war_kodo", name="Black War Kodo",itemID=18247, creatureId=14333, family="kodo", source="PvP reward mount", icon="Interface\\Icons\\Ability_Mount_Kodo_03"},
+  {id="mount_black_war_ram", name="Black War Ram",itemID=18244, creatureId=14335, family="ram", source="PvP reward mount", icon="Interface\\Icons\\Ability_Mount_MountainRam"},
+  {id="mount_black_war_raptor", name="Black War Raptor",itemID=18246, creatureId=14330, family="raptor", source="PvP reward mount", icon="Interface\\Icons\\Ability_Mount_Raptor"},
+  {id="mount_black_war_steed", name="Black War Steed",itemID=18241, creatureId=14332, family="horse", source="PvP reward mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
+  {id="mount_black_war_tiger", name="Black War Tiger",itemID=18242, creatureId=977, family="cat", source="PvP reward mount", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
+  {id="mount_black_war_wolf", name="Black War Wolf",itemID=18245, creatureId=14329, family="wolf", source="PvP reward mount", icon="Interface\\Icons\\Ability_Mount_WhiteDireWolf"},
   {id="mount_black_wolf", name="Black Wolf", creatureId=356, family="wolf", source="Orc racial mount", icon="Interface\\Icons\\Ability_Mount_WhiteDireWolf"},
-  {id="mount_blue_mechanostrider", name="Blue Mechanostrider", creatureId=12363, family="mechanostrider", source="Gnome racial mount", icon="Interface\\Icons\\Ability_Mount_MechaStrider"},
+  {id="mount_blue_mechanostrider", name="Blue Mechanostrider",itemID=8595, creatureId=12363, family="mechanostrider", source="Gnome racial mount", icon="Interface\\Icons\\Ability_Mount_MechaStrider"},
   {id="mount_blue_qiraji_battle_tank", name="Blue Qiraji Battle Tank", creatureId=15713, family="qiraji", source="Dungeon or raid mount", icon="Interface\\Icons\\INV_Misc_Qirajicrystal_04"},
   {id="mount_blue_ram", name="Blue Ram", creatureId=4778, family="ram", source="Dwarf racial mount", icon="Interface\\Icons\\Ability_Mount_MountainRam"},
-  {id="mount_blue_skeletal_horse", name="Blue Skeletal Horse", creatureId=12341, family="skeletal", source="Undead racial mount", icon="Interface\\Icons\\Ability_Mount_Undeadhorse"},
+  {id="mount_blue_skeletal_horse", name="Blue Skeletal Horse",itemID=13332, creatureId=12341, family="skeletal", source="Undead racial mount", icon="Interface\\Icons\\Ability_Mount_Undeadhorse"},
   {id="mount_boar", name="Boar", creatureId=4535, family="boar", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Hunter_Pet_Boar"},
   {id="mount_brown_camel", name="Brown Camel", creatureId=284, family="camel", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
-  {id="mount_brown_horse", name="Brown Horse", creatureId=284, family="horse", source="Human racial mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
-  {id="mount_brown_kodo", name="Brown Kodo", creatureId=12354, family="kodo", source="Tauren racial mount", icon="Interface\\Icons\\Ability_Mount_Kodo_03"},
+  {id="mount_brown_horse", name="Brown Horse",itemID=5656, creatureId=284, family="horse", source="Human racial mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
+  {id="mount_brown_kodo", name="Brown Kodo",itemID=15290, creatureId=12354, family="kodo", source="Tauren racial mount", icon="Interface\\Icons\\Ability_Mount_Kodo_03"},
   {id="mount_brown_ostrich", name="Brown Ostrich", creatureId=7394, family="bird", source="Turtle WoW mount", icon="Interface\\Icons\\Spell_Magic_PolymorphChicken"},
-  {id="mount_brown_ram", name="Brown Ram", creatureId=12372, family="ram", source="Dwarf racial mount", icon="Interface\\Icons\\Ability_Mount_MountainRam"},
-  {id="mount_brown_skeletal_horse", name="Brown Skeletal Horse", creatureId=12342, family="skeletal", source="Undead racial mount", icon="Interface\\Icons\\Ability_Mount_Undeadhorse"},
-  {id="mount_brown_wolf", name="Brown Wolf", creatureId=358, family="wolf", source="Orc racial mount", icon="Interface\\Icons\\Ability_Mount_WhiteDireWolf"},
+  {id="mount_brown_ram", name="Brown Ram",itemID=5872, creatureId=12372, family="ram", source="Dwarf racial mount", icon="Interface\\Icons\\Ability_Mount_MountainRam"},
+  {id="mount_brown_skeletal_horse", name="Brown Skeletal Horse",itemID=13333, creatureId=12342, family="skeletal", source="Undead racial mount", icon="Interface\\Icons\\Ability_Mount_Undeadhorse"},
+  {id="mount_brown_wolf", name="Brown Wolf",itemID=5668, creatureId=358, family="wolf", source="Orc racial mount", icon="Interface\\Icons\\Ability_Mount_WhiteDireWolf"},
   {id="mount_camel", name="Camel", creatureId=284, family="camel", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
   {id="mount_cenarion_war_hippogryph", name="Cenarion War Hippogryph", creatureId=24488, family="hippogryph", source="Mount collection", icon="Interface\\Icons\\Ability_Mount_Gryphon_01"},
   {id="mount_charger", name="Charger", creatureId=14565, family="horse", source="Class mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
   {id="mount_cheetah", name="Cheetah", creatureId=977, family="cat", source="Night Elf racial mount", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
-  {id="mount_chestnut_mare", name="Chestnut Mare", creatureId=4269, family="horse", source="Human racial mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
-  {id="mount_dire_wolf", name="Dire Wolf", creatureId=12351, family="wolf", source="Orc racial mount", icon="Interface\\Icons\\Ability_Mount_WhiteDireWolf"},
+  {id="mount_chestnut_mare", name="Chestnut Mare",itemID=5655, creatureId=4269, family="horse", source="Human racial mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
+  {id="mount_dire_wolf", name="Dire Wolf",itemID=5665, creatureId=12351, family="wolf", source="Orc racial mount", icon="Interface\\Icons\\Ability_Mount_WhiteDireWolf"},
   {id="mount_dreadsteed", name="Dreadsteed", creatureId=14505, family="horse", source="Class mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
-  {id="mount_emerald_raptor", name="Emerald Raptor", creatureId=12346, family="raptor", source="Troll racial mount", icon="Interface\\Icons\\Ability_Mount_Raptor"},
+  {id="mount_emerald_raptor", name="Emerald Raptor",itemID=8588, creatureId=12346, family="raptor", source="Troll racial mount", icon="Interface\\Icons\\Ability_Mount_Raptor"},
   {id="mount_felsteed", name="Felsteed", creatureId=304, family="horse", source="Class mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
-  {id="mount_frost_ram", name="Frost Ram", creatureId=12371, family="ram", source="Dwarf racial mount", icon="Interface\\Icons\\Ability_Mount_MountainRam"},
+  {id="mount_frost_ram", name="Frost Ram",itemID=13329, creatureId=12371, family="ram", source="Dwarf racial mount", icon="Interface\\Icons\\Ability_Mount_MountainRam"},
   {id="mount_frostwolf", name="Frostwolf", creatureId=14744, family="wolf", source="Orc racial mount", icon="Interface\\Icons\\Ability_Mount_WhiteDireWolf"},
   {id="mount_giraffe", name="Giraffe", creatureId=18739, family="giraffe", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Hunter_Pet_TallStrider"},
   {id="mount_goblin_trike", name="Goblin Trike", creatureId=2109, family="mechanical", source="Turtle WoW mount", icon="Interface\\Icons\\INV_Misc_Gear_01"},
-  {id="mount_gray_ram", name="Gray Ram", creatureId=12373, family="ram", source="Dwarf racial mount", icon="Interface\\Icons\\Ability_Mount_MountainRam"},
+  {id="mount_gray_ram", name="Gray Ram",itemID=5864, creatureId=12373, family="ram", source="Dwarf racial mount", icon="Interface\\Icons\\Ability_Mount_MountainRam"},
   {id="mount_great_brown_kodo", name="Great Brown Kodo", creatureId=14549, family="kodo", source="Tauren racial mount", icon="Interface\\Icons\\Ability_Mount_Kodo_03"},
   {id="mount_great_elk", name="Great Elk", creatureId=15665, family="elk", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Hunter_Pet_Stag"},
   {id="mount_great_green_kodo", name="Great Green Kodo", creatureId=12151, family="kodo", source="Tauren racial mount", icon="Interface\\Icons\\Ability_Mount_Kodo_03"},
@@ -52,7 +52,7 @@ local MOUNT_CATALOG = {
   {id="mount_great_sea_turtle", name="Great Sea Turtle", creatureId=17266, family="turtle", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Hunter_Pet_Turtle"},
   {id="mount_great_white_kodo", name="Great White Kodo", creatureId=14542, family="kodo", source="Tauren racial mount", icon="Interface\\Icons\\Ability_Mount_Kodo_03"},
   {id="mount_green_kodo", name="Green Kodo", creatureId=12356, family="kodo", source="Tauren racial mount", icon="Interface\\Icons\\Ability_Mount_Kodo_03"},
-  {id="mount_green_mechanostrider", name="Green Mechanostrider", creatureId=12367, family="mechanostrider", source="Gnome racial mount", icon="Interface\\Icons\\Ability_Mount_MechaStrider"},
+  {id="mount_green_mechanostrider", name="Green Mechanostrider",itemID=13321, creatureId=12367, family="mechanostrider", source="Gnome racial mount", icon="Interface\\Icons\\Ability_Mount_MechaStrider"},
   {id="mount_green_qiraji_battle_tank", name="Green Qiraji Battle Tank", creatureId=15715, family="qiraji", source="Dungeon or raid mount", icon="Interface\\Icons\\INV_Misc_Qirajicrystal_04"},
   {id="mount_green_skeletal_warhorse", name="Green Skeletal Warhorse", creatureId=12344, family="skeletal", source="Undead racial mount", icon="Interface\\Icons\\Ability_Mount_Undeadhorse"},
   {id="mount_grey_kodo", name="Grey Kodo", creatureId=12355, family="kodo", source="Tauren racial mount", icon="Interface\\Icons\\Ability_Mount_Kodo_03"},
@@ -66,29 +66,29 @@ local MOUNT_CATALOG = {
   {id="mount_mottled_red_raptor", name="Mottled Red Raptor", creatureId=12345, family="raptor", source="Troll racial mount", icon="Interface\\Icons\\Ability_Mount_Raptor"},
   {id="mount_obsidian_raptor", name="Obsidian Raptor", creatureId=7703, family="raptor", source="Troll racial mount", icon="Interface\\Icons\\Ability_Mount_Raptor"},
   {id="mount_ochre_skeletal_warhorse", name="Ochre Skeletal Warhorse", creatureId=11156, family="skeletal", source="Undead racial mount", icon="Interface\\Icons\\Ability_Mount_Undeadhorse"},
-  {id="mount_palomino", name="Palomino", creatureId=306, family="horse", source="Human racial mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
-  {id="mount_pinto", name="Pinto", creatureId=307, family="horse", source="Human racial mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
+  {id="mount_palomino", name="Palomino",itemID=2413, creatureId=306, family="horse", source="Human racial mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
+  {id="mount_pinto", name="Pinto",itemID=2414, creatureId=307, family="horse", source="Human racial mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
   {id="mount_polar_bear", name="Polar Bear", creatureId=1196, family="bear", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Mount_PolarBear_White"},
   {id="mount_purple_skeletal_warhorse", name="Purple Skeletal Warhorse", creatureId=14558, family="skeletal", source="Undead racial mount", icon="Interface\\Icons\\Ability_Mount_Undeadhorse"},
   {id="mount_ram_of_ironforge", name="Ram of Ironforge", creatureId=12373, family="ram", source="Dwarf racial mount", icon="Interface\\Icons\\Ability_Mount_MountainRam"},
-  {id="mount_red_mechanostrider", name="Red Mechanostrider", creatureId=12365, family="mechanostrider", source="Gnome racial mount", icon="Interface\\Icons\\Ability_Mount_MechaStrider"},
+  {id="mount_red_mechanostrider", name="Red Mechanostrider",itemID=8563, creatureId=12365, family="mechanostrider", source="Gnome racial mount", icon="Interface\\Icons\\Ability_Mount_MechaStrider"},
   {id="mount_red_qiraji_battle_tank", name="Red Qiraji Battle Tank", creatureId=15716, family="qiraji", source="Dungeon or raid mount", icon="Interface\\Icons\\INV_Misc_Qirajicrystal_04"},
-  {id="mount_red_skeletal_horse", name="Red Skeletal Horse", creatureId=12343, family="skeletal", source="Undead racial mount", icon="Interface\\Icons\\Ability_Mount_Undeadhorse"},
+  {id="mount_red_skeletal_horse", name="Red Skeletal Horse",itemID=13331, creatureId=12343, family="skeletal", source="Undead racial mount", icon="Interface\\Icons\\Ability_Mount_Undeadhorse"},
   {id="mount_red_skeletal_warhorse", name="Red Skeletal Warhorse", creatureId=14331, family="skeletal", source="Undead racial mount", icon="Interface\\Icons\\Ability_Mount_Undeadhorse"},
   {id="mount_red_wolf", name="Red Wolf", creatureId=4270, family="wolf", source="Orc racial mount", icon="Interface\\Icons\\Ability_Mount_WhiteDireWolf"},
   {id="mount_reindeer", name="Reindeer", creatureId=15665, family="elk", source="Mount collection", icon="Interface\\Icons\\Ability_Hunter_Pet_Stag"},
   {id="mount_riding_bear", name="Riding Bear", creatureId=1129, family="bear", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Mount_PolarBear_White"},
   {id="mount_riding_turtle", name="Riding Turtle", creatureId=17266, family="turtle", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Hunter_Pet_Turtle"},
-  {id="mount_rivendare_s_deathcharger", name="Rivendare's Deathcharger", creatureId=14568, family="skeletal", source="Dungeon or raid mount", icon="Interface\\Icons\\Ability_Mount_Undeadhorse"},
+  {id="mount_rivendare_s_deathcharger", name="Rivendare's Deathcharger",itemID=13335, creatureId=14568, family="skeletal", source="Dungeon or raid mount", icon="Interface\\Icons\\Ability_Mount_Undeadhorse"},
   {id="mount_sea_turtle", name="Sea Turtle", creatureId=17266, family="turtle", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Hunter_Pet_Turtle"},
   {id="mount_silver_riding_turtle", name="Silver Riding Turtle", creatureId=17266, family="turtle", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Hunter_Pet_Turtle"},
   {id="mount_snow_leopard", name="Snow Leopard", creatureId=10336, family="cat", source="Night Elf racial mount", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
-  {id="mount_spotted_frostsaber", name="Spotted Frostsaber", creatureId=12359, family="cat", source="Night Elf racial mount", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
+  {id="mount_spotted_frostsaber", name="Spotted Frostsaber",itemID=8632, creatureId=12359, family="cat", source="Night Elf racial mount", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
   {id="mount_steam_tank_mount", name="Steam Tank Mount", creatureId=2109, family="mechanical", source="Turtle WoW mount", icon="Interface\\Icons\\INV_Misc_Gear_01"},
   {id="mount_steamscale", name="Steamscale", creatureId=2109, family="mechanical", source="Turtle WoW mount", icon="Interface\\Icons\\INV_Misc_Gear_01"},
-  {id="mount_striped_dawnsaber", name="Striped Dawnsaber", creatureId=12361, family="cat", source="Night Elf racial mount", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
-  {id="mount_striped_frostsaber", name="Striped Frostsaber", creatureId=12358, family="cat", source="Night Elf racial mount", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
-  {id="mount_striped_nightsaber", name="Striped Nightsaber", creatureId=12360, family="cat", source="Night Elf racial mount", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
+  {id="mount_striped_dawnsaber", name="Striped Dawnsaber",itemID=81227, creatureId=12361, family="cat", source="Night Elf racial mount", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
+  {id="mount_striped_frostsaber", name="Striped Frostsaber",itemID=8631, creatureId=12358, family="cat", source="Night Elf racial mount", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
+  {id="mount_striped_nightsaber", name="Striped Nightsaber",itemID=8629, creatureId=12360, family="cat", source="Night Elf racial mount", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
   {id="mount_swift_bear", name="Swift Bear", creatureId=1189, family="bear", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Mount_PolarBear_White"},
   {id="mount_swift_blue_raptor", name="Swift Blue Raptor", creatureId=14545, family="raptor", source="Troll racial mount", icon="Interface\\Icons\\Ability_Mount_Raptor"},
   {id="mount_swift_brown_ram", name="Swift Brown Ram", creatureId=14546, family="ram", source="Dwarf racial mount", icon="Interface\\Icons\\Ability_Mount_MountainRam"},
@@ -115,31 +115,31 @@ local MOUNT_CATALOG = {
   {id="mount_swift_white_ram", name="Swift White Ram", creatureId=14547, family="ram", source="Dwarf racial mount", icon="Interface\\Icons\\Ability_Mount_MountainRam"},
   {id="mount_swift_white_steed", name="Swift White Steed", creatureId=14560, family="horse", source="Human racial mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
   {id="mount_swift_yellow_mechanostrider", name="Swift Yellow Mechanostrider", creatureId=14551, family="mechanostrider", source="Gnome racial mount", icon="Interface\\Icons\\Ability_Mount_MechaStrider"},
-  {id="mount_swift_zulian_tiger", name="Swift Zulian Tiger", creatureId=15104, family="cat", source="Dungeon or raid mount", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
+  {id="mount_swift_zulian_tiger", name="Swift Zulian Tiger",itemID=19902, creatureId=15104, family="cat", source="Dungeon or raid mount", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
   {id="mount_tan_camel", name="Tan Camel", creatureId=306, family="camel", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
   {id="mount_tawny_sabercat", name="Tawny Sabercat", creatureId=12361, family="cat", source="Mount collection", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
   {id="mount_teal_kodo", name="Teal Kodo", creatureId=12357, family="kodo", source="Tauren racial mount", icon="Interface\\Icons\\Ability_Mount_Kodo_03"},
-  {id="mount_timber_wolf", name="Timber Wolf", creatureId=12353, family="wolf", source="Orc racial mount", icon="Interface\\Icons\\Ability_Mount_WhiteDireWolf"},
+  {id="mount_timber_wolf", name="Timber Wolf",itemID=1132, creatureId=12353, family="wolf", source="Orc racial mount", icon="Interface\\Icons\\Ability_Mount_WhiteDireWolf"},
   {id="mount_trike", name="Trike", creatureId=2109, family="mechanical", source="Turtle WoW mount", icon="Interface\\Icons\\INV_Misc_Gear_01"},
-  {id="mount_turquoise_raptor", name="Turquoise Raptor", creatureId=12349, family="raptor", source="Troll racial mount", icon="Interface\\Icons\\Ability_Mount_Raptor"},
+  {id="mount_turquoise_raptor", name="Turquoise Raptor",itemID=8591, creatureId=12349, family="raptor", source="Troll racial mount", icon="Interface\\Icons\\Ability_Mount_Raptor"},
   {id="mount_turtle_mount", name="Turtle Mount", creatureId=17266, family="turtle", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Hunter_Pet_Turtle"},
-  {id="mount_unpainted_mechanostrider", name="Unpainted Mechanostrider", creatureId=12366, family="mechanostrider", source="Gnome racial mount", icon="Interface\\Icons\\Ability_Mount_MechaStrider"},
-  {id="mount_violet_raptor", name="Violet Raptor", creatureId=12350, family="raptor", source="Troll racial mount", icon="Interface\\Icons\\Ability_Mount_Raptor"},
+  {id="mount_unpainted_mechanostrider", name="Unpainted Mechanostrider",itemID=13322, creatureId=12366, family="mechanostrider", source="Gnome racial mount", icon="Interface\\Icons\\Ability_Mount_MechaStrider"},
+  {id="mount_violet_raptor", name="Violet Raptor",itemID=8592, creatureId=12350, family="raptor", source="Troll racial mount", icon="Interface\\Icons\\Ability_Mount_Raptor"},
   {id="mount_war_boar", name="War Boar", creatureId=4535, family="boar", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Hunter_Pet_Boar"},
   {id="mount_warhorse", name="Warhorse", creatureId=9158, family="horse", source="Class mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
   {id="mount_white_camel", name="White Camel", creatureId=305, family="camel", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
   {id="mount_white_lion", name="White Lion", creatureId=15926, family="cat", source="Night Elf racial mount", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
   {id="mount_white_mechanostrider", name="White Mechanostrider", creatureId=12368, family="mechanostrider", source="Gnome racial mount", icon="Interface\\Icons\\Ability_Mount_MechaStrider"},
   {id="mount_white_ostrich", name="White Ostrich", creatureId=17476, family="bird", source="Turtle WoW mount", icon="Interface\\Icons\\Spell_Magic_PolymorphChicken"},
-  {id="mount_white_ram", name="White Ram", creatureId=1262, family="ram", source="Dwarf racial mount", icon="Interface\\Icons\\Ability_Mount_MountainRam"},
-  {id="mount_white_stallion", name="White Stallion", creatureId=305, family="horse", source="Human racial mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
+  {id="mount_white_ram", name="White Ram",itemID=5873, creatureId=1262, family="ram", source="Dwarf racial mount", icon="Interface\\Icons\\Ability_Mount_MountainRam"},
+  {id="mount_white_stallion", name="White Stallion",itemID=12353, creatureId=305, family="horse", source="Human racial mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
   {id="mount_winter_reindeer", name="Winter Reindeer", creatureId=15706, family="elk", source="Mount collection", icon="Interface\\Icons\\Ability_Hunter_Pet_Stag"},
   {id="mount_winter_wolf", name="Winter Wolf", creatureId=359, family="wolf", source="Orc racial mount", icon="Interface\\Icons\\Ability_Mount_WhiteDireWolf"},
-  {id="mount_winterspring_frostsaber", name="Winterspring Frostsaber", creatureId=14556, family="cat", source="Mount collection", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
+  {id="mount_winterspring_frostsaber", name="Winterspring Frostsaber",itemID=13086, creatureId=14556, family="cat", source="Mount collection", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
   {id="mount_yellow_mechanostrider", name="Yellow Mechanostrider", creatureId=14551, family="mechanostrider", source="Gnome racial mount", icon="Interface\\Icons\\Ability_Mount_MechaStrider"},
   {id="mount_yellow_qiraji_battle_tank", name="Yellow Qiraji Battle Tank", creatureId=15714, family="qiraji", source="Dungeon or raid mount", icon="Interface\\Icons\\INV_Misc_Qirajicrystal_04"},
-  {id="mount_zebra", name="Zebra", creatureId=27541, family="zhevra", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
-  {id="mount_zhevra", name="Zhevra", creatureId=27541, family="zhevra", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
+  {id="mount_zebra", name="Zebra",itemID=50426, creatureId=27541, family="zhevra", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
+  {id="mount_zhevra", name="Zhevra",itemID=50400, creatureId=27541, family="zhevra", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
 }
 
 
@@ -534,6 +534,20 @@ function LeafVE_AchTest:GetMountCreatureCandidates(entry)
   return candidates
 end
 
+-- Same real spellbook icon (GetSpellTexture at scan time) written into the
+-- same shared table the Collections module's own scan and the achievement
+-- row/toast/card all read from -- one consistent storage location instead
+-- of icons living only on the local achievement definition. Mirrors
+-- CaptureCompanionIcon in LeafVE_Ach_Companions.lua.
+local function CaptureMountIcon(name,icon)
+  if not icon or icon=="" or not name or name=="" or not LeafVE_AchTest_DB then return end
+  LeafVE_AchTest_DB.collections=LeafVE_AchTest_DB.collections or {}
+  LeafVE_AchTest_DB.collections.mounts=LeafVE_AchTest_DB.collections.mounts or {}
+  local saved=LeafVE_AchTest_DB.collections.mounts
+  if type(saved[name])~="table" then saved[name]={} end
+  saved[name].icon=icon
+end
+
 function LeafVE_AchTest:ScanMountCollection(silent)
   local state=EnsureMountState()
   if not state or not GetSpellName then return end
@@ -554,6 +568,11 @@ function LeafVE_AchTest:ScanMountCollection(silent)
         if spellIcon then
           icons[entry.id]=spellIcon
           entry.icon=spellIcon
+          -- Keyed by the literal spell name (not the catalog's display
+          -- name) to guarantee this lands on the exact same table entry
+          -- as the Collections module's own scan, which keys off
+          -- GetSpellName's raw result too.
+          CaptureMountIcon(spellName,spellIcon)
         end
         RegisterMountAchievement(entry)
         LeafVE_AchTest:AwardAchievement(entry.achievementId or entry.id,silent)
@@ -568,7 +587,10 @@ function LeafVE_AchTest:ScanMountCollection(silent)
         dynamic[dynamicId].difficulty=MountDifficulty(dynamic[dynamicId].points)
         dynamic[dynamicId].achievementId=dynamicId
         owned[dynamicId]=true
-        if spellIcon then icons[dynamicId]=spellIcon end
+        if spellIcon then
+          icons[dynamicId]=spellIcon
+          CaptureMountIcon(spellName,spellIcon)
+        end
         RegisterMountAchievement(dynamic[dynamicId])
         LeafVE_AchTest:AwardAchievement(dynamicId,silent)
       end

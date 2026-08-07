@@ -4296,6 +4296,14 @@ local function LeafVE_SkinAshenEditBox(box)
   box:SetTextColor(1, 0.95, 0.85)
 end
 
+-- Exposed so LeafVillageAchievementsCollections.lua (a separate chunk, so
+-- it can't see these locals directly) can skin the Mount/Companion cards
+-- and their buttons to match the ashen banner theme used everywhere else.
+LeafVE_AchTest.TEX = TEX
+LeafVE_AchTest.THEME = THEME
+LeafVE_AchTest.SkinAshenButton = LeafVE_SkinAshenButton
+LeafVE_AchTest.SkinAshenEditBox = LeafVE_SkinAshenEditBox
+
 -- Virtual-scroll constants for the achievement list.
 -- ACH_ROW_H: pixel height of each achievement row.
 -- ACH_POOL:  number of recycled frame slots (covers visible area + buffer).
@@ -5336,7 +5344,14 @@ function LeafVE_AchTest.UI:BuildZoneMapFrame()
   f:Hide()
 
   if UISpecialFrames then
-    tinsert(UISpecialFrames, "LeafVE_ZoneMapFrame")
+    -- Blizzard's Escape handling walks UISpecialFrames in order and closes
+    -- only the first shown entry it finds. The main achievement window is
+    -- almost always built (and thus registered) before this map overlay
+    -- ever gets opened on top of it, so without forcing this to the front
+    -- of the list, Escape would close the achievement window underneath
+    -- instead of the map floating above it. Insert at index 1 so the map,
+    -- when open, always takes priority over anything registered later.
+    tinsert(UISpecialFrames, 1, "LeafVE_ZoneMapFrame")
   end
 
   local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
@@ -5592,6 +5607,9 @@ function LeafVE_AchTest.UI:Build()
   -- The sidebar/achievement list/other views are all anchored with
   -- dynamic TOPLEFT/BOTTOMRIGHT points, so they just gain the same
   -- extra room rather than needing any changes of their own.
+  -- (Mount/Companion card sizing is tuned to fit this viewport in
+  -- ABC_StableCard rather than growing the window further -- see the
+  -- cardH/portrait comments there.)
   f:SetHeight(660)
   f:SetFrameStrata("FULLSCREEN_DIALOG")
   f:SetFrameLevel(100)
@@ -7092,6 +7110,15 @@ end
 -- Computing the range directly from the current frame heights sidesteps that.
 function LeafVE_AchTest.UI:GetScrollMax()
   if not self.scrollChild or not self.scrollFrame then return 0 end
+  -- Mount/Companion pages are deliberately capped to always fit within the
+  -- viewport (see BuildCollectionView's page-size math), so there's never
+  -- a legitimate reason to scroll here -- forced to 0 rather than trusting
+  -- the height math to land exactly on-or-under the viewport every time,
+  -- since a few px of drift there (font metrics, content variance) was
+  -- previously enough to let the mouse wheel nudge the view slightly.
+  if self.currentView == "mounts" or self.currentView == "companions" then
+    return 0
+  end
   local m = (self.scrollChild:GetHeight() or 0) - (self.scrollFrame:GetHeight() or 0)
   if m < 0 then m = 0 end
   return m
@@ -9159,14 +9186,18 @@ end)
 
 -- Click to open
 minimapButton:SetScript("OnClick", function()
-  LeafVE_AchTest.UI:Build()
+  if LeafVE_AchTest.UI.frame and LeafVE_AchTest.UI.frame:IsShown() then
+    LeafVE_AchTest.UI.frame:Hide()
+  else
+    LeafVE_AchTest.UI:Build()
+  end
 end)
 
 -- Tooltip
 minimapButton:SetScript("OnEnter", function()
   GameTooltip:SetOwner(this, "ANCHOR_LEFT")
   GameTooltip:SetText("|cFFFFD433Ashen Banner Achievements|r", 1, 1, 1)
-  GameTooltip:AddLine("Click to open", 0.8, 0.8, 0.8)
+  GameTooltip:AddLine("Click to open/close", 0.8, 0.8, 0.8)
   GameTooltip:AddLine("Drag to move", 0.6, 0.6, 0.6)
   GameTooltip:Show()
 end)
