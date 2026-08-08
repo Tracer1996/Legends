@@ -381,6 +381,7 @@ local ADMIN_RANKS = {
   ["flame keeper"] = true,
 }
 local ACCESS_RANKS = {
+  ["ember"] = true,
   ["born"] = true,
   ["flamebound"] = true,
   ["oath captain"] = true,
@@ -1577,6 +1578,9 @@ local function CopyAchievementEntry(meta, timestampOverride, pointsOverride)
     completed = meta.completed and true or false,
     timestamp = tonumber(timestampOverride or meta.timestamp) or 0,
     category = meta.category,
+    criteria_type = meta.criteria_type,
+    criteria_overlays = meta.criteria_overlays,
+    criteria_bounds = meta.criteria_bounds,
   }
 end
 
@@ -1606,6 +1610,104 @@ end
 
 function LeafVE:InvalidateClientAchievementCatalog()
   self._clientAchievementCatalog = nil
+  self._achievementCatalogScan = nil
+end
+
+-- Scanning every native-achievement category/index in one synchronous burst
+-- (the old body of this function) is the same class of bug that used to
+-- crash the client from the achievements addon's C_Map exploration scan --
+-- landing right after login, while the main window was mid-drag, it hit an
+-- uncatchable native ACCESS_VIOLATION. Chunk it across frames via the
+-- existing deferred-task driver instead, same fix pattern as that scan.
+function LeafVE_AchievementCatalogScanStep(scan, catalog)
+  local categoryId = scan.categories[scan.categoryIndex]
+
+  if type(categoryId) ~= "number" then
+    scan.categoryIndex = scan.categoryIndex + 1
+    return
+  end
+
+  if not scan.categoryCount then
+    local okCount, numAchievements = pcall(GetCategoryNumAchievements, categoryId)
+    scan.categoryCount = (okCount and type(numAchievements) == "number") and numAchievements or 0
+    scan.achIndex = 1
+    scan.categoryName = nil
+    if scan.categoryCount > 0 and type(GetCategoryInfo) == "function" then
+      local okCategory, resolvedCategory = pcall(GetCategoryInfo, categoryId)
+      if okCategory and type(resolvedCategory) == "string" then
+        scan.categoryName = resolvedCategory
+      end
+    end
+    return
+  end
+
+  if scan.achIndex > scan.categoryCount then
+    scan.categoryIndex = scan.categoryIndex + 1
+    scan.categoryCount = nil
+    return
+  end
+
+  local okInfo, id, name, points, completed, month, day, year, description, flags, icon =
+    pcall(GetAchievementInfo, categoryId, scan.achIndex)
+  scan.achIndex = scan.achIndex + 1
+
+  if okInfo and id then
+    local key = AchievementKey(id)
+    if key and not scan.seen[key] then
+      scan.seen[key] = true
+
+      local entry = {
+        id = id,
+        key = key,
+        name = name,
+        points = tonumber(points) or DEFAULT_ACHIEVEMENT_POINTS,
+        completed = completed and true or false,
+        month = month,
+        day = day,
+        year = year,
+        desc = description or "",
+        flags = flags,
+        icon = icon or LEAF_FALLBACK,
+        category = scan.categoryName,
+        timestamp = BuildAchievementTimestamp(month, day, year),
+      }
+
+      catalog.byId[key] = entry
+      catalog.available = true
+
+      if entry.completed then
+        table.insert(catalog.completed, CopyAchievementEntry(entry))
+        catalog.totalPoints = catalog.totalPoints + entry.points
+      end
+    end
+  end
+end
+
+function LeafVE_ContinueAchievementCatalogScan()
+  local scan = LeafVE._achievementCatalogScan
+  local catalog = LeafVE._clientAchievementCatalog
+  if not scan or not catalog then return end
+
+  local processed = 0
+  while processed < 15 do
+    if scan.categoryIndex > table.getn(scan.categories) then
+      table.sort(catalog.completed, function(a, b)
+        local aStamp = tonumber(a.timestamp) or 0
+        local bStamp = tonumber(b.timestamp) or 0
+        if aStamp == bStamp then
+          return Lower(tostring(a.name or a.id or "")) < Lower(tostring(b.name or b.id or ""))
+        end
+        return aStamp > bStamp
+      end)
+      LeafVE._achievementCatalogScan = nil
+      return
+    end
+
+    LeafVE_AchievementCatalogScanStep(scan, catalog)
+    processed = processed + 1
+  end
+
+  LeafVE:ScheduleDeferred("achievementCatalogScan", 0, LeafVE_ContinueAchievementCatalogScan)
 end
 
 function LeafVE:GetClientAchievementCatalog(forceRefresh)
@@ -1619,9 +1721,9 @@ function LeafVE:GetClientAchievementCatalog(forceRefresh)
     completed = {},
     totalPoints = 0,
   }
+  self._clientAchievementCatalog = catalog
 
   if type(GetCategoryList) ~= "function" or type(GetCategoryNumAchievements) ~= "function" or type(GetAchievementInfo) ~= "function" then
-    self._clientAchievementCatalog = catalog
     return catalog
   end
 
@@ -1631,69 +1733,13 @@ function LeafVE:GetClientAchievementCatalog(forceRefresh)
     categories = { GetCategoryList() }
   end
 
-  local seen = {}
+  self._achievementCatalogScan = {
+    categories = categories,
+    categoryIndex = 1,
+    seen = {},
+  }
+  self:ScheduleDeferred("achievementCatalogScan", 0, LeafVE_ContinueAchievementCatalogScan)
 
-  for _, categoryId in ipairs(categories) do
-    if type(categoryId) == "number" then
-      local okCount, numAchievements = pcall(GetCategoryNumAchievements, categoryId)
-      if okCount and type(numAchievements) == "number" and numAchievements > 0 then
-        local categoryName = nil
-        if type(GetCategoryInfo) == "function" then
-          local okCategory, resolvedCategory = pcall(GetCategoryInfo, categoryId)
-          if okCategory and type(resolvedCategory) == "string" then
-            categoryName = resolvedCategory
-          end
-        end
-
-        for index = 1, numAchievements do
-          local okInfo, id, name, points, completed, month, day, year, description, flags, icon =
-            pcall(GetAchievementInfo, categoryId, index)
-
-          if okInfo and id then
-            local key = AchievementKey(id)
-            if key and not seen[key] then
-              seen[key] = true
-
-              local entry = {
-                id = id,
-                key = key,
-                name = name,
-                points = tonumber(points) or DEFAULT_ACHIEVEMENT_POINTS,
-                completed = completed and true or false,
-                month = month,
-                day = day,
-                year = year,
-                desc = description or "",
-                flags = flags,
-                icon = icon or LEAF_FALLBACK,
-                category = categoryName,
-                timestamp = BuildAchievementTimestamp(month, day, year),
-              }
-
-              catalog.byId[key] = entry
-              catalog.available = true
-
-              if entry.completed then
-                table.insert(catalog.completed, CopyAchievementEntry(entry))
-                catalog.totalPoints = catalog.totalPoints + entry.points
-              end
-            end
-          end
-        end
-      end
-    end
-  end
-
-  table.sort(catalog.completed, function(a, b)
-    local aStamp = tonumber(a.timestamp) or 0
-    local bStamp = tonumber(b.timestamp) or 0
-    if aStamp == bStamp then
-      return Lower(tostring(a.name or a.id or "")) < Lower(tostring(b.name or b.id or ""))
-    end
-    return aStamp > bStamp
-  end)
-
-  self._clientAchievementCatalog = catalog
   return catalog
 end
 
@@ -1711,10 +1757,15 @@ function LeafVE:GetAchievementMeta(achId)
     return directMeta
   end
 
+  -- Bridges to the achievements addon's own authoritative icon/mosaic data via
+  -- its exposed API table -- this used to call achievementsAddon.GetAchievementMeta
+  -- directly, a function that addon never actually exposed, so this branch was
+  -- silently dead and every achievement fell through to the generic fallback
+  -- below (no icon, no mosaic, name guessed from the raw ID).
   local achievementsAddon = LeafVillageAchievements or LeafVE_AchTest
-  if achievementsAddon and achievementsAddon.GetAchievementMeta then
-    local legacyMeta = achievementsAddon.GetAchievementMeta(achId)
-    if legacyMeta then
+  if achievementsAddon and achievementsAddon.API and achievementsAddon.API.GetAchievementMeta then
+    local ok, legacyMeta = pcall(achievementsAddon.API.GetAchievementMeta, achId)
+    if ok and legacyMeta then
       return {
         id = achId,
         key = key,
@@ -1723,8 +1774,9 @@ function LeafVE:GetAchievementMeta(achId)
         icon = legacyMeta.icon,
         points = legacyMeta.points,
         category = legacyMeta.category,
-        criteria_key = legacyMeta.criteria_key,
         criteria_type = legacyMeta.criteria_type,
+        criteria_overlays = legacyMeta.criteria_overlays,
+        criteria_bounds = legacyMeta.criteria_bounds,
       }
     end
   end
@@ -18898,7 +18950,19 @@ function LeafVE.UI:ShowPlayerCard(playerName)
       icon:SetHeight(14)
       icon:SetPoint("LEFT", entry, "LEFT", 6, 0)
       entry.icon = icon
-      
+
+      -- Live exploration achievements use a composited mini zone-map mosaic
+      -- instead of a flat icon in the achievements addon's own UI. Same
+      -- rendering here (via that addon's shared ZoneMapUI.LayoutThumbnail)
+      -- instead of falling back to a generic icon that doesn't match.
+      local iconMosaic = CreateFrame("Frame", nil, entry)
+      iconMosaic:SetWidth(14)
+      iconMosaic:SetHeight(14)
+      iconMosaic:SetPoint("LEFT", entry, "LEFT", 6, 0)
+      iconMosaic.tiles = {}
+      iconMosaic:Hide()
+      entry.iconMosaic = iconMosaic
+
       local nameText = entry:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
       nameText:SetPoint("LEFT", icon, "RIGHT", 6, 0)
       nameText:SetPoint("RIGHT", entry, "RIGHT", -44, 0)
@@ -18922,12 +18986,24 @@ function LeafVE.UI:ShowPlayerCard(playerName)
     end
     
     entry:SetPoint("TOPLEFT", self.cardRecentAchFrame, "TOPLEFT", 0, -yOffset)
-    
-    entry.icon:SetTexture(displayIcon)
-    if not entry.icon:GetTexture() then
-      entry.icon:SetTexture(LEAF_FALLBACK)
+
+    local achievementsAddon = LeafVillageAchievements or LeafVE_AchTest
+    local zoneMapUI = achievementsAddon and achievementsAddon.ZoneMapUI
+    local isZoneMosaic = ach.criteria_type == "explore_zone_live" and ach.criteria_overlays
+      and zoneMapUI and zoneMapUI.LayoutThumbnail
+    if isZoneMosaic then
+      zoneMapUI.LayoutThumbnail(entry.iconMosaic, ach.criteria_overlays, ach.criteria_bounds, 14)
+      entry.iconMosaic:Show()
+      entry.icon:Hide()
+    else
+      entry.iconMosaic:Hide()
+      entry.icon:Show()
+      entry.icon:SetTexture(displayIcon)
+      if not entry.icon:GetTexture() then
+        entry.icon:SetTexture(LEAF_FALLBACK)
+      end
     end
-    
+
     entry.nameText:SetText(displayName)
     entry:SetBackdropColor(0.06, 0.07, 0.1, 0.94)
     entry:SetBackdropBorderColor(THEME.soft[1], THEME.soft[2], THEME.soft[3], 0.8)
@@ -33698,7 +33774,18 @@ function LeafVE.UI:RefreshAchievementPopup(playerName)
         icon:SetHeight(40)
         icon:SetPoint("LEFT", entry, "LEFT", 5, 0)
         entry.icon = icon
-        
+
+        -- Live exploration achievements use a composited mini zone-map mosaic
+        -- instead of a flat icon in the achievements addon's own UI -- same
+        -- treatment as the dossier's Recent Achievements list.
+        local iconMosaic = CreateFrame("Frame", nil, entry)
+        iconMosaic:SetWidth(40)
+        iconMosaic:SetHeight(40)
+        iconMosaic:SetPoint("LEFT", entry, "LEFT", 5, 0)
+        iconMosaic.tiles = {}
+        iconMosaic:Hide()
+        entry.iconMosaic = iconMosaic
+
         local nameText = entry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         nameText:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, -5)
         nameText:SetWidth(250)
@@ -33789,9 +33876,21 @@ function LeafVE.UI:RefreshAchievementPopup(playerName)
 
       entry:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 5, yOffset)
 
-      entry.icon:SetTexture(ach.icon)
-      if not entry.icon:GetTexture() then
-        entry.icon:SetTexture(LEAF_FALLBACK)
+      local achievementsAddonForIcon = LeafVillageAchievements or LeafVE_AchTest
+      local zoneMapUIForIcon = achievementsAddonForIcon and achievementsAddonForIcon.ZoneMapUI
+      local isZoneMosaicEntry = ach.criteria_type == "explore_zone_live" and ach.criteria_overlays
+        and zoneMapUIForIcon and zoneMapUIForIcon.LayoutThumbnail
+      if isZoneMosaicEntry then
+        zoneMapUIForIcon.LayoutThumbnail(entry.iconMosaic, ach.criteria_overlays, ach.criteria_bounds, 40)
+        entry.iconMosaic:Show()
+        entry.icon:Hide()
+      else
+        entry.iconMosaic:Hide()
+        entry.icon:Show()
+        entry.icon:SetTexture(ach.icon)
+        if not entry.icon:GetTexture() then
+          entry.icon:SetTexture(LEAF_FALLBACK)
+        end
       end
 
       entry.icon:SetVertexColor(1, 1, 1, 1)
@@ -42445,6 +42544,16 @@ function GetOrCreateBadgeInfoPanel()
   icon:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -12)
   f.icon = icon
 
+  -- Live exploration achievements use a composited mini zone-map mosaic
+  -- instead of a flat icon in the achievements addon's own UI.
+  local iconMosaic = CreateFrame("Frame", nil, f)
+  iconMosaic:SetWidth(48)
+  iconMosaic:SetHeight(48)
+  iconMosaic:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -12)
+  iconMosaic.tiles = {}
+  iconMosaic:Hide()
+  f.iconMosaic = iconMosaic
+
   -- Badge name
   local nameFS = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   nameFS:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, -2)
@@ -42624,10 +42733,20 @@ function LeafVE:HandleCustomHyperlinkClick(link, text)
       local safeDesc = tostring(achData.desc or "Achievement details unavailable.")
       local safePoints = tonumber(achData.points) or 0
 
-      if achData.icon then
+      local achievementsAddonForIcon = LeafVillageAchievements or LeafVE_AchTest
+      local zoneMapUIForIcon = achievementsAddonForIcon and achievementsAddonForIcon.ZoneMapUI
+      local isZoneMosaicPanel = achData.criteria_type == "explore_zone_live" and achData.criteria_overlays
+        and zoneMapUIForIcon and zoneMapUIForIcon.LayoutThumbnail
+      if isZoneMosaicPanel then
+        zoneMapUIForIcon.LayoutThumbnail(panel.iconMosaic, achData.criteria_overlays, achData.criteria_bounds, 48)
+        panel.iconMosaic:Show()
+        panel.icon:Hide()
+      elseif achData.icon then
+        panel.iconMosaic:Hide()
         panel.icon:SetTexture(achData.icon)
         panel.icon:Show()
       else
+        panel.iconMosaic:Hide()
         panel.icon:Hide()
       end
 
