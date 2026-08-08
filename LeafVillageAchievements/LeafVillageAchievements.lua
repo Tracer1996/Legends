@@ -1591,7 +1591,31 @@ LeafVE_AchTest.API = {
   GetPlayerPoints = function(playerName)
     return LeafVE_AchTest:GetTotalAchievementPoints(playerName)
   end,
-  
+
+  -- Authoritative metadata for a single achievement ID, regardless of whether
+  -- the player has earned it. Includes the live exploration mosaic fields
+  -- (criteria_overlays/criteria_bounds) so other addons can render the same
+  -- mini zone-map thumbnail this addon uses instead of a flat icon.
+  GetAchievementMeta = function(achId)
+    local a = ACHIEVEMENTS[achId]
+    if not a then return nil end
+    return {
+      id = achId,
+      name = a.name,
+      desc = a.desc,
+      -- Collection achievements (mounts/companions/toys) show the player's own
+      -- scanned item/spell icon in this addon's own UI, not the static field
+      -- GetAchievementIcon falls back to -- ResolveMissingCollectionIcon is
+      -- the same resolver the row list/toast/summary all actually use.
+      icon = LeafVE_AchTest.ResolveMissingCollectionIcon(a) or GetAchievementIcon(achId),
+      points = a.points,
+      category = a.category,
+      criteria_type = a.criteria_type,
+      criteria_overlays = a.criteria_overlays,
+      criteria_bounds = a.criteria_bounds,
+    }
+  end,
+
   GetRecentAchievements = function(playerName, count)
     if not LeafVE_AchTest_DB or not LeafVE_AchTest_DB.achievements then return {} end
     playerName = ShortName(playerName)
@@ -1606,9 +1630,12 @@ LeafVE_AchTest.API = {
           table.insert(achievements, {
             id = achId,
             name = achievement.name,
-            icon = GetAchievementIcon(achId),
+            icon = LeafVE_AchTest.ResolveMissingCollectionIcon(achievement) or GetAchievementIcon(achId),
             points = achData.points,
-            timestamp = achData.timestamp
+            timestamp = achData.timestamp,
+            criteria_type = achievement.criteria_type,
+            criteria_overlays = achievement.criteria_overlays,
+            criteria_bounds = achievement.criteria_bounds,
           })
         end
       end
@@ -3802,7 +3829,7 @@ end
 -- ==========================================
 
 -- Record a dungeon boss kill and award completion if all bosses done
-function LeafVE_AchTest:RecordDungeonBoss(bossName)
+function LeafVE_AchTest:RecordDungeonBoss(bossName, silent)
   local dungId = BOSS_TO_DUNGEON[bossName]
   if not dungId then return end
   local me = ShortName(UnitName("player"))
@@ -3821,21 +3848,21 @@ function LeafVE_AchTest:RecordDungeonBoss(bossName)
         if not dp[me][dungId][req] then allDone = false; break end
       end
       if allDone then
-        self:AwardAchievement(achId)
+        self:AwardAchievement(achId, silent)
         -- Count completed dungeon runs for run-count achievements
     local runTotal = IncrCounter(me, "dungeonRuns")
-    if runTotal >= 50  then self:AwardAchievement("elite_50_dungeons")  end
-    if runTotal >= 100 then self:AwardAchievement("elite_100_dungeons") end
-    if runTotal >= 250 then self:AwardAchievement("elite_250_dungeons") end
-    if runTotal >= 500 then self:AwardAchievement("elite_500_dungeons") end
-    self:CheckMetaAchievements()
+    if runTotal >= 50  then self:AwardAchievement("elite_50_dungeons", silent)  end
+    if runTotal >= 100 then self:AwardAchievement("elite_100_dungeons", silent) end
+    if runTotal >= 250 then self:AwardAchievement("elite_250_dungeons", silent) end
+    if runTotal >= 500 then self:AwardAchievement("elite_500_dungeons", silent) end
+    self:CheckMetaAchievements(silent)
       end
     end
   end
 end
 
 -- Record a raid boss kill and award completion if all bosses done
-function LeafVE_AchTest:RecordRaidBoss(bossName)
+function LeafVE_AchTest:RecordRaidBoss(bossName, silent)
   local raidId = BOSS_TO_RAID[bossName]
   if not raidId then return end
   local me = ShortName(UnitName("player"))
@@ -3854,14 +3881,14 @@ function LeafVE_AchTest:RecordRaidBoss(bossName)
       end
       if allDone then
         -- The full raid clear is the only achievement from this kill that posts to guild chat.
-        self:AwardAchievement(achId)
+        self:AwardAchievement(achId, silent)
         -- Run-count and meta rewards still toast locally, but do not create extra guild messages.
     local runTotal = IncrCounter(me, "raidRuns")
-    if runTotal >= 25 then self:AwardAchievement("elite_25_raids", false, true) end
-    if runTotal >= 50 then self:AwardAchievement("elite_50_raids", false, true) end
-    if runTotal >= 100 then self:AwardAchievement("elite_100_raids", false, true) end
-    if runTotal >= 250 then self:AwardAchievement("elite_250_raids", false, true) end
-    self:CheckMetaAchievements(false, true)
+    if runTotal >= 25 then self:AwardAchievement("elite_25_raids", silent, true) end
+    if runTotal >= 50 then self:AwardAchievement("elite_50_raids", silent, true) end
+    if runTotal >= 100 then self:AwardAchievement("elite_100_raids", silent, true) end
+    if runTotal >= 250 then self:AwardAchievement("elite_250_raids", silent, true) end
+    self:CheckMetaAchievements(silent, true)
       end
     end
   end
@@ -3910,9 +3937,13 @@ function LeafVE_AchTest:CheckBacklogAchievements()
   -- Re-check meta achievements based on what has been awarded so far
   self:CheckMetaAchievements(true)
 
-  -- Scan LeafVE_DB point history for previously tracked instance completions.
-  -- If LeafVillageLegends recorded "Instance completion: <Zone>", credit the
-  -- corresponding dungeon clear achievement (the run was validated by that addon).
+  -- Scan LeafVE_DB point history for previously tracked instance completions
+  -- and individual boss kills. LeafVillageLegends detects boss kills via its
+  -- own COMBAT_LOG_EVENT_UNFILTERED handling, independent of this addon's
+  -- CHAT_MSG_COMBAT_HOSTILE_DEATH-based detection -- so a boss whose kill
+  -- never printed the chat text this addon relies on (e.g. Archmage Arugal)
+  -- can still show up here and be backfilled silently, individual achievement
+  -- and dungeon/raid-clear achievement both included.
   if LeafVE_DB and LeafVE_DB.pointHistory and LeafVE_DB.pointHistory[me] then
     for _, entry in ipairs(LeafVE_DB.pointHistory[me]) do
       local zone = entry.reason and smatch(entry.reason, "^Instance completion: (.+)$")
@@ -3922,6 +3953,10 @@ function LeafVE_AchTest:CheckBacklogAchievements()
           self:AwardAchievement(achId, true)
           Debug("Backlog from history: "..achId.." ("..zone..")")
         end
+      end
+      local killedBoss = entry.reason and smatch(entry.reason, "^(.+) slain with %d+ guildies?$")
+      if killedBoss then
+        self:CheckBossKill(killedBoss, true)
       end
     end
   end
@@ -4136,11 +4171,11 @@ function LeafVE_AchTest:CheckAchievementMetaAchievements(silent)
   end
 end
 
-function LeafVE_AchTest:CheckBossKill(bossName)
+function LeafVE_AchTest:CheckBossKill(bossName, silent)
   local group = BOSS_GROUP_ALIASES[bossName]
   if group then
     for _, groupedBossName in ipairs(group) do
-      self:CheckBossKill(groupedBossName)
+      self:CheckBossKill(groupedBossName, silent)
     end
     return
   end
@@ -4153,16 +4188,16 @@ function LeafVE_AchTest:CheckBossKill(bossName)
   local raidIdForBoss = BOSS_TO_RAID[resolvedBossName]
   local raidBossLocalOnly = raidIdForBoss ~= nil
   local function AwardBossTriggeredAchievement(achievementID)
-    self:AwardAchievement(achievementID, false, raidBossLocalOnly)
+    self:AwardAchievement(achievementID, silent, raidBossLocalOnly)
   end
   if BOSS_ACHIEVEMENTS[resolvedBossName] and not RAID_CLEAR_ONLY_RAIDS[raidIdForBoss] then
     Debug("Boss kill: "..resolvedBossName)
     AwardBossTriggeredAchievement(BOSS_ACHIEVEMENTS[resolvedBossName])
   end
   -- Track dungeon progress (awards completion when all bosses done)
-  self:RecordDungeonBoss(resolvedBossName)
+  self:RecordDungeonBoss(resolvedBossName, silent)
   -- Track raid progress (awards completion when all bosses done)
-  self:RecordRaidBoss(resolvedBossName)
+  self:RecordRaidBoss(resolvedBossName, silent)
   -- Track per-boss, total, and unique kill counts
   local me = ShortName(UnitName("player"))
   if me then
