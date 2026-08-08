@@ -5696,7 +5696,7 @@ function LeafVE_AchTest.UI:Build()
   
   local achTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   achTab:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -86)
-  achTab:SetWidth(100)
+  achTab:SetWidth(88)
   achTab:SetHeight(28)
   achTab:SetText("Achievements")
   achTab:SetScript("OnClick", function()
@@ -5705,9 +5705,20 @@ function LeafVE_AchTest.UI:Build()
   end)
   self.achTab = achTab
 
+  local titlesTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  titlesTab:SetPoint("LEFT", achTab, "RIGHT", 5, 0)
+  titlesTab:SetWidth(68)
+  titlesTab:SetHeight(28)
+  titlesTab:SetText("Titles")
+  titlesTab:SetScript("OnClick", function()
+    LeafVE_AchTest.UI.currentView = "titles"
+    LeafVE_AchTest.UI:Refresh()
+  end)
+  self.titlesTab = titlesTab
+
   local companionTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  companionTab:SetPoint("LEFT", achTab, "RIGHT", 5, 0)
-  companionTab:SetWidth(95)
+  companionTab:SetPoint("LEFT", titlesTab, "RIGHT", 20, 0)
+  companionTab:SetWidth(82)
   companionTab:SetHeight(28)
   companionTab:SetText("Companions")
   companionTab:SetScript("OnClick", function()
@@ -5718,7 +5729,7 @@ function LeafVE_AchTest.UI:Build()
 
   local mountsTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   mountsTab:SetPoint("LEFT", companionTab, "RIGHT", 5, 0)
-  mountsTab:SetWidth(80)
+  mountsTab:SetWidth(68)
   mountsTab:SetHeight(28)
   mountsTab:SetText("Mounts")
   mountsTab:SetScript("OnClick", function()
@@ -5730,20 +5741,9 @@ function LeafVE_AchTest.UI:Build()
   self.mountsTab = mountsTab
   self.mountTab = mountsTab
 
-  local titlesTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  titlesTab:SetPoint("LEFT", mountsTab, "RIGHT", 5, 0)
-  titlesTab:SetWidth(80)
-  titlesTab:SetHeight(28)
-  titlesTab:SetText("Titles")
-  titlesTab:SetScript("OnClick", function()
-    LeafVE_AchTest.UI.currentView = "titles"
-    LeafVE_AchTest.UI:Refresh()
-  end)
-  self.titlesTab = titlesTab
-
   local toyTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  toyTab:SetPoint("LEFT", titlesTab, "RIGHT", 5, 0)
-  toyTab:SetWidth(65)
+  toyTab:SetPoint("LEFT", mountsTab, "RIGHT", 5, 0)
+  toyTab:SetWidth(56)
   toyTab:SetHeight(28)
   toyTab:SetText("Toys")
   toyTab:SetScript("OnClick", function()
@@ -5753,8 +5753,8 @@ function LeafVE_AchTest.UI:Build()
   self.toyTab = toyTab
 
   local adminTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  adminTab:SetPoint("LEFT", toyTab, "RIGHT", 5, 0)
-  adminTab:SetWidth(60)
+  adminTab:SetPoint("LEFT", toyTab, "RIGHT", 20, 0)
+  adminTab:SetWidth(52)
   adminTab:SetHeight(28)
   adminTab:SetText("Admin")
   adminTab:SetScript("OnClick", function()
