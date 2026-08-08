@@ -5631,7 +5631,7 @@ function LeafVE_AchTest.UI:Build()
   -- (Mount/Companion card sizing is tuned to fit this viewport in
   -- ABC_StableCard rather than growing the window further -- see the
   -- cardH/portrait comments there.)
-  f:SetHeight(660)
+  f:SetHeight(648)
   f:SetFrameStrata("FULLSCREEN_DIALOG")
   f:SetFrameLevel(100)
   f:SetToplevel(true)
@@ -5658,10 +5658,16 @@ function LeafVE_AchTest.UI:Build()
 
   LeafVE_AddTiledTexture(f, "BACKGROUND", TEX.ashenBg, 4, -4, -4, 4, 512, 128, 1)
   
+  -- Vertical rhythm from the window's top edge down through the tab row is
+  -- kept to one even 10px gap between each section (frame top -> title ->
+  -- stats plaque -> tabs). The whole cluster (and the window itself) was
+  -- shrunk by 12px versus its previous size; every anchor below the tab row
+  -- (110/128/158 insets) is shifted up by that same 12px so the content
+  -- viewport keeps the exact same size, just starting higher.
   local header = CreateFrame("Frame", nil, f)
-  header:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -4)
-  header:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, -4)
-  header:SetHeight(52)
+  header:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -10)
+  header:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, -10)
+  header:SetHeight(16)
   header:SetBackdrop(nil)
   local headerArt = header:CreateTexture(nil, "BACKGROUND")
   headerArt:SetAllPoints(header)
@@ -5678,11 +5684,11 @@ function LeafVE_AchTest.UI:Build()
   close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, -6)
   
   self.pointsLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  self.pointsLabel:SetPoint("TOP", f, "TOP", 0, -54)
+  self.pointsLabel:SetPoint("TOP", f, "TOP", 0, -36)
   local pointsFrame = CreateFrame("Frame", nil, f)
-  pointsFrame:SetPoint("TOP", f, "TOP", 0, -54)
+  pointsFrame:SetPoint("TOP", f, "TOP", 0, -36)
   pointsFrame:SetWidth(260)
-  pointsFrame:SetHeight(32)
+  pointsFrame:SetHeight(30)
   pointsFrame:SetBackdrop(nil)
   pointsFrame:SetFrameLevel(f:GetFrameLevel() + 2)
   local pointsArt = pointsFrame:CreateTexture(nil, "BACKGROUND")
@@ -5695,9 +5701,9 @@ function LeafVE_AchTest.UI:Build()
   self.pointsLabel:SetPoint("CENTER", pointsFrame, "CENTER", 0, 0)
   
   local achTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-  achTab:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -86)
-  achTab:SetWidth(88)
-  achTab:SetHeight(28)
+  achTab:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -76)
+  achTab:SetWidth(100)
+  achTab:SetHeight(26)
   achTab:SetText("Achievements")
   achTab:SetScript("OnClick", function()
     LeafVE_AchTest.UI.currentView = "achievements"
@@ -5707,8 +5713,8 @@ function LeafVE_AchTest.UI:Build()
 
   local titlesTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   titlesTab:SetPoint("LEFT", achTab, "RIGHT", 5, 0)
-  titlesTab:SetWidth(68)
-  titlesTab:SetHeight(28)
+  titlesTab:SetWidth(80)
+  titlesTab:SetHeight(26)
   titlesTab:SetText("Titles")
   titlesTab:SetScript("OnClick", function()
     LeafVE_AchTest.UI.currentView = "titles"
@@ -5718,8 +5724,8 @@ function LeafVE_AchTest.UI:Build()
 
   local companionTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   companionTab:SetPoint("LEFT", titlesTab, "RIGHT", 20, 0)
-  companionTab:SetWidth(82)
-  companionTab:SetHeight(28)
+  companionTab:SetWidth(95)
+  companionTab:SetHeight(26)
   companionTab:SetText("Companions")
   companionTab:SetScript("OnClick", function()
     LeafVE_AchTest.UI.currentView = "companions"
@@ -5729,8 +5735,8 @@ function LeafVE_AchTest.UI:Build()
 
   local mountsTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   mountsTab:SetPoint("LEFT", companionTab, "RIGHT", 5, 0)
-  mountsTab:SetWidth(68)
-  mountsTab:SetHeight(28)
+  mountsTab:SetWidth(80)
+  mountsTab:SetHeight(26)
   mountsTab:SetText("Mounts")
   mountsTab:SetScript("OnClick", function()
     LeafVE_AchTest.UI.currentView = "mounts"
@@ -5743,8 +5749,8 @@ function LeafVE_AchTest.UI:Build()
 
   local toyTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   toyTab:SetPoint("LEFT", mountsTab, "RIGHT", 5, 0)
-  toyTab:SetWidth(56)
-  toyTab:SetHeight(28)
+  toyTab:SetWidth(65)
+  toyTab:SetHeight(26)
   toyTab:SetText("Toys")
   toyTab:SetScript("OnClick", function()
     LeafVE_AchTest.UI.currentView = "toys"
@@ -5754,8 +5760,8 @@ function LeafVE_AchTest.UI:Build()
 
   local adminTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   adminTab:SetPoint("LEFT", toyTab, "RIGHT", 20, 0)
-  adminTab:SetWidth(52)
-  adminTab:SetHeight(28)
+  adminTab:SetWidth(60)
+  adminTab:SetHeight(26)
   adminTab:SetText("Admin")
   adminTab:SetScript("OnClick", function()
     local _, rankName = GetGuildInfo("player")
@@ -5772,7 +5778,7 @@ function LeafVE_AchTest.UI:Build()
   local awardBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   awardBtn:SetPoint("LEFT", adminTab, "RIGHT", 15, 0)
   awardBtn:SetWidth(60)
-  awardBtn:SetHeight(28)
+  awardBtn:SetHeight(26)
   awardBtn:SetText("Award")
   awardBtn:SetScript("OnClick", function()
     local _, rankName = GetGuildInfo("player")
@@ -5801,7 +5807,7 @@ function LeafVE_AchTest.UI:Build()
   local resetBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
   resetBtn:SetPoint("LEFT", awardBtn, "RIGHT", 5, 0)
   resetBtn:SetWidth(60)
-  resetBtn:SetHeight(28)
+  resetBtn:SetHeight(26)
   resetBtn:SetText("Reset")
   resetBtn:SetScript("OnClick", function()
     local _, rankName = GetGuildInfo("player")
@@ -5833,7 +5839,7 @@ function LeafVE_AchTest.UI:Build()
   -- â”€â”€ Admin Panel (hidden by default) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   -- Reputation tracking remains internal; the former My Stats panel has been removed.
   local adminFrame = CreateFrame("Frame", nil, f)
-  adminFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -110)
+  adminFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -98)
   adminFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 10)
   adminFrame:SetBackdrop({
     bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -6118,7 +6124,7 @@ function LeafVE_AchTest.UI:Build()
   -- 18px on both sides -- rather than pinned flush to the window edge with
   -- the leftover space dumped entirely on the content side.
   local sidebarFrame = CreateFrame("Frame", nil, f)
-  sidebarFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -110)
+  sidebarFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -98)
   sidebarFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 18, 10)
   sidebarFrame:SetWidth(122)
   sidebarFrame:SetBackdrop({
@@ -6269,7 +6275,7 @@ function LeafVE_AchTest.UI:Build()
   end
 
   local companionSidebarFrame = CreateFrame("Frame", nil, f)
-  companionSidebarFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -110)
+  companionSidebarFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -98)
   companionSidebarFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 10)
   companionSidebarFrame:SetWidth(140)
   companionSidebarFrame:SetBackdrop({
@@ -6351,7 +6357,7 @@ function LeafVE_AchTest.UI:Build()
   end
   
   local mountSidebarFrame = CreateFrame("Frame", nil, f)
-  mountSidebarFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -110)
+  mountSidebarFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -98)
   mountSidebarFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 10)
   mountSidebarFrame:SetWidth(140)
   mountSidebarFrame:SetBackdrop({
@@ -6464,7 +6470,7 @@ function LeafVE_AchTest.UI:Build()
 
   -- Achievement Search Bar
   local searchLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  searchLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 155, -128)
+  searchLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 155, -116)
   searchLabel:SetText("Search:")
   self.searchLabel = searchLabel
   
@@ -6498,7 +6504,7 @@ function LeafVE_AchTest.UI:Build()
   
   -- Title Search Bar (hidden by default)
   local titleSearchLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  titleSearchLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 155, -128)
+  titleSearchLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 155, -116)
   titleSearchLabel:SetText("Search:")
   titleSearchLabel:Hide()
   self.titleSearchLabel = titleSearchLabel
@@ -6546,7 +6552,7 @@ function LeafVE_AchTest.UI:Build()
 
   -- â”€â”€ Left sidebar for title category navigation (same layout as achievement sidebar) â”€â”€
   local titleSidebarFrame = CreateFrame("Frame", nil, f)
-  titleSidebarFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -110)
+  titleSidebarFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -98)
   titleSidebarFrame:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 18, 10)
   titleSidebarFrame:SetWidth(122)
   titleSidebarFrame:SetBackdrop({
@@ -6689,13 +6695,13 @@ function LeafVE_AchTest.UI:Build()
   end
   
   local scrollFrame = CreateFrame("ScrollFrame", nil, f)
-  scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -158)
+  scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -146)
   scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, 12)
   scrollFrame:EnableMouseWheel(true)
   self.scrollFrame = scrollFrame
 
   local contentArt = f:CreateTexture(nil, "BACKGROUND")
-  contentArt:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -158)
+  contentArt:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -146)
   contentArt:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, 12)
   contentArt:SetTexture(TEX.ashenBg)
   contentArt:SetVertexColor(1, 1, 1, 1)
@@ -6713,7 +6719,7 @@ function LeafVE_AchTest.UI:Build()
   -- (it stays the real drag handle) and a hand-positioned knob graphic is
   -- drawn on top instead.
   local scrollTrack = CreateFrame("Frame", nil, f)
-  scrollTrack:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, -176)
+  scrollTrack:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, -164)
   scrollTrack:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -18, 34)
   scrollTrack:SetWidth(20)
   scrollTrack:SetBackdrop({
@@ -6839,7 +6845,7 @@ function LeafVE_AchTest.UI:Build()
   -- instead of leaving that space empty. The extra height goes toward
   -- more generous row/bar spacing below rather than blank padding.
   local summaryFrame = CreateFrame("Frame", nil, f)
-  summaryFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -110)
+  summaryFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -98)
   summaryFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, 12)
   self.summaryFrame = summaryFrame
 
@@ -7085,7 +7091,7 @@ function LeafVE_AchTest.UI:Build()
   -- points of their own, so the emblem shows the *linked achievement's*
   -- points -- what earning it actually required.
   local titleSummaryFrame = CreateFrame("Frame", nil, f)
-  titleSummaryFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -110)
+  titleSummaryFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 158, -98)
   titleSummaryFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, 12)
   self.titleSummaryFrame = titleSummaryFrame
 
@@ -7280,14 +7286,14 @@ function LeafVE_AchTest.UI:GetScrollMax()
     return 0
   end
   -- scrollFrame's own height comes from its TOPLEFT/BOTTOMRIGHT anchors
-  -- (158/-12 insets on the fixed 660px-tall window, see Build() above),
+  -- (146/-12 insets on the fixed 648px-tall window, see Build() above),
   -- not an explicit SetHeight -- so GetHeight() can still return 0 the
   -- very first time this runs in a session, before the frame has been
   -- laid out even once. That silently clamped every scroll target to 0,
   -- which is why jumping to an achievement from a title link (right after
   -- opening the window, before ever visiting the Achievements tab) landed
   -- on the first row of the category instead of the actual target. Falls
-  -- back to the same 660-158-12=490 the anchors are meant to produce.
+  -- back to the same 648-146-12=490 the anchors are meant to produce.
   local viewportHeight = self.scrollFrame:GetHeight()
   if not viewportHeight or viewportHeight <= 0 then viewportHeight = 490 end
   local m = (self.scrollChild:GetHeight() or 0) - viewportHeight

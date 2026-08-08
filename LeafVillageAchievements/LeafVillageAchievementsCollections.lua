@@ -841,7 +841,7 @@ function ABC:EnsureMountSidebar(ui)
   -- content area's own TOPLEFT at x=158, same as the achievements/titles
   -- sidebars) and centered within that gap -- 18px on both sides.
   local frame = CreateFrame("Frame", nil, ui.frame)
-  frame:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", 18, -110)
+  frame:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", 18, -98)
   frame:SetPoint("BOTTOMLEFT", ui.frame, "BOTTOMLEFT", 18, 10)
   frame:SetWidth(122)
   frame:SetBackdrop({
@@ -963,7 +963,7 @@ function ABC:EnsureCompanionSidebar(ui)
   -- content area's own TOPLEFT at x=158, same as the achievements/titles
   -- sidebars) and centered within that gap -- 18px on both sides.
   local frame=CreateFrame("Frame",nil,ui.frame)
-  frame:SetPoint("TOPLEFT",ui.frame,"TOPLEFT",18,-110)
+  frame:SetPoint("TOPLEFT",ui.frame,"TOPLEFT",18,-98)
   frame:SetPoint("BOTTOMLEFT",ui.frame,"BOTTOMLEFT",18,10)
   frame:SetWidth(122)
   frame:SetBackdrop({edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",tile=true,tileSize=16,edgeSize=8,insets={left=2,right=2,top=2,bottom=2}})
@@ -1024,7 +1024,7 @@ function ABC:EnsureToySidebar(ui)
   -- content area's own TOPLEFT at x=158, same as the achievements/titles
   -- sidebars) and centered within that gap -- 18px on both sides.
   local frame=CreateFrame("Frame",nil,ui.frame)
-  frame:SetPoint("TOPLEFT",ui.frame,"TOPLEFT",18,-110)
+  frame:SetPoint("TOPLEFT",ui.frame,"TOPLEFT",18,-98)
   frame:SetPoint("BOTTOMLEFT",ui.frame,"BOTTOMLEFT",18,10)
   frame:SetWidth(122)
   frame:SetBackdrop({edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",tile=true,tileSize=16,edgeSize=8,insets={left=2,right=2,top=2,bottom=2}})
