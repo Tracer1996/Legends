@@ -381,6 +381,7 @@ local ADMIN_RANKS = {
   ["flame keeper"] = true,
 }
 local ACCESS_RANKS = {
+  ["ember"] = true,
   ["born"] = true,
   ["flamebound"] = true,
   ["oath captain"] = true,
