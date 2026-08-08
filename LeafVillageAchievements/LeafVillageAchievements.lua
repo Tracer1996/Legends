@@ -3954,8 +3954,18 @@ function LeafVE_AchTest:CheckBacklogAchievements()
           Debug("Backlog from history: "..achId.." ("..zone..")")
         end
       end
+      -- CheckBossKill unconditionally increments totalBossKills and the
+      -- per-boss counters on every call -- it has no idea a given kill was
+      -- already backfilled. Without this guard, since this whole function
+      -- reruns on every PLAYER_ENTERING_WORLD (not just login -- every zone
+      -- change, instance entry, graveyard release, etc.), the same handful
+      -- of historical "slain with N guildies" entries got recounted on every
+      -- loading screen, inflating boss-kill counts well past what was
+      -- actually killed (e.g. crossing the 100-kill Centurion Slayer
+      -- threshold in a single play session).
       local killedBoss = entry.reason and smatch(entry.reason, "^(.+) slain with %d+ guildies?$")
-      if killedBoss then
+      if killedBoss and not entry.bossKillBackfilled then
+        entry.bossKillBackfilled = true
         self:CheckBossKill(killedBoss, true)
       end
     end

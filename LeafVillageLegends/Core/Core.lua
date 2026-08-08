@@ -1610,6 +1610,104 @@ end
 
 function LeafVE:InvalidateClientAchievementCatalog()
   self._clientAchievementCatalog = nil
+  self._achievementCatalogScan = nil
+end
+
+-- Scanning every native-achievement category/index in one synchronous burst
+-- (the old body of this function) is the same class of bug that used to
+-- crash the client from the achievements addon's C_Map exploration scan --
+-- landing right after login, while the main window was mid-drag, it hit an
+-- uncatchable native ACCESS_VIOLATION. Chunk it across frames via the
+-- existing deferred-task driver instead, same fix pattern as that scan.
+function LeafVE_AchievementCatalogScanStep(scan, catalog)
+  local categoryId = scan.categories[scan.categoryIndex]
+
+  if type(categoryId) ~= "number" then
+    scan.categoryIndex = scan.categoryIndex + 1
+    return
+  end
+
+  if not scan.categoryCount then
+    local okCount, numAchievements = pcall(GetCategoryNumAchievements, categoryId)
+    scan.categoryCount = (okCount and type(numAchievements) == "number") and numAchievements or 0
+    scan.achIndex = 1
+    scan.categoryName = nil
+    if scan.categoryCount > 0 and type(GetCategoryInfo) == "function" then
+      local okCategory, resolvedCategory = pcall(GetCategoryInfo, categoryId)
+      if okCategory and type(resolvedCategory) == "string" then
+        scan.categoryName = resolvedCategory
+      end
+    end
+    return
+  end
+
+  if scan.achIndex > scan.categoryCount then
+    scan.categoryIndex = scan.categoryIndex + 1
+    scan.categoryCount = nil
+    return
+  end
+
+  local okInfo, id, name, points, completed, month, day, year, description, flags, icon =
+    pcall(GetAchievementInfo, categoryId, scan.achIndex)
+  scan.achIndex = scan.achIndex + 1
+
+  if okInfo and id then
+    local key = AchievementKey(id)
+    if key and not scan.seen[key] then
+      scan.seen[key] = true
+
+      local entry = {
+        id = id,
+        key = key,
+        name = name,
+        points = tonumber(points) or DEFAULT_ACHIEVEMENT_POINTS,
+        completed = completed and true or false,
+        month = month,
+        day = day,
+        year = year,
+        desc = description or "",
+        flags = flags,
+        icon = icon or LEAF_FALLBACK,
+        category = scan.categoryName,
+        timestamp = BuildAchievementTimestamp(month, day, year),
+      }
+
+      catalog.byId[key] = entry
+      catalog.available = true
+
+      if entry.completed then
+        table.insert(catalog.completed, CopyAchievementEntry(entry))
+        catalog.totalPoints = catalog.totalPoints + entry.points
+      end
+    end
+  end
+end
+
+function LeafVE_ContinueAchievementCatalogScan()
+  local scan = LeafVE._achievementCatalogScan
+  local catalog = LeafVE._clientAchievementCatalog
+  if not scan or not catalog then return end
+
+  local processed = 0
+  while processed < 15 do
+    if scan.categoryIndex > table.getn(scan.categories) then
+      table.sort(catalog.completed, function(a, b)
+        local aStamp = tonumber(a.timestamp) or 0
+        local bStamp = tonumber(b.timestamp) or 0
+        if aStamp == bStamp then
+          return Lower(tostring(a.name or a.id or "")) < Lower(tostring(b.name or b.id or ""))
+        end
+        return aStamp > bStamp
+      end)
+      LeafVE._achievementCatalogScan = nil
+      return
+    end
+
+    LeafVE_AchievementCatalogScanStep(scan, catalog)
+    processed = processed + 1
+  end
+
+  LeafVE:ScheduleDeferred("achievementCatalogScan", 0, LeafVE_ContinueAchievementCatalogScan)
 end
 
 function LeafVE:GetClientAchievementCatalog(forceRefresh)
@@ -1623,9 +1721,9 @@ function LeafVE:GetClientAchievementCatalog(forceRefresh)
     completed = {},
     totalPoints = 0,
   }
+  self._clientAchievementCatalog = catalog
 
   if type(GetCategoryList) ~= "function" or type(GetCategoryNumAchievements) ~= "function" or type(GetAchievementInfo) ~= "function" then
-    self._clientAchievementCatalog = catalog
     return catalog
   end
 
@@ -1635,69 +1733,13 @@ function LeafVE:GetClientAchievementCatalog(forceRefresh)
     categories = { GetCategoryList() }
   end
 
-  local seen = {}
+  self._achievementCatalogScan = {
+    categories = categories,
+    categoryIndex = 1,
+    seen = {},
+  }
+  self:ScheduleDeferred("achievementCatalogScan", 0, LeafVE_ContinueAchievementCatalogScan)
 
-  for _, categoryId in ipairs(categories) do
-    if type(categoryId) == "number" then
-      local okCount, numAchievements = pcall(GetCategoryNumAchievements, categoryId)
-      if okCount and type(numAchievements) == "number" and numAchievements > 0 then
-        local categoryName = nil
-        if type(GetCategoryInfo) == "function" then
-          local okCategory, resolvedCategory = pcall(GetCategoryInfo, categoryId)
-          if okCategory and type(resolvedCategory) == "string" then
-            categoryName = resolvedCategory
-          end
-        end
-
-        for index = 1, numAchievements do
-          local okInfo, id, name, points, completed, month, day, year, description, flags, icon =
-            pcall(GetAchievementInfo, categoryId, index)
-
-          if okInfo and id then
-            local key = AchievementKey(id)
-            if key and not seen[key] then
-              seen[key] = true
-
-              local entry = {
-                id = id,
-                key = key,
-                name = name,
-                points = tonumber(points) or DEFAULT_ACHIEVEMENT_POINTS,
-                completed = completed and true or false,
-                month = month,
-                day = day,
-                year = year,
-                desc = description or "",
-                flags = flags,
-                icon = icon or LEAF_FALLBACK,
-                category = categoryName,
-                timestamp = BuildAchievementTimestamp(month, day, year),
-              }
-
-              catalog.byId[key] = entry
-              catalog.available = true
-
-              if entry.completed then
-                table.insert(catalog.completed, CopyAchievementEntry(entry))
-                catalog.totalPoints = catalog.totalPoints + entry.points
-              end
-            end
-          end
-        end
-      end
-    end
-  end
-
-  table.sort(catalog.completed, function(a, b)
-    local aStamp = tonumber(a.timestamp) or 0
-    local bStamp = tonumber(b.timestamp) or 0
-    if aStamp == bStamp then
-      return Lower(tostring(a.name or a.id or "")) < Lower(tostring(b.name or b.id or ""))
-    end
-    return aStamp > bStamp
-  end)
-
-  self._clientAchievementCatalog = catalog
   return catalog
 end
 
