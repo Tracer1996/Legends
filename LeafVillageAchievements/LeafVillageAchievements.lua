@@ -2015,13 +2015,23 @@ function LeafVE_AchTest:CheckGuildRankAchievements(silent)
   if not me then return false end
 
   EnsureDB()
-  local awardSilent = silent or not LeafVE_AchTest.guildRankSeeded
-  LeafVE_AchTest.guildRankSeeded = true
 
   local guildName, rankName = GetGuildInfo("player")
   local normalizedRank = NormalizeGuildRankName(rankName)
   local tier = TRACKED_GUILD_RANK_INDEX[normalizedRank]
   local titleChanged = false
+
+  -- GetGuildInfo("player") frequently returns nil for a beat after
+  -- PLAYER_ENTERING_WORLD, before the real roster data arrives via
+  -- GUILD_ROSTER_UPDATE. Don't burn the "first scan of the session is
+  -- silent" allowance on a call that has no guild data to act on -- otherwise
+  -- the actual backfill happens on the next (live, non-silent)
+  -- GUILD_ROSTER_UPDATE call instead, announcing every backfilled rank
+  -- achievement to guild chat.
+  local awardSilent = silent or not LeafVE_AchTest.guildRankSeeded
+  if guildName and guildName ~= "" then
+    LeafVE_AchTest.guildRankSeeded = true
+  end
 
   if guildName and guildName ~= "" then
     self:AwardAchievement("casual_guild_join", awardSilent)
