@@ -570,6 +570,14 @@ end
 function LeafVE_AchTest:ScanMountCollection(silent)
   local state=EnsureMountState()
   if not state or not GetSpellName then return end
+  -- The session's first scan is always silent regardless of which event
+  -- triggered it -- same "seeded" pattern as ScanCompanions/ScanToys.
+  -- Without this, a SPELLS_CHANGED that fires as the spellbook settles
+  -- during login (which happens independently of, and isn't guaranteed to
+  -- come after, PLAYER_ENTERING_WORLD's own silent=true scan) would
+  -- loudly announce every already-owned mount as if freshly learned.
+  local isSeedScan=not state.seeded
+  silent=silent or isSeedScan
   local owned={}
   local icons={}
   local dynamic={}
@@ -620,6 +628,7 @@ function LeafVE_AchTest:ScanMountCollection(silent)
   state.icons=icons
   state.dynamic=dynamic
   state.lastScan=time and time() or 0
+  state.seeded=true
   if LeafVE_AchTest.SetCounter and LeafVE_AchTest.ShortName then
     local me=LeafVE_AchTest.ShortName(UnitName("player"))
     if me then
@@ -646,13 +655,22 @@ end
 LeafVE_AchTest.MountCatalog=MOUNT_CATALOG
 LeafVE_AchTest.MountModelPresets=MOUNT_MODEL_PRESETS
 
+-- SPELLS_CHANGED is ignored entirely until PLAYER_ENTERING_WORLD has fired
+-- once (mirrors companionReady/toyReady in the companion/toy scanners) --
+-- it can otherwise fire while the spellbook is still settling during
+-- login, racing ahead of the initial silent scan.
 local mountCollectionEvents=CreateFrame("Frame")
 mountCollectionEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
 mountCollectionEvents:RegisterEvent("SPELLS_CHANGED")
+local mountReady=false
 mountCollectionEvents:SetScript("OnEvent",function()
   if event=="PLAYER_ENTERING_WORLD" then
+    mountReady=true
     LeafVE_AchTest:ScanMountCollection(true)
-  elseif event=="SPELLS_CHANGED" then
+    return
+  end
+  if not mountReady then return end
+  if event=="SPELLS_CHANGED" then
     LeafVE_AchTest:ScanMountCollection(false)
   end
 end)
