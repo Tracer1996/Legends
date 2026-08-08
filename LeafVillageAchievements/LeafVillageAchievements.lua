@@ -8485,6 +8485,7 @@ ef:RegisterEvent("PLAYER_LOGIN")
 ef:RegisterEvent("PLAYER_LEVEL_UP")
 ef:RegisterEvent("PLAYER_MONEY")
 ef:RegisterEvent("CHAT_MSG_COMBAT_HOSTILE_DEATH")
+ef:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 ef:RegisterEvent("PLAYER_TARGET_CHANGED")
 ef:RegisterEvent("PLAYER_DEAD")
 ef:RegisterEvent("PLAYER_ALIVE")
@@ -8651,6 +8652,19 @@ ef:SetScript("OnEvent", function()
       end
     end
     if mobName then LeafVE_AchTest:CheckBossKill(mobName) end
+  end
+  if event == "COMBAT_LOG_EVENT_UNFILTERED" then
+    -- Fallback boss-kill detection for encounters that don't emit a
+    -- CHAT_MSG_COMBAT_HOSTILE_DEATH line at all (observed with Archmage
+    -- Arugal in Shadowfang Keep -- some scripted kills never print the
+    -- "X is slain by Y"/"X dies." chat text this addon otherwise relies on).
+    -- PARTY_KILL specifically (not UNIT_DIED, which fires for every death
+    -- including scripted adds/clones that can share a boss's creature name).
+    local subEvent = _G.arg2
+    local destName = _G.arg7
+    if subEvent == "PARTY_KILL" and destName then
+      LeafVE_AchTest:CheckBossKill(destName)
+    end
   end
   if event == "PLAYER_DEAD" then
     playerWasDead = true
