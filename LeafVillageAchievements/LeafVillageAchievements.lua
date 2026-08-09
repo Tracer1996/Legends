@@ -2080,44 +2080,17 @@ function LeafVE_AchTest:CheckGuildRankAchievements(silent)
   return titleChanged
 end
 
-local function CountExaltedFactions()
-  if not GetNumFactions or not GetFactionInfo then return 0 end
-
-  -- Expand collapsed headers so we can count all factions reliably.
-  local safety = 0
-  local changed = true
-  while changed and safety < 20 do
-    changed = false
-    safety = safety + 1
-    local n = GetNumFactions()
-    for i = 1, n do
-      local _, _, _, _, _, _, _, _, isHeader, isCollapsed = GetFactionInfo(i)
-      if isHeader and isCollapsed and ExpandFactionHeader then
-        ExpandFactionHeader(i)
-        changed = true
-      end
-    end
-  end
-
-  local exalted = 0
-  for i = 1, (GetNumFactions() or 0) do
-    local _, _, standingID, _, _, _, _, _, isHeader = GetFactionInfo(i)
-    if not isHeader and standingID and standingID >= 8 then
-      exalted = exalted + 1
-    end
-  end
-  return exalted
-end
-
+-- Reads the exalted-faction count CaptureReputationSnapshot already computed
+-- (it always runs first -- both call sites call Capture then Check back to
+-- back) instead of re-scanning the faction list itself. Scanning it twice
+-- per UPDATE_FACTION, each expanding every collapsed header to do it, is
+-- what made this pair of checks expensive; see CaptureReputationSnapshot.
 function LeafVE_AchTest:CheckReputationAchievements(silent)
   local me = ShortName(UnitName("player"))
   if not me then return end
   EnsureDB()
-  if not LeafVE_AchTest_DB.progressCounters[me] then
-    LeafVE_AchTest_DB.progressCounters[me] = {}
-  end
-  local exalted = CountExaltedFactions()
-  LeafVE_AchTest_DB.progressCounters[me].exaltedFactions = exalted
+  local pc = LeafVE_AchTest_DB.progressCounters[me]
+  local exalted = (pc and pc.exaltedFactions) or 0
 
   if exalted >= 1  then self:AwardAchievement("reputation_exalted_1", silent) end
   if exalted >= 5  then self:AwardAchievement("reputation_exalted_5", silent) end
@@ -2200,25 +2173,53 @@ local function RestoreCollapsedFactionHeaders(collapsedHeaders)
   end
 end
 
+-- UPDATE_FACTION fires far more often than "reputation actually changed" --
+-- any faction-mob kill or rep quest can trigger it, sometimes more than once
+-- per real gain -- and every run here expands every collapsed reputation
+-- header to scan the full faction list. Throttled to once per 2 real
+-- seconds. A throttled-out call isn't lost work: the next real run still
+-- diffs against the last *persisted* snapshot below, not "since the last
+-- event," so gains just accumulate across the skipped calls instead of each
+-- one being recorded individually.
+--
+-- Also computes the exalted-faction count in the same pass, for
+-- CheckReputationAchievements to read -- this used to be a second,
+-- independent full expand+scan (CountExaltedFactions) that didn't even
+-- restore the headers it expanded, so collapsed reputation headers stayed
+-- popped open for the rest of the session.
 function LeafVE_AchTest:CaptureReputationSnapshot(recordGains)
   if not GetNumFactions or not GetFactionInfo then return 0 end
+
+  local now = GetTime and GetTime() or 0
+  if now > 0 and self._lastReputationScanAt and (now - self._lastReputationScanAt) < 2 then
+    return 0
+  end
+  self._lastReputationScanAt = now
+
   EnsureDB()
+  local me = ShortName(UnitName("player"))
   local stats = EnsureReputationStats()
   local previous = LeafVE_AchTest_DB.reputationSnapshot
   local current = {}
   local gained = 0
+  local exalted = 0
 
   local collapsedHeaders = ExpandFactionHeadersForSnapshot()
   local total = GetNumFactions() or 0
   for i = 1, total do
-    local name, _, _, _, _, barValue, _, _, isHeader = GetFactionInfo(i)
-    if name and not isHeader and barValue then
-      local key = tostring(name)
-      local value = tonumber(barValue) or 0
-      current[key] = value
-      if recordGains and previous[key] ~= nil then
-        local delta = value - (tonumber(previous[key]) or value)
-        if delta > 0 then gained = gained + delta end
+    local name, _, standingID, _, _, barValue, _, _, isHeader = GetFactionInfo(i)
+    if name and not isHeader then
+      if barValue then
+        local key = tostring(name)
+        local value = tonumber(barValue) or 0
+        current[key] = value
+        if recordGains and previous[key] ~= nil then
+          local delta = value - (tonumber(previous[key]) or value)
+          if delta > 0 then gained = gained + delta end
+        end
+      end
+      if standingID and standingID >= 8 then
+        exalted = exalted + 1
       end
     end
   end
@@ -2230,6 +2231,12 @@ function LeafVE_AchTest:CaptureReputationSnapshot(recordGains)
     stats.week = (tonumber(stats.week) or 0) + gained
     stats.season = (tonumber(stats.season) or 0) + gained
     stats.allTime = (tonumber(stats.allTime) or 0) + gained
+  end
+  if me then
+    if not LeafVE_AchTest_DB.progressCounters[me] then
+      LeafVE_AchTest_DB.progressCounters[me] = {}
+    end
+    LeafVE_AchTest_DB.progressCounters[me].exaltedFactions = exalted
   end
   return gained
 end
@@ -8735,13 +8742,25 @@ ef:SetScript("OnEvent", function()
     end
   end
   if event == "QUEST_LOG_UPDATE" then
-    -- Snapshot the quest log so we can diff on QUEST_FINISHED.
-    questLogSnapshot = {}
-    local numEntries = GetNumQuestLogEntries and GetNumQuestLogEntries() or 0
-    for i = 1, numEntries do
-      local title = GetQuestLogTitle and GetQuestLogTitle(i)
-      if title and title ~= "" then
-        questLogSnapshot[title] = true
+    -- Snapshot the quest log so we can diff on QUEST_FINISHED. QUEST_LOG_UPDATE
+    -- fires on ordinary objective progress too (a kill counter ticking up),
+    -- not just accept/turn-in, so it's far chattier than "the log actually
+    -- changed" -- throttled to once per real second. This snapshot is only
+    -- the fallback detector behind the GetQuestReward hook and the
+    -- CHAT_MSG_SYSTEM parser (see RecordQuestTurnIn's own dedupe window), so
+    -- a briefly stale snapshot here doesn't risk missing a turn-in outright.
+    local now = GetTime and GetTime() or 0
+    local throttled = now > 0 and LeafVE_AchTest._lastQuestLogScanAt
+      and (now - LeafVE_AchTest._lastQuestLogScanAt) < 1
+    if not throttled then
+      LeafVE_AchTest._lastQuestLogScanAt = now
+      questLogSnapshot = {}
+      local numEntries = GetNumQuestLogEntries and GetNumQuestLogEntries() or 0
+      for i = 1, numEntries do
+        local title = GetQuestLogTitle and GetQuestLogTitle(i)
+        if title and title ~= "" then
+          questLogSnapshot[title] = true
+        end
       end
     end
   end
