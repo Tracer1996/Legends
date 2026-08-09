@@ -21,10 +21,11 @@ ABC.version = "4.1.1-MOUNT-ICON-AUDIT"
 LeafVE_AchTest_DB = LeafVE_AchTest_DB or {}
 LeafVE_AchTest_DB.collectionSettings = LeafVE_AchTest_DB.collectionSettings or {}
 AshenBannerCollectionsDB = LeafVE_AchTest_DB.collectionSettings
-ABC.runtime = ABC.runtime or { mounts = {}, companions = {}, allSpells = {} }
+ABC.runtime = ABC.runtime or { mounts = {}, companions = {}, toys = {}, allSpells = {} }
 ABC.installedHooks = false
 ABC.pendingInstall = true
 ABC.scanCount = 0
+ABC.buildingCollectionView = false
 
 local BOOK_SPELL = BOOKTYPE_SPELL or "spell"
 local BOOK_PET = BOOKTYPE_PET or "pet"
@@ -70,6 +71,9 @@ local function EnsureDB()
   if type(AshenBannerCollectionsDB.companionFilter) ~= "string" then
     AshenBannerCollectionsDB.companionFilter = "All"
   end
+  if type(AshenBannerCollectionsDB.toyFilter) ~= "string" then
+    AshenBannerCollectionsDB.toyFilter = "All"
+  end
   if type(AshenBannerCollectionsDB.portraitView) ~= "table" then
     AshenBannerCollectionsDB.portraitView = { mounts = {}, companions = {} }
   end
@@ -99,6 +103,7 @@ local function EnsureDB()
   if type(LeafVE_AchTest_DB.collections) ~= "table" then LeafVE_AchTest_DB.collections = {} end
   if type(LeafVE_AchTest_DB.collections.mounts) ~= "table" then LeafVE_AchTest_DB.collections.mounts = {} end
   if type(LeafVE_AchTest_DB.collections.companions) ~= "table" then LeafVE_AchTest_DB.collections.companions = {} end
+  if type(LeafVE_AchTest_DB.collections.toys) ~= "table" then LeafVE_AchTest_DB.collections.toys = {} end
 end
 
 local function SafeCall(obj, method, a, b, c, d)
@@ -480,6 +485,10 @@ local function BuildMasterLists()
       y = info and info.y,
       z = info and info.z,
       icon = base.icon,
+      -- ABC_OCTOWOW_MOUNTS already carries the real item ID for most
+      -- entries -- wasn't being copied through to the row objects the
+      -- icon-resolution code (ABC_GetMountItemTexture) actually reads.
+      itemID = base.itemID,
     }
   end
 
@@ -499,6 +508,27 @@ local function BuildMasterLists()
       achievementId = (type(info) == "table" and info.achievementId) or base.achievementId,
       icon = (type(info) == "table" and info.icon) or base.icon,
       creatureID = base.creatureID,
+      -- Populated from COMPANION_CATALOG's itemID (LeafVE_Ach_Companions.lua)
+      -- via LeafVE_Ach_CompanionsMaster, same idea as mounts above.
+      itemID = (type(info) == "table" and info.itemID) or base.itemID,
+    }
+  end
+
+  ABC.masterToyList = {}
+  for name, info in pairs(LeafVE_Ach_ToysMaster or {}) do
+    ABC.masterToyList[name] = {
+      name = name,
+      source = info.source,
+      obtainedFrom = info.obtainedFrom,
+      sourceConfidence = info.sourceConfidence,
+      category = info.category or info.sourceCategory,
+      sourceCategory = info.sourceCategory,
+      points = info.points,
+      difficulty = info.difficulty,
+      achievementId = info.achievementId,
+      icon = info.icon,
+      itemID = info.itemID,
+      description = info.description,
     }
   end
 end
@@ -606,6 +636,7 @@ function ABC:ScanSpellbook(verbose)
   if ABC.PurgeRejectedMountData then ABC:PurgeRejectedMountData() end
   ABC.runtime.mounts = {}
   ABC.runtime.companions = {}
+  ABC.runtime.toys = {}
   ABC.runtime.allSpells = {}
   ABC.scanCount = ABC.scanCount + 1
 
@@ -649,7 +680,11 @@ function ABC:ScanSpellbook(verbose)
     Print("Use /abcoll dump to list every spellbook entry seen by the addon.")
   end
 
-  if LeafVE_AchTest and LeafVE_AchTest.UI and LeafVE_AchTest.UI.currentView and (LeafVE_AchTest.UI.currentView == "mounts" or LeafVE_AchTest.UI.currentView == "companions") then
+  -- Skip this when a BuildCollectionView call further up the stack is what
+  -- triggered this scan (first-ever load, scanCount was 0) -- that caller
+  -- is about to render the freshly-scanned data itself; refreshing again
+  -- here would just build the whole view a second time on top of it.
+  if not ABC.buildingCollectionView and LeafVE_AchTest and LeafVE_AchTest.UI and LeafVE_AchTest.UI.currentView and (LeafVE_AchTest.UI.currentView == "mounts" or LeafVE_AchTest.UI.currentView == "companions") then
     LeafVE_AchTest.UI:Refresh()
   end
 end
@@ -657,12 +692,42 @@ end
 local function GetSavedCollection(kind)
   EnsureDB()
   if kind == "mount" then return LeafVE_AchTest_DB.collections.mounts end
+  if kind == "toy" then return LeafVE_AchTest_DB.collections.toys end
   return LeafVE_AchTest_DB.collections.companions
 end
 
 local function GetRuntimeCollection(kind)
   if kind == "mount" then return ABC.runtime.mounts end
+  if kind == "toy" then return ABC.runtime.toys end
   return ABC.runtime.companions
+end
+
+-- Mounts/companions have no earned-date of their own (same as titles) --
+-- the linked achievement's timestamp is the only date available. Shared by
+-- the recency sort below and the card's "Collected: <date>" display.
+local function ABC_CollectedTimestamp(row)
+  local me = LeafVE_AchTest and LeafVE_AchTest.ShortName and LeafVE_AchTest.ShortName(UnitName("player"))
+  local playerAchievements = (me and LeafVE_AchTest.GetPlayerAchievements and LeafVE_AchTest:GetPlayerAchievements(me)) or {}
+  local achId = row and (row.achievementId or row.id)
+  local rec = achId and playerAchievements[achId]
+  return (rec and rec.timestamp) or 0
+end
+
+-- Most recently collected first, then alphabetically. Shared by
+-- BuildSortedList and ABC_StableFilterList so the order survives both the
+-- initial build and the per-category/search re-sort.
+local function ABC_SortByRecencyThenName(list)
+  table.sort(list, function(a, b)
+    if a.collected and not b.collected then return true end
+    if not a.collected and b.collected then return false end
+    if a.collected and b.collected then
+      local aTs = ABC_CollectedTimestamp(a)
+      local bTs = ABC_CollectedTimestamp(b)
+      if aTs ~= bTs then return aTs > bTs end
+    end
+    return Lower(a.name or "") < Lower(b.name or "")
+  end)
+  return list
 end
 
 local function BuildSortedList(kind)
@@ -703,9 +768,7 @@ local function BuildSortedList(kind)
     table.insert(out, row)
   end
 
-  table.sort(out, function(a, b)
-    return Lower(a.name or "") < Lower(b.name or "")
-  end)
+  ABC_SortByRecencyThenName(out)
 
   return out
 end
@@ -774,10 +837,13 @@ function ABC:EnsureMountSidebar(ui)
   if not ui or not ui.frame then return nil end
   if ui.abcMountSidebarFrame then return ui.abcMountSidebarFrame end
 
+  -- Sidebar is narrower than the 158px gap it sits in (window edge to the
+  -- content area's own TOPLEFT at x=158, same as the achievements/titles
+  -- sidebars) and centered within that gap -- 18px on both sides.
   local frame = CreateFrame("Frame", nil, ui.frame)
-  frame:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", 8, -110)
-  frame:SetPoint("BOTTOMLEFT", ui.frame, "BOTTOMLEFT", 8, 10)
-  frame:SetWidth(140)
+  frame:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", 18, -98)
+  frame:SetPoint("BOTTOMLEFT", ui.frame, "BOTTOMLEFT", 18, 10)
+  frame:SetWidth(122)
   frame:SetBackdrop({
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true, tileSize = 16, edgeSize = 8,
@@ -801,15 +867,12 @@ function ABC:EnsureMountSidebar(ui)
   for i = 1, table.getn(ABC_MOUNT_FILTERS) do
     local def = ABC_MOUNT_FILTERS[i]
     local btn = CreateFrame("Button", nil, frame)
-    btn:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -(i - 1) * 27 - 4)
-    btn:SetWidth(132)
+    -- Same row layout as the achievements/titles sidebars (SIDEBAR_CATS in
+    -- LeafVillageAchievements.lua): left-aligned label instead of centered,
+    -- no per-row backdrop box.
+    btn:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -(i - 1) * 27 - 4)
+    btn:SetWidth(110)
     btn:SetHeight(24)
-    btn:SetBackdrop({
-      bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-      tile = true, tileSize = 8,
-      insets = { left = 2, right = 2, top = 2, bottom = 2 },
-    })
-    btn:SetBackdropColor(0, 0, 0, 0)
     btn.filterValue = def.value
 
     local hi = btn:CreateTexture(nil, "BACKGROUND")
@@ -820,8 +883,9 @@ function ABC:EnsureMountSidebar(ui)
     btn.highlight = hi
 
     local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    label:SetAllPoints(btn)
-    label:SetJustifyH("CENTER")
+    label:SetPoint("LEFT", btn, "LEFT", 8, 0)
+    label:SetWidth(100)
+    label:SetJustifyH("LEFT")
     label:SetText(def.label)
     label:SetTextColor(0.92, 0.78, 0.26)
     btn.label = label
@@ -895,10 +959,13 @@ end
 function ABC:EnsureCompanionSidebar(ui)
   if not ui or not ui.frame then return nil end
   if ui.abcCompanionSidebarFrame then return ui.abcCompanionSidebarFrame end
+  -- Sidebar is narrower than the 158px gap it sits in (window edge to the
+  -- content area's own TOPLEFT at x=158, same as the achievements/titles
+  -- sidebars) and centered within that gap -- 18px on both sides.
   local frame=CreateFrame("Frame",nil,ui.frame)
-  frame:SetPoint("TOPLEFT",ui.frame,"TOPLEFT",8,-110)
-  frame:SetPoint("BOTTOMLEFT",ui.frame,"BOTTOMLEFT",8,10)
-  frame:SetWidth(140)
+  frame:SetPoint("TOPLEFT",ui.frame,"TOPLEFT",18,-98)
+  frame:SetPoint("BOTTOMLEFT",ui.frame,"BOTTOMLEFT",18,10)
+  frame:SetWidth(122)
   frame:SetBackdrop({edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",tile=true,tileSize=16,edgeSize=8,insets={left=2,right=2,top=2,bottom=2}})
   frame:SetBackdropColor(0,0,0,0); frame:SetBackdropBorderColor(0.55,0.42,0.18,1)
   local bg=frame:CreateTexture(nil,"BACKGROUND")
@@ -906,14 +973,16 @@ function ABC:EnsureCompanionSidebar(ui)
   if ui.companionSidebarFrame and ui.companionSidebarFrame.bg and ui.companionSidebarFrame.bg.GetTexture then bg:SetTexture(ui.companionSidebarFrame.bg:GetTexture())
   else bg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Background-Dark") end
   bg:SetVertexColor(1,1,1,1); frame.bg=bg; frame.buttons={}
+  -- Same row layout as the achievements/titles sidebars (SIDEBAR_CATS in
+  -- LeafVillageAchievements.lua): left-aligned label instead of centered,
+  -- no per-row backdrop box.
   for i=1,table.getn(ABC_COMPANION_FILTERS) do
     local def=ABC_COMPANION_FILTERS[i]
     local btn=CreateFrame("Button",nil,frame)
-    btn:SetPoint("TOPLEFT",frame,"TOPLEFT",4,-(i-1)*27-4); btn:SetWidth(132); btn:SetHeight(24)
-    btn:SetBackdrop({bgFile="Interface\\Tooltips\\UI-Tooltip-Background",tile=true,tileSize=8,insets={left=2,right=2,top=2,bottom=2}})
-    btn:SetBackdropColor(0,0,0,0); btn.filterValue=def.value
+    btn:SetPoint("TOPLEFT",frame,"TOPLEFT",6,-(i-1)*27-4); btn:SetWidth(110); btn:SetHeight(24)
+    btn.filterValue=def.value
     local hi=btn:CreateTexture(nil,"BACKGROUND"); hi:SetAllPoints(btn); hi:SetTexture("Interface\\Buttons\\UI-Listbox-Highlight"); hi:SetVertexColor(0.72,0.28,0.08,0.65); hi:Hide(); btn.highlight=hi
-    local label=btn:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); label:SetAllPoints(btn); label:SetJustifyH("CENTER"); label:SetText(def.label); label:SetTextColor(0.92,0.78,0.26); btn.label=label
+    local label=btn:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); label:SetPoint("LEFT",btn,"LEFT",8,0); label:SetWidth(100); label:SetJustifyH("LEFT"); label:SetText(def.label); label:SetTextColor(0.92,0.78,0.26); btn.label=label
     btn:SetScript("OnClick",function() EnsureDB(); AshenBannerCollectionsDB.companionFilter=this.filterValue or "All"; ABC.pages.companion=1; PlaySound("igMainMenuOptionCheckBoxOn"); ABC:BuildCollectionView("companion") end)
     btn:SetScript("OnEnter",function() if this.highlight then this.highlight:Show() end; if this.label then this.label:SetTextColor(1,1,1) end end)
     btn:SetScript("OnLeave",function() local selected=AshenBannerCollectionsDB and AshenBannerCollectionsDB.companionFilter or "All"; if this.filterValue~=selected then if this.highlight then this.highlight:Hide() end; if this.label then this.label:SetTextColor(0.92,0.78,0.26) end end end)
@@ -926,6 +995,67 @@ end
 function ABC:RefreshCompanionSidebar(ui)
   local frame=self:EnsureCompanionSidebar(ui); if not frame then return end
   EnsureDB(); local selected=AshenBannerCollectionsDB.companionFilter or "All"
+  for i=1,table.getn(frame.buttons or {}) do local btn=frame.buttons[i]
+    if btn.filterValue==selected then if btn.highlight then btn.highlight:Show() end; if btn.label then btn.label:SetTextColor(1.0,0.45,0.18) end
+    else if btn.highlight then btn.highlight:Hide() end; if btn.label then btn.label:SetTextColor(0.92,0.78,0.26) end end
+  end
+end
+
+local ABC_TOY_FILTERS = {
+  {label="All",value="All"}, {label="Collected",value="Collected"}, {label="Missing",value="Missing"},
+  {label="Music",value="Music"}, {label="Novelty",value="Novelty"},
+  {label="Utility",value="Utility"}, {label="Ambience",value="Ambience"},
+}
+
+local function ToyMatchesFilter(row,filterValue)
+  local filter=filterValue or "All"
+  if filter=="All" then return true end
+  if filter=="Collected" then return row and row.collected==true end
+  if filter=="Missing" then return not (row and row.collected==true) end
+  local cat=row and (row.sourceCategory or row.category) or ""
+  if cat==filter then return true end
+  return false
+end
+
+function ABC:EnsureToySidebar(ui)
+  if not ui or not ui.frame then return nil end
+  if ui.abcToySidebarFrame then return ui.abcToySidebarFrame end
+  -- Sidebar is narrower than the 158px gap it sits in (window edge to the
+  -- content area's own TOPLEFT at x=158, same as the achievements/titles
+  -- sidebars) and centered within that gap -- 18px on both sides.
+  local frame=CreateFrame("Frame",nil,ui.frame)
+  frame:SetPoint("TOPLEFT",ui.frame,"TOPLEFT",18,-98)
+  frame:SetPoint("BOTTOMLEFT",ui.frame,"BOTTOMLEFT",18,10)
+  frame:SetWidth(122)
+  frame:SetBackdrop({edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",tile=true,tileSize=16,edgeSize=8,insets={left=2,right=2,top=2,bottom=2}})
+  frame:SetBackdropColor(0,0,0,0); frame:SetBackdropBorderColor(0.55,0.42,0.18,1)
+  local bg=frame:CreateTexture(nil,"BACKGROUND")
+  bg:SetPoint("TOPLEFT",frame,"TOPLEFT",2,-2); bg:SetPoint("BOTTOMRIGHT",frame,"BOTTOMRIGHT",-2,2)
+  if ui.companionSidebarFrame and ui.companionSidebarFrame.bg and ui.companionSidebarFrame.bg.GetTexture then bg:SetTexture(ui.companionSidebarFrame.bg:GetTexture())
+  else bg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Background-Dark") end
+  bg:SetVertexColor(1,1,1,1); frame.bg=bg; frame.buttons={}
+  -- Same row layout as the achievements/titles sidebars (SIDEBAR_CATS in
+  -- LeafVillageAchievements.lua): left-aligned label instead of centered,
+  -- no per-row backdrop box.
+  for i=1,table.getn(ABC_TOY_FILTERS) do
+    local def=ABC_TOY_FILTERS[i]
+    local btn=CreateFrame("Button",nil,frame)
+    btn:SetPoint("TOPLEFT",frame,"TOPLEFT",6,-(i-1)*27-4); btn:SetWidth(110); btn:SetHeight(24)
+    btn.filterValue=def.value
+    local hi=btn:CreateTexture(nil,"BACKGROUND"); hi:SetAllPoints(btn); hi:SetTexture("Interface\\Buttons\\UI-Listbox-Highlight"); hi:SetVertexColor(0.72,0.28,0.08,0.65); hi:Hide(); btn.highlight=hi
+    local label=btn:CreateFontString(nil,"OVERLAY","GameFontNormalSmall"); label:SetPoint("LEFT",btn,"LEFT",8,0); label:SetWidth(100); label:SetJustifyH("LEFT"); label:SetText(def.label); label:SetTextColor(0.92,0.78,0.26); btn.label=label
+    btn:SetScript("OnClick",function() EnsureDB(); AshenBannerCollectionsDB.toyFilter=this.filterValue or "All"; ABC.pages.toy=1; PlaySound("igMainMenuOptionCheckBoxOn"); ABC:BuildCollectionView("toy") end)
+    btn:SetScript("OnEnter",function() if this.highlight then this.highlight:Show() end; if this.label then this.label:SetTextColor(1,1,1) end end)
+    btn:SetScript("OnLeave",function() local selected=AshenBannerCollectionsDB and AshenBannerCollectionsDB.toyFilter or "All"; if this.filterValue~=selected then if this.highlight then this.highlight:Hide() end; if this.label then this.label:SetTextColor(0.92,0.78,0.26) end end end)
+    table.insert(frame.buttons,btn)
+  end
+  ui.abcToySidebarFrame=frame
+  return frame
+end
+
+function ABC:RefreshToySidebar(ui)
+  local frame=self:EnsureToySidebar(ui); if not frame then return end
+  EnsureDB(); local selected=AshenBannerCollectionsDB.toyFilter or "All"
   for i=1,table.getn(frame.buttons or {}) do local btn=frame.buttons[i]
     if btn.filterValue==selected then if btn.highlight then btn.highlight:Show() end; if btn.label then btn.label:SetTextColor(1.0,0.45,0.18) end
     else if btn.highlight then btn.highlight:Hide() end; if btn.label then btn.label:SetTextColor(0.92,0.78,0.26) end end
@@ -992,7 +1122,7 @@ end
 -- ---------------------------------------------------------------------------
 
 ABC.cardsPerPage = 6
-ABC.pages = ABC.pages or { mount = 1, companion = 1 }
+ABC.pages = ABC.pages or { mount = 1, companion = 1, toy = 1 }
 ABC.configMode = ABC.configMode or false
 ABC.activeModels = ABC.activeModels or {}
 ABC.activeCards = ABC.activeCards or {}
@@ -1022,8 +1152,31 @@ local function CopyModelProfile(source)
   return out
 end
 
+-- Companion equivalent of the mount family detection below -- lets an
+-- uncollected companion show a thematically-appropriate icon (frog, cat,
+-- bird, snake, etc.) instead of the single generic placeholder used for
+-- every not-yet-owned companion regardless of what it actually is.
+local function GetCompanionFamily(data)
+  local value = Lower((data and data.name) or "")
+  if string.find(value, "frog", 1, true) then return "frog" end
+  if string.find(value, "snake", 1, true) then return "snake" end
+  if string.find(value, "murloc", 1, true) or value == "gurky" or value == "murky" then return "murloc" end
+  if string.find(value, "whelpling", 1, true) or string.find(value, "dragon", 1, true) or string.find(value, "phoenix", 1, true) or string.find(value, "dragonhawk", 1, true) then return "drake" end
+  if string.find(value, "snapjaw", 1, true) or string.find(value, "crocolisk", 1, true) then return "crocolisk" end
+  if string.find(value, "turtle", 1, true) then return "turtle" end
+  if string.find(value, "tabby", 1, true) or string.find(value, "kitten", 1, true) or string.find(value, "siamese", 1, true) or string.find(value, "bombay", 1, true) or string.find(value, "cornish rex", 1, true) or string.find(value, "tiger cub", 1, true) or string.find(value, "bigglesworth", 1, true) then return "cat" end
+  if string.find(value, "owl", 1, true) or string.find(value, "raven", 1, true) or string.find(value, "macaw", 1, true) or string.find(value, "cockatiel", 1, true) or string.find(value, "senegal", 1, true) or string.find(value, "wing", 1, true) or string.find(value, "hedwig", 1, true) or string.find(value, "chicken", 1, true) then return "bird" end
+  if string.find(value, "worg", 1, true) or string.find(value, "ghostpup", 1, true) then return "wolf" end
+  if string.find(value, "crab", 1, true) then return "crab" end
+  if string.find(value, "pony", 1, true) then return "horse" end
+  if string.find(value, "tonk", 1, true) or string.find(value, "mechanical", 1, true) or string.find(value, "repair bot", 1, true) or string.find(value, "auctioneer", 1, true) or string.find(value, "barber", 1, true) or string.find(value, "surgeon", 1, true) then return "mechanical" end
+  if string.find(value, "elemental", 1, true) or string.find(value, "waveling", 1, true) then return "elemental" end
+  if string.find(value, "spectral", 1, true) then return "ghost" end
+  return "companion"
+end
+
 local function GetModelFamily(data, kind)
-  if kind ~= "mount" then return "companion" end
+  if kind ~= "mount" then return GetCompanionFamily(data) end
   local value = Lower((data and data.name) or "").." "..Lower((data and data.model) or "")
   local explicit = Lower((data and data.family) or "")
 
@@ -1326,6 +1479,12 @@ local ABC_FAMILY_PORTRAIT_TEXTURES = {
   thunderlizard  = "Interface\\Icons\\Spell_Nature_Lightning",
   cloud          = "Interface\\Icons\\Spell_Nature_Cyclone",
   companion      = "Interface\\Icons\\INV_Misc_QuestionMark",
+  -- Companion-specific families (mounts don't need these).
+  frog           = "Interface\\Icons\\Spell_Nature_Polymorph",
+  snake          = "Interface\\Icons\\INV_Misc_MonsterScales_03",
+  murloc         = "Interface\\Icons\\INV_Misc_Head_Murloc_01",
+  elemental      = "Interface\\Icons\\Spell_Fire_Elemental_Totem",
+  ghost          = "Interface\\Icons\\Spell_Shadow_AnimateDead",
 }
 
 local ABC_PORTRAIT_DEFAULTS = {
@@ -1393,11 +1552,454 @@ local ABC_MOUNT_ITEM_ICON_CACHE = {}
 local ABC_MOUNT_ICON_QUERY_TIP
 local ABC_MOUNT_ICON_REFRESH
 
+-- Icons for the mount/companion teaching items, keyed by item ID, sourced
+-- directly from the server's own item database (octowow.st/db). Most of
+-- these are custom OctoWoW/Turtle-WoW items that exist only server-side --
+-- the client's local item cache has no entry for them, so GetItemIcon
+-- (which only reads local data) and GetItemInfo (which needs the client
+-- to have already seen/cached the item some other way) both silently fail
+-- for the majority of them. This table sidesteps that entirely: it's not
+-- dependent on client/server cache state at all.
+local ABC_DB_ITEM_ICONS = {
+  [41] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [161] = "Interface\\Icons\\INV_Misc_Birdbeck_02",
+  [950] = "Interface\\Icons\\Ability_Mount_Undeadhorse",
+  [1041] = "Interface\\Icons\\Ability_Mount_BlackDireWolf",
+  [1132] = "Interface\\Icons\\Ability_Mount_BlackDireWolf",
+  [1134] = "Interface\\Icons\\Ability_Mount_WhiteDireWolf",
+  [2411] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [2413] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [2414] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [5655] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [5656] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [5663] = "Interface\\Icons\\Ability_Mount_BlackDireWolf",
+  [5665] = "Interface\\Icons\\Ability_Mount_WhiteDireWolf",
+  [5668] = "Interface\\Icons\\Ability_Mount_BlackDireWolf",
+  [5864] = "Interface\\Icons\\Ability_Mount_MountainRam",
+  [5872] = "Interface\\Icons\\Ability_Mount_MountainRam",
+  [5873] = "Interface\\Icons\\Ability_Mount_MountainRam",
+  [8485] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [8486] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [8487] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [8488] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [8489] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [8490] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [8491] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [8492] = "Interface\\Icons\\Spell_Nature_ForceOfNature",
+  [8494] = "Interface\\Icons\\Spell_Nature_ForceOfNature",
+  [8495] = "Interface\\Icons\\Spell_Nature_ForceOfNature",
+  [8496] = "Interface\\Icons\\Spell_Nature_ForceOfNature",
+  [8497] = "Interface\\Icons\\INV_Crate_02",
+  [8498] = "Interface\\Icons\\INV_Misc_Head_Dragon_Black",
+  [8499] = "Interface\\Icons\\INV_Misc_Head_Dragon_Black",
+  [8500] = "Interface\\Icons\\Ability_EyeOfTheOwl",
+  [8501] = "Interface\\Icons\\Ability_EyeOfTheOwl",
+  [8563] = "Interface\\Icons\\Ability_Mount_MechaStrider",
+  [8588] = "Interface\\Icons\\Ability_Mount_Raptor",
+  [8589] = "Interface\\Icons\\Ability_Mount_Raptor",
+  [8591] = "Interface\\Icons\\Ability_Mount_Raptor",
+  [8592] = "Interface\\Icons\\Ability_Mount_Raptor",
+  [8595] = "Interface\\Icons\\Ability_Mount_MechaStrider",
+  [8629] = "Interface\\Icons\\Ability_Mount_BlackPanther",
+  [8630] = "Interface\\Icons\\Ability_Mount_JungleTiger",
+  [8631] = "Interface\\Icons\\Ability_Mount_WhiteTiger",
+  [8632] = "Interface\\Icons\\Ability_Mount_WhiteTiger",
+  [8635] = "Interface\\Icons\\Ability_Mount_BlackPanther",
+  [10360] = "Interface\\Icons\\Spell_Nature_GuardianWard",
+  [10361] = "Interface\\Icons\\Spell_Nature_GuardianWard",
+  [10392] = "Interface\\Icons\\Spell_Nature_GuardianWard",
+  [10393] = "Interface\\Icons\\Spell_Shadow_CarrionSwarm",
+  [10394] = "Interface\\Icons\\Ability_Hunter_BeastCall",
+  [10398] = "Interface\\Icons\\Spell_Magic_PolymorphChicken",
+  [10822] = "Interface\\Icons\\INV_Misc_Head_Dragon_Black",
+  [11023] = "Interface\\Icons\\INV_Crate_02",
+  [11026] = "Interface\\Icons\\INV_Crate_02",
+  [11027] = "Interface\\Icons\\INV_Crate_02",
+  [11110] = "Interface\\Icons\\INV_Egg_02",
+  [11474] = "Interface\\Icons\\INV_Egg_02",
+  [11903] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [12264] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [12302] = "Interface\\Icons\\Ability_Mount_WhiteTiger",
+  [12303] = "Interface\\Icons\\Ability_Mount_BlackPanther",
+  [12325] = "Interface\\Icons\\Ability_Mount_JungleTiger",
+  [12326] = "Interface\\Icons\\Ability_Mount_JungleTiger",
+  [12327] = "Interface\\Icons\\Ability_Mount_JungleTiger",
+  [12351] = "Interface\\Icons\\Ability_Mount_BlackDireWolf",
+  [12353] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [12354] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [12529] = "Interface\\Icons\\INV_Box_Birdcage_01",
+  [13086] = "Interface\\Icons\\Ability_Mount_PinkTiger",
+  [13321] = "Interface\\Icons\\Ability_Mount_MechaStrider",
+  [13322] = "Interface\\Icons\\Ability_Mount_MechaStrider",
+  [13323] = "Interface\\Icons\\Ability_Mount_MechaStrider",
+  [13324] = "Interface\\Icons\\Ability_Mount_MechaStrider",
+  [13325] = "Interface\\Icons\\Ability_Mount_MechaStrider",
+  [13326] = "Interface\\Icons\\Ability_Mount_MechaStrider",
+  [13327] = "Interface\\Icons\\Ability_Mount_MechaStrider",
+  [13328] = "Interface\\Icons\\Ability_Mount_MountainRam",
+  [13329] = "Interface\\Icons\\Ability_Mount_MountainRam",
+  [13331] = "Interface\\Icons\\Ability_Mount_Undeadhorse",
+  [13332] = "Interface\\Icons\\Ability_Mount_Undeadhorse",
+  [13333] = "Interface\\Icons\\Ability_Mount_Undeadhorse",
+  [13334] = "Interface\\Icons\\Ability_Mount_Undeadhorse",
+  [13335] = "Interface\\Icons\\Ability_Mount_Undeadhorse",
+  [13582] = "Interface\\Icons\\Spell_Shadow_SummonFelHunter",
+  [13583] = "Interface\\Icons\\INV_Belt_05",
+  [13584] = "Interface\\Icons\\INV_DiabloStone",
+  [15277] = "Interface\\Icons\\Ability_Mount_Kodo_01",
+  [15290] = "Interface\\Icons\\Ability_Mount_Kodo_03",
+  [15292] = "Interface\\Icons\\Ability_Mount_Kodo_02",
+  [15293] = "Interface\\Icons\\Ability_Mount_Kodo_02",
+  [16339] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [18241] = "Interface\\Icons\\Ability_Mount_NightmareHorse",
+  [18242] = "Interface\\Icons\\Ability_Mount_BlackPanther",
+  [18243] = "Interface\\Icons\\Ability_Mount_MechaStrider",
+  [18244] = "Interface\\Icons\\Ability_Mount_MountainRam",
+  [18245] = "Interface\\Icons\\Ability_Mount_BlackDireWolf",
+  [18246] = "Interface\\Icons\\Ability_Mount_Raptor",
+  [18247] = "Interface\\Icons\\Ability_Mount_Kodo_03",
+  [18248] = "Interface\\Icons\\Ability_Mount_Undeadhorse",
+  [18766] = "Interface\\Icons\\Ability_Mount_WhiteTiger",
+  [18767] = "Interface\\Icons\\Ability_Mount_WhiteTiger",
+  [18768] = "Interface\\Icons\\Ability_Mount_JungleTiger",
+  [18772] = "Interface\\Icons\\Ability_Mount_MechaStrider",
+  [18773] = "Interface\\Icons\\Ability_Mount_MechaStrider",
+  [18774] = "Interface\\Icons\\Ability_Mount_MechaStrider",
+  [18776] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [18777] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [18778] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [18785] = "Interface\\Icons\\Ability_Mount_MountainRam",
+  [18786] = "Interface\\Icons\\Ability_Mount_MountainRam",
+  [18787] = "Interface\\Icons\\Ability_Mount_MountainRam",
+  [18788] = "Interface\\Icons\\Ability_Mount_Raptor",
+  [18789] = "Interface\\Icons\\Ability_Mount_Raptor",
+  [18790] = "Interface\\Icons\\Ability_Mount_Raptor",
+  [18791] = "Interface\\Icons\\Ability_Mount_Undeadhorse",
+  [18793] = "Interface\\Icons\\Ability_Mount_Kodo_01",
+  [18794] = "Interface\\Icons\\Ability_Mount_Kodo_03",
+  [18795] = "Interface\\Icons\\Ability_Mount_Kodo_01",
+  [18796] = "Interface\\Icons\\Ability_Mount_BlackDireWolf",
+  [18797] = "Interface\\Icons\\Ability_Mount_WhiteDireWolf",
+  [18798] = "Interface\\Icons\\Ability_Mount_WhiteDireWolf",
+  [18902] = "Interface\\Icons\\Ability_Mount_BlackPanther",
+  [18963] = "Interface\\Icons\\INV_Egg_03",
+  [18964] = "Interface\\Icons\\INV_Egg_02",
+  [18965] = "Interface\\Icons\\INV_Egg_03",
+  [18966] = "Interface\\Icons\\INV_Egg_03",
+  [18967] = "Interface\\Icons\\INV_Egg_02",
+  [19029] = "Interface\\Icons\\INV_Misc_Horn_01",
+  [19030] = "Interface\\Icons\\Ability_Mount_MountainRam",
+  [19054] = "Interface\\Icons\\INV_Misc_Orb_05",
+  [19055] = "Interface\\Icons\\INV_Misc_Orb_01",
+  [19450] = "Interface\\Icons\\INV_Egg_04",
+  [19872] = "Interface\\Icons\\Ability_Mount_Raptor",
+  [19902] = "Interface\\Icons\\Ability_Mount_JungleTiger",
+  [20371] = "Interface\\Icons\\INV_Egg_03",
+  [21044] = "Interface\\Icons\\INV_Misc_Branch_01",
+  [21168] = "Interface\\Icons\\INV_Drink_19",
+  [21176] = "Interface\\Icons\\INV_Misc_QirajiCrystal_05",
+  [21218] = "Interface\\Icons\\INV_Misc_QirajiCrystal_04",
+  [21301] = "Interface\\Icons\\INV_Holiday_Christmas_Present_03",
+  [21305] = "Interface\\Icons\\INV_Holiday_Christmas_Present_01",
+  [21308] = "Interface\\Icons\\INV_Misc_Bell_01",
+  [21309] = "Interface\\Icons\\INV_Misc_Bag_17",
+  [21321] = "Interface\\Icons\\INV_Misc_QirajiCrystal_02",
+  [21323] = "Interface\\Icons\\INV_Misc_QirajiCrystal_03",
+  [21324] = "Interface\\Icons\\INV_Misc_QirajiCrystal_01",
+  [22114] = "Interface\\Icons\\INV_Egg_03",
+  [22235] = "Interface\\Icons\\INV_Ammo_Arrow_02",
+  [22780] = "Interface\\Icons\\INV_Egg_03",
+  [22781] = "Interface\\Icons\\INV_Belt_09",
+  [23002] = "Interface\\Icons\\INV_Crate_03",
+  [23007] = "Interface\\Icons\\INV_Belt_25",
+  [23015] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [23193] = "Interface\\Icons\\Ability_Mount_Undeadhorse",
+  [23712] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [23713] = "Interface\\Icons\\INV_Egg_02",
+  [23720] = "Interface\\Icons\\Ability_Hunter_Pet_Turtle",
+  [23800] = "Interface\\Icons\\Ability_Mount_Raptor",
+  [30000] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [30003] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30005] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30008] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30009] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30010] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30011] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30012] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30013] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30014] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30015] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30016] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30017] = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
+  [30018] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30019] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30020] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30021] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30022] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30024] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30025] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30026] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [30040] = "Interface\\Icons\\Ability_Hunter_Pet_Turtle",
+  [31829] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [36500] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [36501] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [36502] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [36503] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [36504] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [36505] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [36506] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [36507] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [36508] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [36509] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [36510] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [36511] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [36512] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [36513] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [36514] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [36515] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [36516] = "Interface\\Icons\\INV_Misc_Food_02",
+  [37000] = "Interface\\Icons\\INV_Misc_MonsterSpiderCarapace_01",
+  [37002] = "Interface\\Icons\\INV_Misc_MonsterSpiderCarapace_01",
+  [37005] = "Interface\\Icons\\INV_Misc_MonsterSpiderCarapace_01",
+  [37006] = "Interface\\Icons\\INV_Misc_MonsterSpiderCarapace_01",
+  [37009] = "Interface\\Icons\\INV_Misc_MonsterSpiderCarapace_01",
+  [37010] = "Interface\\Icons\\INV_Misc_MonsterSpiderCarapace_01",
+  [37011] = "Interface\\Icons\\INV_Misc_MonsterSpiderCarapace_01",
+  [37024] = "Interface\\Icons\\INV_Misc_Pelt_Wolf_01",
+  [37050] = "Interface\\Icons\\INV_Misc_Fish_33",
+  [37051] = "Interface\\Icons\\INV_Misc_Food_40",
+  [37052] = "Interface\\Icons\\Ability_Hunter_BeastCall",
+  [37053] = "Interface\\Icons\\INV_Gauntlets_02",
+  [37054] = "Interface\\Icons\\Ability_Hunter_Pet_Turtle",
+  [37055] = "Interface\\Icons\\Spell_Nature_NaturesWrath",
+  [37056] = "Interface\\Icons\\INV_Mushroom_11",
+  [37057] = "Interface\\Icons\\INV_Feather_13",
+  [37058] = "Interface\\Icons\\Ability_Druid_DemoralizingRoar",
+  [37059] = "Interface\\Icons\\INV_Weapon_ShortBlade_09",
+  [37060] = "Interface\\Icons\\INV_Misc_Birdbeck_01",
+  [37061] = "Interface\\Icons\\Spell_Nature_GuardianWard",
+  [37062] = "Interface\\Icons\\INV_Misc_MonsterScales_01",
+  [37063] = "Interface\\Icons\\INV_Misc_MonsterScales_03",
+  [37064] = "Interface\\Icons\\INV_Misc_MonsterSpiderCarapace_01",
+  [37065] = "Interface\\Icons\\INV_Feather_14",
+  [37066] = "Interface\\Icons\\INV_Misc_Pelt_Bear_Ruin_05",
+  [37067] = "Interface\\Icons\\INV_Misc_Food_23",
+  [37068] = "Interface\\Icons\\INV_Feather_12",
+  [37069] = "Interface\\Icons\\INV_Misc_Slime_01",
+  [37070] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [37071] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [37072] = "Interface\\Icons\\INV_Misc_Orb_02",
+  [50005] = "Interface\\Icons\\INV_Misc_EngGizmos_swissArmy",
+  [50007] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [50009] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [50013] = "Interface\\Icons\\INV_Misc_Bone_07",
+  [50014] = "Interface\\Icons\\INV_Misc_Branch_01",
+  [50019] = "Interface\\Icons\\INV_Egg_03",
+  [50058] = "Interface\\Icons\\INV_Misc_Food_02",
+  [50066] = "Interface\\Icons\\Ability_Mount_MechaStrider",
+  [50067] = "Interface\\Icons\\Spell_Nature_GuardianWard",
+  [50068] = "Interface\\Icons\\Spell_Nature_GuardianWard",
+  [50069] = "Interface\\Icons\\Spell_Nature_GuardianWard",
+  [50070] = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
+  [50071] = "Interface\\Icons\\INV_Misc_Birdbeck_01",
+  [50072] = "Interface\\Icons\\INV_Misc_Birdbeck_01",
+  [50073] = "Interface\\Icons\\INV_Misc_Birdbeck_01",
+  [50074] = "Interface\\Icons\\INV_Misc_Birdbeck_01",
+  [50075] = "Interface\\Icons\\INV_Misc_Birdbeck_01",
+  [50076] = "Interface\\Icons\\INV_Misc_Birdbeck_01",
+  [50077] = "Interface\\Icons\\INV_Egg_02",
+  [50078] = "Interface\\Icons\\INV_Crate_02",
+  [50079] = "Interface\\Icons\\INV_Crate_02",
+  [50080] = "Interface\\Icons\\Ability_Hunter_Pet_Owl",
+  [50081] = "Interface\\Icons\\INV_Crate_02",
+  [50082] = "Interface\\Icons\\Ability_Hunter_Pet_Owl",
+  [50083] = "Interface\\Icons\\INV_Misc_Head_Dragon_Black",
+  [50084] = "Interface\\Icons\\INV_Enchant_DustSoul",
+  [50085] = "Interface\\Icons\\INV_Jewelry_FrostwolfTrinket_01",
+  [50200] = "Interface\\Icons\\INV_Ammo_Bullet_01",
+  [50202] = "Interface\\Icons\\INV_Egg_03",
+  [50399] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [50400] = "Interface\\Icons\\INV_Jewelry_Talisman_02",
+  [50401] = "Interface\\Icons\\Ability_Mount_Raptor",
+  [50402] = "Interface\\Icons\\Ability_Mount_Raptor",
+  [50403] = "Interface\\Icons\\Ability_Mount_Raptor",
+  [50404] = "Interface\\Icons\\Ability_Mount_Raptor",
+  [50406] = "Interface\\Icons\\INV_Misc_Root_02",
+  [50407] = "Interface\\Icons\\Ability_Mount_NightmareHorse",
+  [50426] = "Interface\\Icons\\INV_Jewelry_Talisman_02",
+  [50535] = "Interface\\Icons\\INV_Misc_Foot_Centaur",
+  [50536] = "Interface\\Icons\\Ability_Mount_Undeadhorse",
+  [50600] = "Interface\\Icons\\INV_Misc_Comb_01",
+  [50601] = "Interface\\Icons\\INV_Weapon_ShortBlade_21",
+  [50602] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [51002] = "Interface\\Icons\\INV_Gizmo_02",
+  [51003] = "Interface\\Icons\\INV_Gizmo_02",
+  [51007] = "Interface\\Icons\\Spell_Nature_NatureTouchGrow",
+  [51220] = "Interface\\Icons\\Spell_Nature_Polymorph",
+  [51221] = "Interface\\Icons\\Spell_Nature_Polymorph",
+  [51249] = "Interface\\Icons\\Ability_Mount_WhiteDireWolf",
+  [51251] = "Interface\\Icons\\Ability_EyeOfTheOwl",
+  [51252] = "Interface\\Icons\\INV_Misc_Head_Dragon_01",
+  [51259] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [51260] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [51421] = "Interface\\Icons\\Ability_Mount_Kodo_01",
+  [51433] = "Interface\\Icons\\INV_Misc_Foot_Centaur",
+  [51700] = "Interface\\Icons\\INV_Egg_02",
+  [51739] = "Interface\\Icons\\INV_Fabric_Wool_02",
+  [51858] = "Interface\\Icons\\INV_Misc_Pelt_Bear_Ruin_03",
+  [51889] = "Interface\\Icons\\Ability_Hunter_Pet_Bear",
+  [51891] = "Interface\\Icons\\INV_Misc_MonsterClaw_04",
+  [51930] = "Interface\\Icons\\Ability_Hunter_Pet_Bear",
+  [54000] = "Interface\\Icons\\INV_Crate_02",
+  [54001] = "Interface\\Icons\\INV_Crate_02",
+  [54002] = "Interface\\Icons\\INV_Crate_02",
+  [54003] = "Interface\\Icons\\INV_Crate_02",
+  [54004] = "Interface\\Icons\\INV_Crate_02",
+  [54005] = "Interface\\Icons\\INV_Crate_02",
+  [54006] = "Interface\\Icons\\INV_Crate_02",
+  [54007] = "Interface\\Icons\\INV_Crate_02",
+  [54008] = "Interface\\Icons\\INV_Crate_02",
+  [55027] = "Interface\\Icons\\Ability_Hunter_Pet_Owl",
+  [55071] = "Interface\\Icons\\INV_Weapon_ShortBlade_16",
+  [67000] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [69000] = "Interface\\Icons\\INV_Weapon_ShortBlade_16",
+  [69001] = "Interface\\Icons\\INV_Weapon_ShortBlade_16",
+  [69002] = "Interface\\Icons\\INV_Misc_Spyglass_03",
+  [69003] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [69004] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [69006] = "Interface\\Icons\\INV_Feather_13",
+  [69170] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [69171] = "Interface\\Icons\\Spell_Magic_PolymorphPig",
+  [69172] = "Interface\\Icons\\Spell_Magic_PolymorphPig",
+  [69173] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [70016] = "Interface\\Icons\\INV_Misc_Head_Dragon_Black",
+  [80000] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [80001] = "Interface\\Icons\\INV_Misc_Herb_14",
+  [80003] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [80004] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [80006] = "Interface\\Icons\\Spell_Arcane_Blink",
+  [80007] = "Interface\\Icons\\INV_Staff_08",
+  [80010] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [80410] = "Interface\\Icons\\Ability_Hunter_BeastCall",
+  [80425] = "Interface\\Icons\\INV_Misc_Root_02",
+  [80430] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [80431] = "Interface\\Icons\\Spell_Magic_PolymorphChicken",
+  [80433] = "Interface\\Icons\\Ability_Druid_DemoralizingRoar",
+  [80438] = "Interface\\Icons\\Ability_Druid_DemoralizingRoar",
+  [80443] = "Interface\\Icons\\Ability_Mount_MountainRam",
+  [80446] = "Interface\\Icons\\Ability_Mount_BlackPanther",
+  [80447] = "Interface\\Icons\\Ability_Mount_BlackDireWolf",
+  [80449] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [80455] = "Interface\\Icons\\Ability_Mount_Kodo_03",
+  [80457] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [80458] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [80459] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [80460] = "Interface\\Icons\\INV_Misc_MissileSmall_Red",
+  [80461] = "Interface\\Icons\\INV_Misc_MissileSmall_Green",
+  [80462] = "Interface\\Icons\\INV_Misc_MissileSmall_Blue",
+  [80692] = "Interface\\Icons\\Ability_Mount_NightmareHorse",
+  [80878] = "Interface\\Icons\\INV_Feather_14",
+  [81091] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [81100] = "Interface\\Icons\\INV_Feather_13",
+  [81102] = "Interface\\Icons\\Ability_Druid_ChallangingRoar",
+  [81120] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [81121] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [81150] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [81151] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [81152] = "Interface\\Icons\\INV_Box_PetCarrier_01",
+  [81153] = "Interface\\Icons\\Ability_Hunter_Pet_Bear",
+  [81154] = "Interface\\Icons\\Ability_Hunter_Pet_Bear",
+  [81155] = "Interface\\Icons\\Ability_Hunter_Pet_Bear",
+  [81156] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [81158] = "Interface\\Icons\\Ability_Hunter_Pet_Bear",
+  [81159] = "Interface\\Icons\\INV_Drink_19",
+  [81182] = "Interface\\Icons\\Ability_Mount_Raptor",
+  [81183] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [81185] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [81186] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [81190] = "Interface\\Icons\\INV_Misc_Key_06",
+  [81191] = "Interface\\Icons\\INV_Misc_Key_05",
+  [81192] = "Interface\\Icons\\INV_Misc_Gear_01",
+  [81193] = "Interface\\Icons\\INV_Misc_Gear_01",
+  [81194] = "Interface\\Icons\\INV_Misc_Gear_01",
+  [81195] = "Interface\\Icons\\INV_Misc_Gear_01",
+  [81198] = "Interface\\Icons\\Ability_Mount_Kodo_01",
+  [81207] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [81224] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [81225] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [81226] = "Interface\\Icons\\Ability_Hunter_Pet_Bear",
+  [81227] = "Interface\\Icons\\Ability_Mount_JungleTiger",
+  [81231] = "Interface\\Icons\\Ability_Mount_PinkTiger",
+  [81232] = "Interface\\Icons\\Ability_Mount_PinkTiger",
+  [81233] = "Interface\\Icons\\Ability_Mount_MountainRam",
+  [81234] = "Interface\\Icons\\Ability_Mount_MountainRam",
+  [81235] = "Interface\\Icons\\Ability_Mount_Undeadhorse",
+  [81236] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [81237] = "Interface\\Icons\\Ability_Mount_Kodo_01",
+  [81238] = "Interface\\Icons\\INV_Misc_Key_12",
+  [81239] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [81240] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [81241] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [81242] = "Interface\\Icons\\INV_Misc_QuestionMark",
+  [81243] = "Interface\\Icons\\INV_Misc_Birdbeck_01",
+  [81244] = "Interface\\Icons\\Ability_Mount_Undeadhorse",
+  [81245] = "Interface\\Icons\\Ability_Mount_Undeadhorse",
+  [81246] = "Interface\\Icons\\Ability_Mount_Undeadhorse",
+  [81247] = "Interface\\Icons\\Ability_Mount_Undeadhorse",
+  [81248] = "Interface\\Icons\\INV_Drink_19",
+  [81254] = "Interface\\Icons\\Spell_Frost_SummonWaterElemental",
+  [81258] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [81283] = "Interface\\Icons\\INV_Misc_Ribbon_01",
+  [83150] = "Interface\\Icons\\Ability_Hunter_Pet_Bear",
+  [83151] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [83152] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [83153] = "Interface\\Icons\\Ability_Mount_Raptor",
+  [83154] = "Interface\\Icons\\Ability_Mount_Raptor",
+  [83155] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [83156] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [83157] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [83158] = "Interface\\Icons\\INV_Jewelry_Talisman_02",
+  [83159] = "Interface\\Icons\\Ability_Mount_Kodo_01",
+  [83300] = "Interface\\Icons\\INV_Misc_Urn_01",
+  [83301] = "Interface\\Icons\\Spell_Fire_LavaSpawn",
+  [83302] = "Interface\\Icons\\INV_Misc_Rune_04",
+  [83475] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [83476] = "Interface\\Icons\\Ability_Mount_PinkTiger",
+  [83477] = "Interface\\Icons\\INV_Misc_Foot_Centaur",
+  [83520] = "Interface\\Icons\\Ability_Mount_RidingHorse",
+  [84038] = "Interface\\Icons\\INV_Misc_Bone_04",
+  [92016] = "Interface\\Icons\\INV_Crate_02",
+  [92017] = "Interface\\Icons\\INV_Misc_Foot_Centaur",
+  [92018] = "Interface\\Icons\\INV_Misc_Foot_Centaur",
+  [92020] = "Interface\\Icons\\INV_Misc_Birdbeck_02",
+  [92050] = "Interface\\Icons\\INV_Jewelry_Talisman_08",
+  [92051] = "Interface\\Icons\\Ability_Mount_Undeadhorse",
+  [92052] = "Interface\\Icons\\INV_Misc_Head_Tiger_01",
+  [98800] = "Interface\\Icons\\inv_misc_octopuss",
+  [98801] = "Interface\\Icons\\inv_misc_octopuss_purple",
+}
+
 local function ABC_GetMountItemTexture(data)
   if not data or not data.itemID then return nil end
   local itemID = tonumber(data.itemID)
   if not itemID or itemID <= 0 then return nil end
   if ABC_MOUNT_ITEM_ICON_CACHE[itemID] then return ABC_MOUNT_ITEM_ICON_CACHE[itemID] end
+  if ABC_DB_ITEM_ICONS[itemID] then
+    ABC_MOUNT_ITEM_ICON_CACHE[itemID] = ABC_DB_ITEM_ICONS[itemID]
+    return ABC_DB_ITEM_ICONS[itemID]
+  end
+  -- ClassicAPI's GetItemIcon reads straight from the item's own DBC data --
+  -- no server round-trip/caching needed like GetItemInfo, so it works
+  -- instantly even for an item the client has never seen before. Falls
+  -- through to the GetItemInfo/tooltip-scan path below if it's not
+  -- available (e.g. ClassicAPI isn't loaded) or doesn't know the item.
+  if GetItemIcon then
+    local ok, texture = pcall(GetItemIcon, itemID)
+    if ok and texture and texture ~= "" then
+      ABC_MOUNT_ITEM_ICON_CACHE[itemID] = texture
+      return texture
+    end
+  end
   if GetItemInfo then
     local itemName, itemLink, quality, itemLevel, requiredLevel, itemType, itemSubType, stackCount, equipSlot, texture = GetItemInfo(itemID)
     if texture and texture ~= "" then
@@ -1427,10 +2029,34 @@ local function ABC_GetMountItemTexture(data)
   return nil
 end
 
+-- Exposed so the achievement row/toast/summary code in LeafVillageAchievements.lua
+-- (a separate file, loaded before this one, so it can't see this local
+-- directly) can resolve a real item icon for not-yet-collected mount/
+-- companion/toy achievements, instead of showing their generic catalog
+-- placeholder icon whenever a real one is available.
+function ABC.GetItemIconForAchievement(itemID)
+  if not itemID then return nil end
+  return ABC_GetMountItemTexture({ itemID = itemID })
+end
+
 local function ABC_ResolveCollectionIcon(data, kind)
+  if kind == "toy" then
+    if data and data.collected and data.icon and data.icon ~= "" then return data.icon, "spell icon" end
+    -- Toys have no creature model to guess a family from -- just the
+    -- item icon (via itemID), falling back to a flat placeholder.
+    local itemTexture = ABC_GetMountItemTexture(data)
+    if itemTexture and itemTexture ~= "" then return itemTexture, "toy item icon" end
+    return "Interface\\Icons\\INV_Misc_QuestionMark", "toy fallback icon"
+  end
   if kind ~= "mount" then
     if data and data.collected and data.icon and data.icon ~= "" then return data.icon, "spell icon" end
-    return ABC_FAMILY_PORTRAIT_TEXTURES.companion, "companion icon"
+    -- Despite the name, ABC_GetMountItemTexture only depends on data.itemID
+    -- (via GetItemIcon/GetItemInfo) -- reusable here for the item that
+    -- teaches a not-yet-collected companion, same idea as mounts below.
+    local itemTexture = ABC_GetMountItemTexture(data)
+    if itemTexture and itemTexture ~= "" then return itemTexture, "companion item icon" end
+    local family = GetCompanionFamily(data)
+    return ABC_FAMILY_PORTRAIT_TEXTURES[family] or ABC_FAMILY_PORTRAIT_TEXTURES.companion, "companion family icon"
   end
   if data and data.collected and data.icon and data.icon ~= "" then return data.icon, "spell icon" end
   local itemTexture = ABC_GetMountItemTexture(data)
@@ -2217,6 +2843,8 @@ function ABC:BuildCollectionView(kind)
   local ui = LeafVE_AchTest.UI
   if not ui.frame or not ui.scrollChild then return end
 
+  if ui.summaryFrame then ui.summaryFrame:Hide() end
+  if ui.titleSummaryFrame then ui.titleSummaryFrame:Hide() end
   ReleaseActiveModels()
   HideOriginalFilters(ui)
   ClearScrollChild(ui)
@@ -2293,6 +2921,7 @@ function ABC:BuildCollectionView(kind)
     ABC:BuildCollectionView(kind)
   end)
   if page >= totalPages then nextBtn:Disable() end
+  if LeafVE_AchTest.SkinAshenButton then LeafVE_AchTest.SkinAshenButton(nextBtn) end
 
   local pageText = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   pageText:SetWidth(70); pageText:SetJustifyH("CENTER")
@@ -2309,6 +2938,7 @@ function ABC:BuildCollectionView(kind)
     ABC:BuildCollectionView(kind)
   end)
   if page <= 1 then prevBtn:Disable() end
+  if LeafVE_AchTest.SkinAshenButton then LeafVE_AchTest.SkinAshenButton(prevBtn) end
 
   local configBtn = CreateFrame("Button", nil, ui.scrollChild, "UIPanelButtonTemplate")
   configBtn:SetWidth(72); configBtn:SetHeight(22)
@@ -2382,6 +3012,7 @@ function ABC:UpdateTabVisuals()
   end
   set(ui.companionTab, current == "companions")
   set(ui.mountTab or ui.mountsTab, current == "mounts")
+  set(ui.toyTab, current == "toys")
   set(ui.achTab, current == "achievements")
   set(ui.titlesTab, current == "titles")
   set(ui.adminTab, current == "admin")
@@ -2452,6 +3083,16 @@ function ABC:InstallHooks()
     -- frame can never overlap Achievements, Titles, or Admin.
     if self.abcStableMountSearch then self.abcStableMountSearch:Hide() end
     if self.abcStableCompanionSearch then self.abcStableCompanionSearch:Hide() end
+    if self.abcStableToySearch then self.abcStableToySearch:Hide() end
+
+    -- The mounts/companions/toys branches below return before oldRefresh ever
+    -- runs, so the base UI:Refresh's own summaryFrame/titleSummaryFrame
+    -- :Hide() calls (added for the two Summary tabs) never get a chance
+    -- to fire on those two views -- their recent-item icons/mosaics
+    -- stayed visible on top of the collection grid. Hidden here
+    -- unconditionally instead, before either early return.
+    if self.summaryFrame then self.summaryFrame:Hide() end
+    if self.titleSummaryFrame then self.titleSummaryFrame:Hide() end
 
     if self.currentView == "mounts" then
       ABC:BuildCollectionView("mount")
@@ -2461,20 +3102,25 @@ function ABC:InstallHooks()
       ABC:BuildCollectionView("companion")
       ABC:UpdateTabVisuals()
       return
+    elseif self.currentView == "toys" then
+      ABC:BuildCollectionView("toy")
+      ABC:UpdateTabVisuals()
+      return
     end
 
     HideFrame(self.abcMountSidebarFrame)
     HideFrame(self.abcCompanionSidebarFrame)
+    HideFrame(self.abcToySidebarFrame)
     if self.scrollChild then ClearScrollChild(self) end
     local result = oldRefresh(self)
 
     -- Defensively enforce the base addon's independent searches as well.
     -- Achievements gets only the achievement search, Titles gets only the
     -- title search, and Admin/other views get neither.
-    if self.currentView == "achievements" then
+    if self.currentView == "achievements" and self.selectedCategory ~= "Summary" then
       ShowFrame(self.searchLabel); ShowFrame(self.searchBox); ShowFrame(self.clearBtn)
       HideFrame(self.titleSearchLabel); HideFrame(self.titleSearchBox); HideFrame(self.titleClearBtn)
-    elseif self.currentView == "titles" then
+    elseif self.currentView == "titles" and self.titleCategoryFilter ~= "Summary" then
       HideFrame(self.searchLabel); HideFrame(self.searchBox); HideFrame(self.clearBtn)
       ShowFrame(self.titleSearchLabel); ShowFrame(self.titleSearchBox); ShowFrame(self.titleClearBtn)
     else
@@ -3553,17 +4199,20 @@ end
 BuildSortedList = function(kind)
   local saved = GetSavedCollection(kind)
   local runtime = GetRuntimeCollection(kind)
-  local master = (kind == "mount") and ABC.masterMountList or ABC.masterCompanionList
+  local master = (kind == "mount") and ABC.masterMountList or (kind == "toy") and ABC.masterToyList or ABC.masterCompanionList
+  local function ApplyPointFallback(row)
+    if row.points or not LeafVE_AchTest then return end
+    if kind == "mount" and LeafVE_AchTest.GetMountPointValue then row.points = LeafVE_AchTest:GetMountPointValue(row.name, row.source)
+    elseif kind == "toy" and LeafVE_AchTest.GetToyPointValue then row.points = LeafVE_AchTest:GetToyPointValue(row.name)
+    elseif kind ~= "mount" and LeafVE_AchTest.GetCompanionPointValue then row.points = LeafVE_AchTest:GetCompanionPointValue(row.name) end
+  end
   local outMap = {}
   for name, mdata in pairs(master or {}) do
     local row = {}
     for k, v in pairs(mdata) do row[k] = v end
     row.name = name
     row.collected = false
-    if not row.points and LeafVE_AchTest then
-      if kind == "mount" and LeafVE_AchTest.GetMountPointValue then row.points = LeafVE_AchTest:GetMountPointValue(row.name, row.source)
-      elseif kind ~= "mount" and LeafVE_AchTest.GetCompanionPointValue then row.points = LeafVE_AchTest:GetCompanionPointValue(row.name) end
-    end
+    ApplyPointFallback(row)
     outMap[name] = row
   end
   for name, data in pairs(saved) do
@@ -3581,10 +4230,7 @@ BuildSortedList = function(kind)
       row.url = nil
       row.name = name
       row.collected = true
-      if not row.points and LeafVE_AchTest then
-        if kind == "mount" and LeafVE_AchTest.GetMountPointValue then row.points = LeafVE_AchTest:GetMountPointValue(row.name, row.source)
-        elseif kind ~= "mount" and LeafVE_AchTest.GetCompanionPointValue then row.points = LeafVE_AchTest:GetCompanionPointValue(row.name) end
-      end
+      ApplyPointFallback(row)
       outMap[name] = row
     end
   end
@@ -3943,45 +4589,51 @@ local function ABC_StableSetSearchText(kind, text)
   AshenBannerCollectionsDB.stableSearch[kind] = tostring(text or "")
 end
 
+local function ABC_StableSearchViewName(kind)
+  if kind == "mount" then return "mounts" end
+  if kind == "toy" then return "toys" end
+  return "companions"
+end
+
 local function ABC_StableGetSearchFrame(ui, kind)
-  local key = kind == "mount" and "abcStableMountSearch" or "abcStableCompanionSearch"
+  local key = kind == "mount" and "abcStableMountSearch" or kind == "toy" and "abcStableToySearch" or "abcStableCompanionSearch"
   if ui[key] then return ui[key] end
 
   local holder = CreateFrame("Frame", nil, ui.frame)
-  holder:SetWidth(390)
+  holder:SetWidth(370)
   holder:SetHeight(30)
   holder:SetFrameLevel((ui.scrollFrame and ui.scrollFrame:GetFrameLevel() or ui.frame:GetFrameLevel()) + 8)
-  holder:SetPoint("TOPLEFT", ui.scrollFrame or ui.frame, "TOPLEFT", 12, -45)
-  ABC_StableBackground(holder, 0.035, 0.028, 0.022, 0.97)
-  ABC_StableCreateBorder(holder, 2, 0.55, 0.34, 0.11, 1)
+  -- Exact same spot, sizes, and gaps as the Achievements/Titles search
+  -- bars (see searchLabel/searchBox/clearBtn in LeafVillageAchievements.lua
+  -- Build()) so this tab's search bar is indistinguishable from theirs.
+  holder:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", 155, -128)
 
   local label = holder:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  label:SetPoint("LEFT", holder, "LEFT", 9, 0)
-  label:SetText(kind == "mount" and "Search mounts" or "Search companions")
-  label:SetTextColor(0.95, 0.73, 0.27)
+  label:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, 0)
+  label:SetText("Search:")
 
   local box = CreateFrame("EditBox", nil, holder)
-  box:SetWidth(206)
-  box:SetHeight(20)
-  box:SetPoint("LEFT", label, "RIGHT", 9, 0)
+  box:SetWidth(240)
+  box:SetHeight(26)
+  box:SetPoint("LEFT", label, "RIGHT", 5, 0)
   box:SetAutoFocus(false)
   box:SetMaxLetters(80)
-  if box.SetFontObject and ChatFontNormal then box:SetFontObject(ChatFontNormal) end
-  if box.SetTextInsets then box:SetTextInsets(5, 5, 0, 0) end
-  ABC_StableBackground(box, 0.012, 0.012, 0.012, 0.98)
-  ABC_StableCreateBorder(box, 1, 0.33, 0.27, 0.20, 1)
+  box:SetFontObject("GameFontHighlight")
+  box:SetTextInsets(12, 12, 0, 0)
+  if LeafVE_AchTest.SkinAshenEditBox then LeafVE_AchTest.SkinAshenEditBox(box) end
 
   local placeholder = holder:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  placeholder:SetPoint("LEFT", box, "LEFT", 6, 0)
-  placeholder:SetText(kind == "mount" and "name, source, item..." or "name or source...")
+  placeholder:SetPoint("LEFT", box, "LEFT", 12, 0)
+  placeholder:SetText(kind == "mount" and "name, source, item..." or kind == "toy" and "name or source..." or "name or source...")
   placeholder:SetTextColor(0.40, 0.40, 0.40)
   holder.placeholder = placeholder
 
   local clear = CreateFrame("Button", nil, holder, "UIPanelButtonTemplate")
-  clear:SetWidth(48)
-  clear:SetHeight(21)
-  clear:SetPoint("RIGHT", holder, "RIGHT", -5, 0)
+  clear:SetWidth(58)
+  clear:SetHeight(28)
+  clear:SetPoint("LEFT", box, "RIGHT", 5, 0)
   clear:SetText("Clear")
+  if LeafVE_AchTest.SkinAshenButton then LeafVE_AchTest.SkinAshenButton(clear) end
 
   holder.box = box
   holder.kind = kind
@@ -4026,7 +4678,7 @@ local function ABC_StableGetSearchFrame(ui, kind)
     if this._abcElapsed >= 0.22 then
       this._abcPending = false
       this._abcElapsed = 0
-      if LeafVE_AchTest and LeafVE_AchTest.UI and LeafVE_AchTest.UI.currentView == (kind == "mount" and "mounts" or "companions") then
+      if LeafVE_AchTest and LeafVE_AchTest.UI and LeafVE_AchTest.UI.currentView == ABC_StableSearchViewName(kind) then
         ABC:BuildCollectionView(kind)
       end
     end
@@ -4039,18 +4691,27 @@ end
 local function ABC_StableShowSearch(ui, kind)
   local mountSearch = ABC_StableGetSearchFrame(ui, "mount")
   local companionSearch = ABC_StableGetSearchFrame(ui, "companion")
-  if kind == "mount" then mountSearch:Show(); companionSearch:Hide()
-  else companionSearch:Show(); mountSearch:Hide() end
+  local toySearch = ABC_StableGetSearchFrame(ui, "toy")
+  mountSearch:Hide(); companionSearch:Hide(); toySearch:Hide()
+  if kind == "mount" then mountSearch:Show()
+  elseif kind == "toy" then toySearch:Show()
+  else companionSearch:Show() end
 end
 
 local function ABC_StableHideSearch(ui)
   if ui.abcStableMountSearch then ui.abcStableMountSearch:Hide() end
   if ui.abcStableCompanionSearch then ui.abcStableCompanionSearch:Hide() end
+  if ui.abcStableToySearch then ui.abcStableToySearch:Hide() end
 end
 
 local function ABC_StableMatch(row, kind)
-  if kind == "mount" and not MountMatchesFilter(row, AshenBannerCollectionsDB.mountFilter or "All") then return false end
-  if kind ~= "mount" and not CompanionMatchesFilter(row, AshenBannerCollectionsDB.companionFilter or "All") then return false end
+  if kind == "mount" then
+    if not MountMatchesFilter(row, AshenBannerCollectionsDB.mountFilter or "All") then return false end
+  elseif kind == "toy" then
+    if not ToyMatchesFilter(row, AshenBannerCollectionsDB.toyFilter or "All") then return false end
+  else
+    if not CompanionMatchesFilter(row, AshenBannerCollectionsDB.companionFilter or "All") then return false end
+  end
   local query = Lower(ABC_StableSearchText(kind))
   if query == "" then return true end
   local haystack = Lower(
@@ -4069,7 +4730,7 @@ local function ABC_StableFilterList(list, kind)
   for _, row in ipairs(list or {}) do
     if ABC_StableMatch(row, kind) then table.insert(out, row) end
   end
-  table.sort(out, function(a, b) return Lower(a.name or "") < Lower(b.name or "") end)
+  ABC_SortByRecencyThenName(out)
   return out
 end
 
@@ -4087,9 +4748,12 @@ end
 local function ABC_StableCard(parent, index, data, kind)
   local cols = 3
   local cardW = 218
-  local cardH = 198
+  -- Shrunk from 198 (21px off the portrait area below) so a full 2-row
+  -- page fits inside the window's existing scroll viewport instead of
+  -- needing the window itself grown taller.
+  local cardH = 177
   local gapX = 14
-  local gapY = 14
+  local gapY = 10
   local col = math.mod(index - 1, cols)
   local row = math.floor((index - 1) / cols)
   local collected = data and data.collected == true
@@ -4109,34 +4773,37 @@ local function ABC_StableCard(parent, index, data, kind)
   accent:SetHeight(4)
   ABC_StableSetTextureColor(accent, collected and 0.95 or 0.34, collected and 0.45 or 0.30, collected and 0.08 or 0.24, 1)
 
+  -- Only the big portrait below shows the icon now -- a second small copy
+  -- up here next to the name was pure duplication on a card this size.
   local iconPath, iconSource = ABC_StableFamilyIcon(data, kind)
-  local iconFrame = CreateFrame("Frame", nil, card)
-  iconFrame:SetWidth(34); iconFrame:SetHeight(34)
-  iconFrame:SetPoint("TOPLEFT", card, "TOPLEFT", 10, -12)
-  ABC_StableBackground(iconFrame, 0.015, 0.015, 0.015, 1)
-  ABC_StableCreateBorder(iconFrame, 1, collected and 0.75 or 0.32, collected and 0.48 or 0.29, collected and 0.15 or 0.24, 1)
-  local smallIcon = iconFrame:CreateTexture(nil, "ARTWORK")
-  smallIcon:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", 2, -2)
-  smallIcon:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -2, 2)
-  smallIcon:SetTexture(iconPath or ABC_STABLE_TEX_ICON_FALLBACK)
-  smallIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-  if not collected then smallIcon:SetVertexColor(0.52, 0.52, 0.52, 0.90) end
 
   local nameText = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  nameText:SetPoint("TOPLEFT", iconFrame, "TOPRIGHT", 7, -1)
-  nameText:SetWidth(108)
+  nameText:SetPoint("TOPLEFT", card, "TOPLEFT", 10, -13)
+  nameText:SetWidth(145)
   nameText:SetJustifyH("LEFT")
   nameText:SetText(ABC_StableTrim(data and data.name or "Unknown", 28))
-  nameText:SetTextColor(collected and 1.0 or 0.66, collected and 0.82 or 0.63, collected and 0.36 or 0.58)
+  -- Warm off-white for the name, matching the achievement/title rows'
+  -- convention -- gold is reserved for points/accents there, not names.
+  nameText:SetTextColor(collected and 0.90 or 0.67, collected and 0.88 or 0.65, collected and 0.84 or 0.62)
 
   local status = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   status:SetPoint("TOPRIGHT", card, "TOPRIGHT", -9, -14)
   status:SetText(collected and "COLLECTED" or "MISSING")
   status:SetTextColor(collected and 0.42 or 0.68, collected and 0.92 or 0.66, collected and 0.34 or 0.58)
 
+  if collected then
+    local collectedTs = ABC_CollectedTimestamp(data)
+    if collectedTs and collectedTs > 0 and date then
+      local collectedDate = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+      collectedDate:SetPoint("TOP", status, "BOTTOM", 0, -2)
+      collectedDate:SetText(date("%m/%d/%Y", collectedTs))
+      collectedDate:SetTextColor(0.62, 0.60, 0.56)
+    end
+  end
+
   local itemLine = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   itemLine:SetPoint("TOPLEFT", nameText, "BOTTOMLEFT", 0, -3)
-  itemLine:SetWidth(160)
+  itemLine:SetWidth(190)
   itemLine:SetJustifyH("LEFT")
   local secondary
   if kind == "mount" then
@@ -4147,27 +4814,42 @@ local function ABC_StableCard(parent, index, data, kind)
   itemLine:SetText(ABC_StableTrim(secondary, 38))
   itemLine:SetTextColor(0.62, 0.62, 0.61)
 
+  -- Shrunk from 91 (21px, matching cardH's own reduction) -- top offset
+  -- (-51) is unchanged, so everything below (sourceLabel, and the
+  -- fixed-offset-from-bottom detail/summon row) keeps the exact same gap
+  -- between them as before; only the portrait's own height shrank.
   local portraitFrame = CreateFrame("Frame", nil, card)
   portraitFrame:SetPoint("TOPLEFT", card, "TOPLEFT", 8, -51)
   portraitFrame:SetWidth(cardW - 16)
-  portraitFrame:SetHeight(91)
+  portraitFrame:SetHeight(70)
   ABC_StableBackground(portraitFrame, 0.012, 0.012, 0.012, 1)
   ABC_StableCreateBorder(portraitFrame, 2, collected and 0.53 or 0.24, collected and 0.30 or 0.22, collected and 0.07 or 0.19, 1)
 
   local centerGlow = ABC_StableMakeSolid(portraitFrame, "BACKGROUND")
   centerGlow:SetPoint("CENTER", portraitFrame, "CENTER", 0, 0)
   centerGlow:SetWidth(138)
-  centerGlow:SetHeight(72)
+  centerGlow:SetHeight(55)
   ABC_StableSetTextureColor(centerGlow, collected and 0.20 or 0.07, collected and 0.075 or 0.07, collected and 0.020 or 0.07, 0.72)
 
   local portrait = portraitFrame:CreateTexture(nil, "ARTWORK")
   portrait:SetPoint("CENTER", portraitFrame, "CENTER", 0, 0)
-  portrait:SetWidth(84)
-  portrait:SetHeight(84)
+  portrait:SetWidth(62)
+  portrait:SetHeight(62)
   portrait:SetTexture(iconPath or ABC_STABLE_TEX_ICON_FALLBACK)
   portrait:SetTexCoord(0.06, 0.94, 0.06, 0.94)
   if not collected then portrait:SetVertexColor(0.34, 0.34, 0.34, 0.86) end
 
+  if LeafVE_AchTest.TEX and LeafVE_AchTest.TEX.iconFrame then
+    local portraitRing = portraitFrame:CreateTexture(nil, "OVERLAY")
+    portraitRing:SetWidth(73); portraitRing:SetHeight(73)
+    portraitRing:SetPoint("CENTER", portrait, "CENTER", 0, 0)
+    portraitRing:SetTexture(LeafVE_AchTest.TEX.iconFrame)
+    portraitRing:SetVertexColor(1, 1, 1, collected and 0.92 or 0.55)
+  end
+
+  -- Toys have no verified acquisition source (the catalogue's obtainedFrom
+  -- is just generic boilerplate for every entry) -- the item's own flavor
+  -- description is far more useful here, so it takes this slot instead.
   local obtained = data and data.obtainedFrom or nil
   local sourceLabel = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   sourceLabel:SetPoint("TOPLEFT", portraitFrame, "BOTTOMLEFT", 2, -5)
@@ -4175,7 +4857,15 @@ local function ABC_StableCard(parent, index, data, kind)
   sourceLabel:SetHeight(30)
   sourceLabel:SetJustifyH("LEFT")
   sourceLabel:SetJustifyV("TOP")
-  if obtained and obtained ~= "" then
+  if kind == "toy" then
+    local description = data and data.description or nil
+    if description and description ~= "" then
+      sourceLabel:SetText(ABC_StableTrim(description, 78))
+      sourceLabel:SetTextColor(0.73, 0.69, 0.61)
+    else
+      sourceLabel:SetText("")
+    end
+  elseif obtained and obtained ~= "" then
     sourceLabel:SetText("Source: "..ABC_StableTrim(obtained, 78))
     sourceLabel:SetTextColor(0.73, 0.69, 0.61)
   else
@@ -4187,9 +4877,13 @@ local function ABC_StableCard(parent, index, data, kind)
   detail:SetWidth(collected and 122 or 195)
   detail:SetJustifyH("LEFT")
   local pointValue = tonumber(data and data.points) or 25
-  local detailText = tostring(pointValue).." pts  |  "..(kind == "mount" and tostring(data.category or "Mount") or tostring(data.sourceCategory or data.category or data.source or "Companion"))
-  if kind == "mount" and data.requiredLevel then detailText = detailText.."  |  Level "..tostring(data.requiredLevel) end
-  detail:SetText(ABC_StableTrim(detailText, 40))
+  -- Points shown in the same gold used for achievement points everywhere
+  -- else, instead of buried in the same plain gray as the category text.
+  local detailText = "|cFFFFD433"..tostring(pointValue).." pts|r  |  "..(kind == "mount" and tostring(data.category or "Mount") or tostring(data.sourceCategory or data.category or data.source or "Companion"))
+  -- Level requirement gets its own soft-blue badge instead of blending
+  -- into the plain category text as one more pipe-separated clause.
+  if kind == "mount" and data.requiredLevel then detailText = detailText.."  |  |cFF6DAEDBLv "..tostring(data.requiredLevel).."|r" end
+  detail:SetText(ABC_StableTrim(detailText, 64))
   detail:SetTextColor(0.54, 0.52, 0.48)
 
   if collected and data.spellIndex then
@@ -4201,6 +4895,7 @@ local function ABC_StableCard(parent, index, data, kind)
       local d = card.data
       if d and d.spellIndex then CastSpell(d.spellIndex, d.bookType or BOOK_SPELL) end
     end)
+    if LeafVE_AchTest.SkinAshenButton then LeafVE_AchTest.SkinAshenButton(summon) end
   end
 
   card:SetScript("OnEnter", function()
@@ -4211,7 +4906,9 @@ local function ABC_StableCard(parent, index, data, kind)
     GameTooltip:AddLine("Achievement points: "..tostring(tonumber(data and data.points) or 25), 1.0, 0.72, 0.25)
     if data and data.difficulty then GameTooltip:AddLine("Difficulty tier: "..tostring(data.difficulty), 0.72, 0.72, 0.72) end
     if data and data.description and data.description ~= "" then GameTooltip:AddLine(data.description, 0.90, 0.90, 0.90, true) end
-    if obtained and obtained ~= "" then
+    -- Toys have no verified acquisition source -- obtainedFrom is just
+    -- generic boilerplate, so skip the redundant "Source" section for them.
+    if kind ~= "toy" and obtained and obtained ~= "" then
       GameTooltip:AddLine(" ")
       GameTooltip:AddLine("Source", 1.0, 0.72, 0.25)
       GameTooltip:AddLine(tostring(obtained), 0.84, 0.84, 0.82, true)
@@ -4232,6 +4929,13 @@ function ABC:BuildCollectionView(kind)
   local ui = LeafVE_AchTest.UI
   if not ui.frame or not ui.scrollChild then return end
 
+  -- Set for the duration of this build so the ScanSpellbook call below
+  -- doesn't also trigger its own nested UI:Refresh() -- on a first-ever
+  -- load (scanCount == 0) that used to build the whole view (header,
+  -- progress bar, cards) a second time on top of the one already in
+  -- progress here, which is what caused the visible flash/flicker.
+  ABC.buildingCollectionView = true
+
   -- Collection cards exclusively own the scroll child on these tabs. Clear
   -- stale virtual-list state so no achievement rows can be resurrected by a
   -- scrollbar callback.
@@ -4242,6 +4946,12 @@ function ABC:BuildCollectionView(kind)
       if ui.achievementFrames[i] then ui.achievementFrames[i]:Hide() end
     end
   end
+  -- Many call sites (filter-chip clicks on this same tab, etc.) call this
+  -- directly rather than through UI:Refresh, so its own summaryFrame:Hide()
+  -- never runs for those -- hidden here too so nothing from the Summary
+  -- tab can be left showing regardless of how this got called.
+  if ui.summaryFrame then ui.summaryFrame:Hide() end
+  if ui.titleSummaryFrame then ui.titleSummaryFrame:Hide() end
 
   ABC_StableEnsureDB()
   if ABC.modelLabFrame then ABC.modelLabFrame:Hide() end
@@ -4249,8 +4959,19 @@ function ABC:BuildCollectionView(kind)
   HideOriginalFilters(ui)
   ClearScrollChild(ui)
   ShowFrame(ui.scrollFrame)
-  ShowFrame(ui.scrollbar)
   ShowFrame(ui.contentArt)
+  -- Card pages are capped to always fit within the viewport (see the
+  -- BuildCollectionView height math below), so there's never anything to
+  -- scroll here. Hide the scrollbar chrome instead of leaving it visible
+  -- (and interactive) with nothing for it to actually do -- it would
+  -- otherwise stay shown from a previous Achievements/Titles view, since
+  -- the base Refresh()'s own scrollbar handling is bypassed by the early
+  -- return this view is reached through.
+  HideFrame(ui.scrollbar)
+  HideFrame(ui.scrollTrack)
+  HideFrame(ui.scrollThumb)
+  HideFrame(ui.scrollUp)
+  HideFrame(ui.scrollDown)
   HideFrame(ui.sidebarFrame)
   HideFrame(ui.titleSidebarFrame)
   HideFrame(ui.adminFrame)
@@ -4260,15 +4981,24 @@ function ABC:BuildCollectionView(kind)
   -- active category list.
   HideFrame(ui.abcMountSidebarFrame)
   HideFrame(ui.abcCompanionSidebarFrame)
+  HideFrame(ui.abcToySidebarFrame)
 
   if kind == "mount" then
     HideFrame(ui.companionSidebarFrame)
     HideFrame(ui.abcCompanionSidebarFrame)
+    HideFrame(ui.abcToySidebarFrame)
     ShowFrame(self:EnsureMountSidebar(ui))
     self:RefreshMountSidebar(ui)
+  elseif kind == "toy" then
+    HideFrame(ui.companionSidebarFrame)
+    HideFrame(ui.abcMountSidebarFrame)
+    HideFrame(ui.abcCompanionSidebarFrame)
+    ShowFrame(self:EnsureToySidebar(ui))
+    self:RefreshToySidebar(ui)
   else
     HideFrame(ui.companionSidebarFrame)
     HideFrame(ui.abcMountSidebarFrame)
+    HideFrame(ui.abcToySidebarFrame)
     ShowFrame(self:EnsureCompanionSidebar(ui))
     self:RefreshCompanionSidebar(ui)
   end
@@ -4280,7 +5010,7 @@ function ABC:BuildCollectionView(kind)
 
   local header = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   header:SetPoint("TOPLEFT", ui.scrollChild, "TOPLEFT", 10, -4)
-  header:SetText(kind == "mount" and "Mount Collection" or "Companion Collection")
+  header:SetText(kind == "mount" and "Mount Collection" or kind == "toy" and "Toy Collection" or "Companion Collection")
   header:SetTextColor(1.0, 0.82, 0.36)
 
   local collected = 0
@@ -4291,22 +5021,46 @@ function ABC:BuildCollectionView(kind)
   summary:SetText(tostring(collected).." / "..tostring(table.getn(fullList)).." collected"..suffix)
   summary:SetTextColor(0.78, 0.78, 0.78)
 
-  local bar = CreateFrame("StatusBar", nil, ui.scrollChild)
-  bar:SetWidth(160); bar:SetHeight(7)
+  -- Pooled/reused across rebuilds instead of created fresh every call --
+  -- a brand-new StatusBar can render fully-filled for one frame before
+  -- SetValue visually takes effect (its fill-texture crop depends on the
+  -- frame already having been laid out once), which is what was showing
+  -- up as a flash on first load. A reused bar has already been through
+  -- that once, so updating its value never hits this.
+  local barKey = kind == "mount" and "abcMountBar" or kind == "toy" and "abcToyBar" or "abcCompanionBar"
+  local bar = ui[barKey]
+  if not bar then
+    bar = CreateFrame("StatusBar", nil, ui.scrollChild)
+    bar:SetWidth(160); bar:SetHeight(7)
+    bar:SetStatusBarTexture(ABC_STABLE_TEX_STATUS)
+    -- Ashen gold, matching the achievement/title progress bars instead of
+    -- this tab's previous orange-red.
+    bar:SetStatusBarColor(0.93, 0.76, 0.20)
+    local barBg = ABC_StableMakeSolid(bar, "BACKGROUND")
+    barBg:SetAllPoints(bar)
+    ABC_StableSetTextureColor(barBg, 0.10, 0.08, 0.06, 0.95)
+    ui[barKey] = bar
+  end
+  bar:SetParent(ui.scrollChild)
+  bar:ClearAllPoints()
   bar:SetPoint("TOPLEFT", summary, "BOTTOMLEFT", 0, -5)
-  bar:SetStatusBarTexture(ABC_STABLE_TEX_STATUS)
   bar:SetMinMaxValues(0, math.max(table.getn(fullList), 1))
   bar:SetValue(collected)
-  bar:SetStatusBarColor(0.82, 0.30, 0.08)
-  local barBg = ABC_StableMakeSolid(bar, "BACKGROUND")
-  barBg:SetAllPoints(bar)
-  ABC_StableSetTextureColor(barBg, 0.10, 0.08, 0.06, 0.95)
+  bar:Show()
 
   local refresh = CreateFrame("Button", nil, ui.scrollChild, "UIPanelButtonTemplate")
   refresh:SetWidth(62); refresh:SetHeight(22)
   refresh:SetPoint("TOPRIGHT", ui.scrollChild, "TOPRIGHT", -10, -1)
   refresh:SetText("Rescan")
   refresh:SetScript("OnClick", function() ABC:ScanSpellbook(true) end)
+  refresh:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_LEFT")
+    GameTooltip:SetText("Rescan Spellbook", 1, 0.82, 0.36)
+    GameTooltip:AddLine("Re-checks your spellbook for "..(kind == "mount" and "mounts" or kind == "toy" and "toys" or "companions").." the addon may have missed.", 0.9, 0.9, 0.9, true)
+    GameTooltip:Show()
+  end)
+  refresh:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  if LeafVE_AchTest.SkinAshenButton then LeafVE_AchTest.SkinAshenButton(refresh) end
 
   local perPage = self.cardsPerPage or 6
   local totalPages = math.ceil(math.max(table.getn(list), 1) / perPage)
@@ -4316,36 +5070,18 @@ function ABC:BuildCollectionView(kind)
   if page > totalPages then page = totalPages end
   self.pages[kind] = page
 
-  local nextBtn = CreateFrame("Button", nil, ui.scrollChild, "UIPanelButtonTemplate")
-  nextBtn:SetWidth(48); nextBtn:SetHeight(22)
-  nextBtn:SetPoint("RIGHT", refresh, "LEFT", -4, 0)
-  nextBtn:SetText("Next")
-  nextBtn:SetScript("OnClick", function()
-    ABC.pages[kind] = math.min((tonumber(ABC.pages[kind]) or 1) + 1, totalPages)
-    ABC:BuildCollectionView(kind)
-  end)
-  if page >= totalPages then nextBtn:Disable() end
-
-  local pageText = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  pageText:SetWidth(70); pageText:SetJustifyH("CENTER")
-  pageText:SetPoint("RIGHT", nextBtn, "LEFT", -2, 0)
-  pageText:SetText("Page "..tostring(page).." / "..tostring(totalPages))
-  pageText:SetTextColor(0.85, 0.78, 0.62)
-
-  local prevBtn = CreateFrame("Button", nil, ui.scrollChild, "UIPanelButtonTemplate")
-  prevBtn:SetWidth(48); prevBtn:SetHeight(22)
-  prevBtn:SetPoint("RIGHT", pageText, "LEFT", -2, 0)
-  prevBtn:SetText("Prev")
-  prevBtn:SetScript("OnClick", function()
-    ABC.pages[kind] = math.max((tonumber(ABC.pages[kind]) or 1) - 1, 1)
-    ABC:BuildCollectionView(kind)
-  end)
-  if page <= 1 then prevBtn:Disable() end
+  -- Anchored to the progress bar's actual bottom edge (not a guessed fixed
+  -- offset) so the card grid always starts right after the header/summary/
+  -- bar block regardless of font metrics -- no overlap, no wasted space.
+  local shim = CreateFrame("Frame", nil, ui.scrollChild)
+  shim:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -8)
+  shim:SetWidth(690); shim:SetHeight(1)
 
   local firstCardY = 82
-  local shim = CreateFrame("Frame", nil, ui.scrollChild)
-  shim:SetPoint("TOPLEFT", ui.scrollChild, "TOPLEFT", 0, -firstCardY)
-  shim:SetWidth(690); shim:SetHeight(1)
+  if shim.GetTop and ui.scrollChild.GetTop then
+    local shimTop, childTop = shim:GetTop(), ui.scrollChild:GetTop()
+    if shimTop and childTop then firstCardY = childTop - shimTop end
+  end
 
   if table.getn(list) == 0 then
     local empty = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -4354,6 +5090,7 @@ function ABC:BuildCollectionView(kind)
     empty:SetText("No results found. Try a different search or category.")
     empty:SetTextColor(1.0, 0.82, 0.36)
     SetScrollHeight(ui, 420)
+    ABC.buildingCollectionView = false
     return
   end
 
@@ -4370,9 +5107,56 @@ function ABC:BuildCollectionView(kind)
     localIndex = localIndex + 1
   end
 
-  local shown = lastIndex - firstIndex + 1
-  local rows = math.ceil(shown / 3)
-  SetScrollHeight(ui, firstCardY + rows * 212 + 20)
+  -- Pager position is derived from a full page's row count (perPage / 3
+  -- columns), not however many cards actually landed on this page -- a
+  -- last page with only 1 row of cards would otherwise pull the pager up
+  -- to sit right under that single row instead of staying anchored near
+  -- the bottom of the page like every other page.
+  local maxRows = math.ceil(perPage / 3)
+
+  -- Page controls centered below the card grid, its own row instead of
+  -- crammed into the header next to Rescan. Real spellbook page-turn
+  -- arrows instead of plain text buttons.
+  local pagerY = firstCardY + maxRows * 187 + 8
+
+  local pageText = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  pageText:SetWidth(70); pageText:SetJustifyH("CENTER")
+  pageText:SetPoint("TOP", ui.scrollChild, "TOPLEFT", 345, -pagerY)
+  pageText:SetText("Page "..tostring(page).." / "..tostring(totalPages))
+  pageText:SetTextColor(0.85, 0.78, 0.62)
+
+  local prevBtn = CreateFrame("Button", nil, ui.scrollChild)
+  prevBtn:SetWidth(24); prevBtn:SetHeight(24)
+  prevBtn:SetPoint("RIGHT", pageText, "LEFT", -8, 0)
+  prevBtn:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
+  prevBtn:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Down")
+  prevBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+  prevBtn:SetScript("OnClick", function()
+    ABC.pages[kind] = math.max((tonumber(ABC.pages[kind]) or 1) - 1, 1)
+    ABC:BuildCollectionView(kind)
+  end)
+  if page <= 1 then
+    prevBtn:Disable()
+    prevBtn:SetAlpha(0.35)
+  end
+
+  local nextBtn = CreateFrame("Button", nil, ui.scrollChild)
+  nextBtn:SetWidth(24); nextBtn:SetHeight(24)
+  nextBtn:SetPoint("LEFT", pageText, "RIGHT", 8, 0)
+  nextBtn:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
+  nextBtn:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down")
+  nextBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+  nextBtn:SetScript("OnClick", function()
+    ABC.pages[kind] = math.min((tonumber(ABC.pages[kind]) or 1) + 1, totalPages)
+    ABC:BuildCollectionView(kind)
+  end)
+  if page >= totalPages then
+    nextBtn:Disable()
+    nextBtn:SetAlpha(0.35)
+  end
+
+  SetScrollHeight(ui, pagerY + 24 + 10)
+  ABC.buildingCollectionView = false
 end
 
 ABC.Help = function(self)
