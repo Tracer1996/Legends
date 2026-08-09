@@ -8334,6 +8334,34 @@ function LeafVE_AchTest.UI:RefreshTitles()
       equipBtn:SetText("Equip")
       if LeafVE_SkinAshenButton then LeafVE_SkinAshenButton(equipBtn) end
       frame.equipBtn = equipBtn
+
+      -- Currently-equipped indicator: same soft ADD-blended glow technique
+      -- FlashAchievementRow uses (separate child frame raised well above
+      -- the row's own frame level, so it draws over the opaque background
+      -- and icon reliably instead of a coin-flip same-layer texture order),
+      -- and the exact same sine pulse (0.5 + sin(t*4)*0.5, capped at 0.6
+      -- alpha) -- just looped forever via its own OnUpdate instead of
+      -- fading out after FlashAchievementRow's 3.5s, since this is meant
+      -- to keep pulsing the whole time the equipped title is on screen.
+      local equippedGlowFrame = CreateFrame("Frame", nil, frame)
+      equippedGlowFrame:SetAllPoints(frame)
+      equippedGlowFrame:SetFrameLevel(frame:GetFrameLevel() + 10)
+      local equippedGlow = equippedGlowFrame:CreateTexture(nil, "OVERLAY")
+      equippedGlow:SetAllPoints(frame)
+      equippedGlow:SetTexture(TEX.ashenRow)
+      equippedGlow:SetTexCoord(0, 1, 0, 1)
+      equippedGlow:SetVertexColor(1, 0.82, 0.2, 1)
+      equippedGlow:SetBlendMode("ADD")
+      equippedGlow:Hide()
+      frame.equippedGlow = equippedGlow
+
+      equippedGlowFrame.pulseElapsed = 0
+      equippedGlowFrame:SetScript("OnUpdate", function()
+        if not equippedGlow:IsShown() then return end
+        this.pulseElapsed = (this.pulseElapsed or 0) + (arg1 or 0)
+        local pulse = 0.5 + math.sin(this.pulseElapsed * 4) * 0.5
+        equippedGlow:SetAlpha(pulse * 0.6)
+      end)
       -- Tooltip
       frame:EnableMouse(true)
       frame:SetScript("OnEnter", function()
@@ -8356,7 +8384,6 @@ function LeafVE_AchTest.UI:RefreshTitles()
     if earned then
       if frame.rowBg then frame.rowBg:SetVertexColor(1.0, 1.0, 1.0, 1.0) end
       local isLeg = titleData.legendary
-      local br = isLeg and {1,0,0} or {THEME.leaf[1],THEME.leaf[2],THEME.leaf[3]}
       frame.icon:SetDesaturated(false)
       frame.icon:SetAlpha(1)
       frame.name:SetText(titleData.name)
@@ -8377,12 +8404,16 @@ function LeafVE_AchTest.UI:RefreshTitles()
         frame.equipBtn:SetScript("OnClick", function()
           LeafVE_AchTest:RemoveTitle(me)
         end)
+        if frame.equippedGlow then frame.equippedGlow:Show() end
+        if frame.iconFrame then frame.iconFrame:SetVertexColor(1, 0.82, 0.2, 1) end
       else
         frame.equipBtn:SetText("Equip")
         frame.equipBtn:SetScript("OnClick", function()
           LeafVE_AchTest:SetTitle(me, this.titleID, this.titlePrefix)
           LeafVE_AchTest.UI:Refresh()
         end)
+        if frame.equippedGlow then frame.equippedGlow:Hide() end
+        if frame.iconFrame then frame.iconFrame:SetVertexColor(1, 1, 1, 0.92) end
       end
     else
       if frame.rowBg then frame.rowBg:SetVertexColor(0.82, 0.82, 0.82, 1.0) end
@@ -8393,6 +8424,8 @@ function LeafVE_AchTest.UI:RefreshTitles()
       frame.requirement:SetText("Requires: "..(achData and achData.name or "Unknown"))
       frame.requirement:SetTextColor(0.52, 0.50, 0.48)
       frame.equipBtn:Disable()
+      if frame.equippedGlow then frame.equippedGlow:Hide() end
+      if frame.iconFrame then frame.iconFrame:SetVertexColor(1, 1, 1, 0.92) end
     end
     frame:Show()
     yOffset = yOffset + 96
