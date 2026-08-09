@@ -4805,10 +4805,23 @@ local function CreateAchievementRow(parent)
   -- panel, quest log), so it reads as "expandable" without inventing a new
   -- visual language. Bottom-right corner of the icon, not top-right, so it
   -- never collides with the completed checkmark badge there.
-  local expandIcon = frame:CreateTexture(nil, "OVERLAY")
-  expandIcon:SetWidth(16)
-  expandIcon:SetHeight(16)
-  expandIcon:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 4, -4)
+  --
+  -- On its own child frame raised above the row's own frame level, same
+  -- fix as rowGlow below and the zone-mosaic thumbnail elsewhere in this
+  -- file -- same-layer texture stacking between siblings on one frame
+  -- (icon/iconFrame/checkmark here) isn't reliably creation-order on this
+  -- client, which is what put this behind the icon for completed rows
+  -- (icon/iconFrame get their vertex color/desaturation touched on every
+  -- refresh, apparently enough to disturb same-sublevel draw order).
+  -- Frame level, not layer, is the only reliable guarantee.
+  local expandIconFrame = CreateFrame("Frame", nil, frame)
+  expandIconFrame:SetWidth(16)
+  expandIconFrame:SetHeight(16)
+  expandIconFrame:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 4, -4)
+  expandIconFrame:SetFrameLevel(frame:GetFrameLevel() + 15)
+
+  local expandIcon = expandIconFrame:CreateTexture(nil, "OVERLAY")
+  expandIcon:SetAllPoints(expandIconFrame)
   expandIcon:SetTexture("Interface\\Buttons\\UI-PlusButton-Up")
   expandIcon:Hide()
   frame.expandIcon = expandIcon
