@@ -582,7 +582,7 @@ local ACHIEVEMENTS = {
   dung_mara_princess={id="dung_mara_princess",name="Maraudon: Princess Theradras",desc="Defeat Princess Theradras in Maraudon",category="Dungeons",points=25,icon="Interface\\Icons\\INV_Misc_Root_02"},
   dung_rfc_complete={id="dung_rfc_complete",name="Ragefire Chasm: Dungeon Clear",desc="Defeat all required bosses in Ragefire Chasm",category="Dungeons",points=15,icon="Interface\\Icons\\Spell_Fire_Incinerate",criteria_key="rfc",criteria_type="dungeon"},
   dung_rfdown_complete={id="dung_rfdown_complete",name="Razorfen Downs: Dungeon Clear",desc="Defeat all required bosses in Razorfen Downs",category="Dungeons",points=35,icon="Interface\\Icons\\Spell_Shadow_RaiseDead",criteria_key="rfdown",criteria_type="dungeon"},
-  dung_rfk_complete={id="dung_rfk_complete",name="Razorfen Kraul: Dungeon Clear",desc="Defeat all required bosses in Razorfen Kraul",category="Dungeons",points=30,icon="Interface\\Icons\\INV_Misc_Head_Boar_01",criteria_key="rfk",criteria_type="dungeon"},
+  dung_rfk_complete={id="dung_rfk_complete",name="Razorfen Kraul: Dungeon Clear",desc="Defeat all required bosses in Razorfen Kraul",category="Dungeons",points=30,icon="Interface\\Icons\\INV_Misc_MonsterClaw_04",criteria_key="rfk",criteria_type="dungeon"},
   dung_sm_arm_complete={id="dung_sm_arm_complete",name="Scarlet Monastery - Armory: Dungeon Clear",desc="Defeat all required bosses in Scarlet Monastery (Armory)",category="Dungeons",points=20,icon="Interface\\Icons\\INV_Gauntlets_17",criteria_key="sm_arm",criteria_type="dungeon"},
   dung_sm_cat_complete={id="dung_sm_cat_complete",name="Scarlet Monastery - Cathedral: Dungeon Clear",desc="Defeat all required bosses in Scarlet Monastery (Cathedral)",category="Dungeons",points=25,icon="Interface\\Icons\\Spell_Holy_Resurrection",criteria_key="sm_cat",criteria_type="dungeon"},
   dung_sm_gy_complete={id="dung_sm_gy_complete",name="Scarlet Monastery - Graveyard: Dungeon Clear",desc="Defeat all required bosses in Scarlet Monastery (Graveyard)",category="Dungeons",points=20,icon="Interface\\Icons\\Spell_Shadow_DeathScream",criteria_key="sm_gy",criteria_type="dungeon"},
@@ -716,7 +716,7 @@ local ACHIEVEMENTS = {
   raid_onyxia_complete={id="raid_onyxia_complete",name="Onyxia's Lair: Raid Clear",desc="Defeat Onyxia",category="Raids",points=75,icon="Interface\\Icons\\INV_Misc_Head_Dragon_01",criteria_key="onyxia",criteria_type="raid"},
   raid_aq20_complete={id="raid_aq20_complete",name="Ruins of Ahn'Qiraj: Raid Clear",desc="Defeat all required bosses in Ruins of Ahn'Qiraj",category="Raids",points=100,icon="Interface\\Icons\\INV_Misc_AhnQirajTrinket_04",criteria_key="aq20",criteria_type="raid"},
   raid_aq40_complete={id="raid_aq40_complete",name="Temple of Ahn'Qiraj: Raid Clear",desc="Defeat all required bosses in Temple of Ahn'Qiraj",category="Raids",points=200,icon="Interface\\Icons\\INV_Misc_AhnQirajTrinket_05",criteria_key="aq40",criteria_type="raid"},
-  raid_ukh_complete={id="raid_ukh_complete",name="Upper Karazhan Halls: Raid Clear",desc="Defeat all required bosses in Upper Karazhan Halls",category="Raids",points=200,icon="Interface\\Icons\\INV_Misc_Key_15",criteria_key="ukh",criteria_type="raid"},
+  raid_ukh_complete={id="raid_ukh_complete",name="Upper Karazhan Halls: Raid Clear",desc="Defeat all required bosses in Upper Karazhan Halls",category="Raids",points=200,icon="Interface\\Icons\\INV_Misc_Rune_01",criteria_key="ukh",criteria_type="raid"},
   raid_zg_complete={id="raid_zg_complete",name="Zul'Gurub: Raid Clear",desc="Defeat all required bosses in Zul'Gurub",category="Raids",points=100,icon="Interface\\Icons\\Ability_Mount_JungleTiger",criteria_key="zg",criteria_type="raid"},
 
   -- Exploration
@@ -762,7 +762,7 @@ local ACHIEVEMENTS = {
   pvp_bg_win_50={id="pvp_bg_win_50",name="Battleground Champion",desc="Win 50 battlegrounds",category="PvP",points=50,icon="Interface\\Icons\\INV_BannerPVP_02"},
   pvp_wsg_win_10={id="pvp_wsg_win_10",name="Warsong Victor",desc="Win 10 Warsong Gulch matches",category="PvP",points=25,icon="Interface\\Icons\\INV_Misc_Rune_07"},
   pvp_ab_win_10={id="pvp_ab_win_10",name="Arathi Victor",desc="Win 10 Arathi Basin matches",category="PvP",points=25,icon="Interface\\Icons\\INV_BannerPVP_01"},
-  pvp_av_win_10={id="pvp_av_win_10",name="Alterac Victor",desc="Win 10 Alterac Valley matches",category="PvP",points=25,icon="Interface\\Icons\\INV_BannerPVP_03"},
+  pvp_av_win_10={id="pvp_av_win_10",name="Alterac Victor",desc="Win 10 Alterac Valley matches",category="PvP",points=25,icon="Interface\\Icons\\Spell_Frost_FrostBolt02"},
 
   -- Reputation
   reputation_exalted_1={id="reputation_exalted_1",name="Well Respected",desc="Reach Exalted with 1 faction",category="Reputation",points=15,icon="Interface\\Icons\\INV_Misc_Note_06"},
@@ -806,7 +806,7 @@ local ACHIEVEMENTS = {
   casual_emote_100={id="casual_emote_100",name="Chatterbox",desc="Use 100 emotes on other players",category="Casual",points=10,icon="Interface\\Icons\\INV_Letter_15"},
   casual_deaths_50={id="casual_deaths_50",name="Danger Seeker",desc="Die 50 times",category="Casual",points=10,icon="Interface\\Icons\\Ability_Rogue_FeintedStrike"},
   casual_deaths_100={id="casual_deaths_100",name="Death's Door",desc="Die 100 times",category="Casual",points=5,icon="Interface\\Icons\\Spell_Shadow_DeathScream"},
-  casual_emote_25={id="casual_emote_25",name="Emotive",desc="Use 25 emotes on other players",category="Casual",points=5,icon="Interface\\Icons\\INV_Misc_Toy_07"},
+  casual_emote_25={id="casual_emote_25",name="Emotive",desc="Use 25 emotes on other players",category="Casual",points=5,icon="Interface\\Icons\\INV_Misc_Note_01"},
   casual_epic_mount={id="casual_epic_mount",name="Epic Mount",desc="Obtain an epic mount",category="Casual",points=25,icon="Interface\\Icons\\Ability_Mount_JungleTiger"},
   casual_fall_death={id="casual_fall_death",name="Falling Star",desc="Die from falling 10 times",category="Casual",points=5,icon="Interface\\Icons\\Ability_Rogue_FeintedStrike"},
   casual_mount_60={id="casual_mount_60",name="First Mount",desc="Obtain your first mount",category="Casual",points=10,icon="Interface\\Icons\\Ability_Mount_Raptor"},
@@ -847,7 +847,7 @@ local ACHIEVEMENTS = {
   quest_1500={id="quest_1500",name="Worn Traveler",desc="Complete 1500 quests",category="Quests",points=60,icon="Interface\\Icons\\INV_Misc_Book_09"},
   quest_2000={id="quest_2000",name="Azerothian Odyssey",desc="Complete 2000 quests",category="Quests",points=90,icon="Interface\\Icons\\INV_Misc_Map_02"},
   casual_hearthstone_100={id="casual_hearthstone_100",name="Seasoned Traveler",desc="Use your hearthstone 100 times",category="Casual",points=20,icon="Interface\\Icons\\INV_Misc_Rune_01"},
-  casual_party_join={id="casual_party_join",name="Team Player",desc="Join 50 groups",category="Casual",points=10,icon="Interface\\Icons\\INV_Misc_GroupNeedMore"},
+  casual_party_join={id="casual_party_join",name="Team Player",desc="Join 50 groups",category="Casual",points=10,icon="Interface\\Icons\\INV_Misc_GroupLooking"},
   casual_fish_25={id="casual_fish_25",name="Weekend Angler",desc="Catch 25 fish",category="Casual",points=5,icon="Interface\\Icons\\Trade_Fishing"},
   -- Leveling extras (from KAM)
   -- Resurrection tracking
@@ -1055,10 +1055,8 @@ local TRACKED_GUILD_RANKS = {
 }
 
 local TRACKED_GUILD_RANK_INDEX = {}
-local TRACKED_GUILD_RANK_TITLE_IDS = {}
 for i, rankData in ipairs(TRACKED_GUILD_RANKS) do
   TRACKED_GUILD_RANK_INDEX[NormalizeGuildRankName(rankData.rankName)] = i
-  TRACKED_GUILD_RANK_TITLE_IDS[rankData.title] = true
 end
 
 local DIRECTED_GUILD_EMOTE_ACHIEVEMENTS = {
@@ -1215,12 +1213,41 @@ local function MaybeAutoEquipGuildRankTitle(playerName, titleID)
   local currentTitleData = LeafVE_AchTest_DB.selectedTitles[playerName]
   local currentTitleID = currentTitleData
   local currentAsPrefix = false
+  local currentWasAutoEquipped = true
   if type(currentTitleData) == "table" then
     currentTitleID = currentTitleData.id
     currentAsPrefix = currentTitleData.asPrefix or false
+
+    if currentTitleData.autoEquipped == nil then
+      -- Retroactive migration for records saved before this flag existed.
+      -- Can't know for certain whether the player chose this title on
+      -- purpose, but this function runs on every roster update, so a
+      -- purely auto-managed title would already match the current rank
+      -- (titleID, the rank this call is trying to apply). A stored title
+      -- that DOESN'T match is strong evidence it was a deliberate pick --
+      -- stamp it protected immediately, no reselect required. One that
+      -- DOES match is indistinguishable from "just auto-set" -- stamp it
+      -- auto-equipped and let it keep advancing normally. Mutates the
+      -- table in place, which is the same table stored in the DB, so this
+      -- persists without a separate write-back.
+      currentTitleData.autoEquipped = (currentTitleID == titleID)
+    end
+
+    if currentTitleData.autoEquipped == false then
+      currentWasAutoEquipped = false
+    end
   end
 
-  if currentTitleID and currentTitleID ~= "" and not TRACKED_GUILD_RANK_TITLE_IDS[currentTitleID] then
+  -- Only ever auto-promote a title the player never deliberately chose.
+  -- Used to key off TRACKED_GUILD_RANK_TITLE_IDS instead (skip unless the
+  -- currently-equipped title was some *other* tracked guild-rank title) --
+  -- but that meant equipping an older/lower rank's title on purpose (e.g.
+  -- wearing Ember after being promoted past it) got silently swapped back
+  -- to the current-rank title on the next GUILD_ROSTER_UPDATE, since it was
+  -- still a tracked guild-rank id, just not the *current* one. Now it keys
+  -- off whether the equipped title was set by this function (safe to keep
+  -- advancing) or by the player via SetTitle (never touched again).
+  if currentTitleID and currentTitleID ~= "" and not currentWasAutoEquipped then
     return false
   end
 
@@ -1229,7 +1256,7 @@ local function MaybeAutoEquipGuildRankTitle(playerName, titleID)
     return false
   end
 
-  LeafVE_AchTest_DB.selectedTitles[playerName] = {id = titleID, asPrefix = desiredPrefix}
+  LeafVE_AchTest_DB.selectedTitles[playerName] = {id = titleID, asPrefix = desiredPrefix, autoEquipped = true}
   return true
 end
 
@@ -3436,7 +3463,7 @@ function LeafVE_AchTest:SetTitle(playerName, titleID, usePrefix)
   local titleData = GetTitleDefinition(titleID)
   if not titleData then return end
   if IsTitleUnlocked(playerName, titleData) then
-    LeafVE_AchTest_DB.selectedTitles[playerName] = {id=titleID,asPrefix=usePrefix or false}
+    LeafVE_AchTest_DB.selectedTitles[playerName] = {id=titleID,asPrefix=usePrefix or false,autoEquipped=false}
     local displayText = usePrefix and (titleData.name.." "..playerName) or (playerName.." "..titleData.name)
     local titleColorHex = titleData.colorHex or (titleData.legendary and "ffff0000" or "ffff7f00")
     Print("Title set to: |c"..titleColorHex..displayText.."|r")
