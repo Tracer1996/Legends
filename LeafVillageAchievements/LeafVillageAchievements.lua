@@ -5863,12 +5863,17 @@ end
 function LeafVE_AchTest.UI:BuildAchievementChecklistPanel()
   if self.checklistPanel then return end
 
-  local f = CreateFrame("Frame", nil, self.frame)
-  -- Above the achievement rows (which inherit the main window's own
-  -- FULLSCREEN_DIALOG strata) the same way the Zone Map window sits above
-  -- the main window itself -- strata, not frame level, is what guarantees
-  -- this draws over whichever rows end up underneath it.
-  f:SetFrameStrata("TOOLTIP")
+  -- Parented to scrollChild, not self.frame -- same reason zoneThumb
+  -- (achievement row list, explore_zone_live mosaic rows) is parented
+  -- there instead of floating independently: a ScrollFrame clips its
+  -- scroll child's descendants to its own viewport regardless of their
+  -- strata/frame level, so this now gets cut off at the same bottom edge
+  -- the achievement rows themselves do, instead of drawing past the
+  -- window's edge when an expanded row scrolls near the bottom. Drawing
+  -- above whichever row it's attached to is handled by frame level alone
+  -- (set in UpdateVisibleAchievements when attaching it), same as
+  -- zoneThumb's own +1 convention.
+  local f = CreateFrame("Frame", nil, self.scrollChild)
   f:EnableMouse(true)
   f:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -5922,27 +5927,42 @@ function LeafVE_AchTest.UI:PopulateAchievementChecklistPanel(ad)
   local panel = self.checklistPanel
   local entries, unitLabel = self:GetChecklistEntries(ad)
   local total = table.getn(entries)
-  local rowsPerCol = math.ceil(total / self.CHECKLIST_COLS)
+
+  -- Spread as evenly as possible across every available column instead of
+  -- filling one column to capacity before starting the next -- ceil(total/
+  -- CHECKLIST_COLS) rows-per-column with sequential column fill left a
+  -- column empty whenever total didn't divide evenly by CHECKLIST_COLS
+  -- (e.g. 4 items only filled 2 of 3 columns, 2 rows each, none left for
+  -- the third). usedCols columns get baseCount+1 items each (the
+  -- remainder), the rest get baseCount -- e.g. 4 items -> columns of 2,1,1.
+  local usedCols = math.min(self.CHECKLIST_COLS, math.max(1, total))
+  local baseCount = math.floor(total / usedCols)
+  local remainder = total - baseCount * usedCols
+  local rowsPerCol = baseCount + (remainder > 0 and 1 or 0)
   if rowsPerCol < 1 then rowsPerCol = 1 end
 
   local found = 0
-  for i, entry in ipairs(entries) do
-    local item = panel.items[i] or self:BuildAchievementChecklistItem(i)
-    local col = math.floor((i - 1) / rowsPerCol)
-    local row = (i - 1) - col * rowsPerCol
-    item:ClearAllPoints()
-    item:SetPoint("TOPLEFT", panel, "TOPLEFT",
-      12 + col * self.CHECKLIST_COL_W, -32 - row * self.CHECKLIST_ROW_H)
-    item.label:SetText(entry.label)
-    if entry.done then
-      found = found + 1
-      item.mark:Show()
-      item.label:SetTextColor(0.4, 0.85, 0.4, 1)
-    else
-      item.mark:Hide()
-      item.label:SetTextColor(0.75, 0.75, 0.75, 1)
+  local idx = 0
+  for col = 0, usedCols - 1 do
+    local colSize = baseCount + (col < remainder and 1 or 0)
+    for row = 0, colSize - 1 do
+      idx = idx + 1
+      local entry = entries[idx]
+      local item = panel.items[idx] or self:BuildAchievementChecklistItem(idx)
+      item:ClearAllPoints()
+      item:SetPoint("TOPLEFT", panel, "TOPLEFT",
+        12 + col * self.CHECKLIST_COL_W, -32 - row * self.CHECKLIST_ROW_H)
+      item.label:SetText(entry.label)
+      if entry.done then
+        found = found + 1
+        item.mark:Show()
+        item.label:SetTextColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 1)
+      else
+        item.mark:Hide()
+        item.label:SetTextColor(0.75, 0.75, 0.75, 1)
+      end
+      item:Show()
     end
-    item:Show()
   end
   for i = total + 1, table.getn(panel.items) do
     panel.items[i]:Hide()
@@ -5950,8 +5970,11 @@ function LeafVE_AchTest.UI:PopulateAchievementChecklistPanel(ad)
 
   panel.subtitle:SetText(found .. " / " .. total .. " " .. unitLabel)
 
-  local usedCols = math.min(self.CHECKLIST_COLS, math.max(1, total))
-  panel:SetWidth(24 + usedCols * self.CHECKLIST_COL_W)
+  -- Always the full achievement row width (690, matching CreateAchievementRow),
+  -- not scaled down to however many columns the item count actually fills --
+  -- one or two items would otherwise leave a narrow dark box that doesn't
+  -- read as belonging to the row above it.
+  panel:SetWidth(690)
   panel:SetHeight(42 + rowsPerCol * self.CHECKLIST_ROW_H)
 end
 
@@ -6562,7 +6585,7 @@ function LeafVE_AchTest.UI:Build()
     {type="cat",    display="Companions",  filter="Companions"},
     {type="cat",    display="Toys",        filter="Toys"},
     {type="divider"},
-    {type="header", display="Guild & Community"},
+    {type="header", display="Community"},
     {type="cat",    display="Guild",       filter="Guild"},
     {type="cat",    display="Roleplay",    filter="Roleplay"},
     {type="cat",    display="Reputation",  filter="Reputation"},
@@ -6988,7 +7011,7 @@ function LeafVE_AchTest.UI:Build()
     {type="cat",    display="Companions",  filter="Companions"},
     {type="cat",    display="Toys",        filter="Toys"},
     {type="divider"},
-    {type="header", display="Guild & Community"},
+    {type="header", display="Community"},
     {type="cat",    display="Guild",       filter="Guild"},
     {type="cat",    display="Roleplay",    filter="Roleplay"},
     {type="divider"},
@@ -8192,6 +8215,10 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
       local panel = self.checklistPanel
       panel:ClearAllPoints()
       panel:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -2)
+      -- Same +1-above-its-row convention zoneThumb uses just below --
+      -- both are scrollChild descendants now, so frame level (not strata)
+      -- is what keeps this drawing above the row it's attached to.
+      panel:SetFrameLevel(frame:GetFrameLevel() + 1)
       panel:Show()
     end
 
