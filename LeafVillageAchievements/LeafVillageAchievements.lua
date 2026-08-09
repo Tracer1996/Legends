@@ -4113,6 +4113,16 @@ function LeafVE_AchTest:GetUnifiedProgress(me, ad)
     return found, table.getn(ad.criteria_areas)
   end
 
+  if ad.criteria_type == "flight_zone" and ad.criteria_areas and table.getn(ad.criteria_areas) > 0 then
+    local fp = LeafVE_AchTest_DB and LeafVE_AchTest_DB.discoveredFlightPoints
+    local myFlightPoints = fp and fp[me]
+    local found = 0
+    for _, z in ipairs(ad.criteria_areas) do
+      if myFlightPoints and myFlightPoints[z] then found = found + 1 end
+    end
+    return found, table.getn(ad.criteria_areas)
+  end
+
   if ad.criteria_type == "explore_count" and ad.criteria_goal and ad.criteria_goal > 0 then
     local pz = LeafVE_AchTest_DB and LeafVE_AchTest_DB.exploredZones
     local myZones = pz and pz[me]
@@ -4638,6 +4648,21 @@ function LeafVE_AchTest.UI:ShowAchievementRowTooltip(owner)
     GameTooltip:AddLine(" ", 1, 1, 1)
     GameTooltip:AddLine(string.format("Discovered: %d / %d locations", found, total), 1.0, 0.82, 0.2)
     GameTooltip:AddLine("Click to view the map", 0.6, 0.6, 0.6)
+  end
+  if ad.criteria_type == "flight_zone" and ad.criteria_areas then
+    local fp = LeafVE_AchTest_DB and LeafVE_AchTest_DB.discoveredFlightPoints
+    local myFlightPoints = fp and fp[me]
+    local found, total = 0, table.getn(ad.criteria_areas)
+    GameTooltip:AddLine(" ", 1, 1, 1)
+    for _, name in ipairs(ad.criteria_areas) do
+      if myFlightPoints and myFlightPoints[name] then
+        found = found + 1
+        GameTooltip:AddLine("|cFF00CC00[x]|r "..name, 0.9, 0.9, 0.9)
+      else
+        GameTooltip:AddLine("|cFF666666[ ]|r "..name, 0.5, 0.5, 0.5)
+      end
+    end
+    GameTooltip:AddLine(string.format("Discovered: %d / %d flight points", found, total), 1.0, 0.82, 0.2)
   end
   -- â”€â”€ Total-areas-discovered tiers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if ad.criteria_type == "explore_count" and ad.criteria_goal then
