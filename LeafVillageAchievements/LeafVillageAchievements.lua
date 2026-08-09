@@ -4570,51 +4570,37 @@ function LeafVE_AchTest.UI:ShowAchievementRowTooltip(owner)
     end
     if bossList then
       local killed, total = 0, table.getn(bossList)
-      GameTooltip:AddLine(" ", 1, 1, 1)
       for _, bossName in ipairs(bossList) do
-        if progress and progress[bossName] then
-          killed = killed + 1
-          GameTooltip:AddLine("|cFF00CC00[x]|r "..bossName, 0.9, 0.9, 0.9)
-        else
-          GameTooltip:AddLine("|cFF666666[ ]|r "..bossName, 0.5, 0.5, 0.5)
-        end
+        if progress and progress[bossName] then killed = killed + 1 end
       end
+      GameTooltip:AddLine(" ", 1, 1, 1)
       GameTooltip:AddLine(string.format("Criteria: %d / %d bosses", killed, total), 1.0, 0.82, 0.2)
+      GameTooltip:AddLine("Click to expand checklist", 0.6, 0.6, 0.6)
     end
   end
   -- â”€â”€ Dungeon Completionist meta criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if ad.criteria_type == "dungeon_meta" then
     local done, total = 0, table.getn(ALL_DUNGEON_COMPLETE_IDS)
-    GameTooltip:AddLine(" ", 1, 1, 1)
     for _, dachId in ipairs(ALL_DUNGEON_COMPLETE_IDS) do
-      local dach = ACHIEVEMENTS[dachId]
-      if dach then
-        if LeafVE_AchTest:HasAchievement(me, dachId) then
-          done = done + 1
-          GameTooltip:AddLine("|cFF00CC00[x]|r "..dach.name, 0.9, 0.9, 0.9)
-        else
-          GameTooltip:AddLine("|cFF666666[ ]|r "..dach.name, 0.5, 0.5, 0.5)
-        end
+      if ACHIEVEMENTS[dachId] and LeafVE_AchTest:HasAchievement(me, dachId) then
+        done = done + 1
       end
     end
+    GameTooltip:AddLine(" ", 1, 1, 1)
     GameTooltip:AddLine(string.format("Criteria: %d / %d dungeons", done, total), 1.0, 0.82, 0.2)
+    GameTooltip:AddLine("Click to expand checklist", 0.6, 0.6, 0.6)
   end
   -- â”€â”€ Raid Completionist meta criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if ad.criteria_type == "raid_meta" then
     local done, total = 0, table.getn(ALL_RAID_COMPLETE_IDS)
-    GameTooltip:AddLine(" ", 1, 1, 1)
     for _, rachId in ipairs(ALL_RAID_COMPLETE_IDS) do
-      local rach = ACHIEVEMENTS[rachId]
-      if rach then
-        if LeafVE_AchTest:HasAchievement(me, rachId) then
-          done = done + 1
-          GameTooltip:AddLine("|cFF00CC00[x]|r "..rach.name, 0.9, 0.9, 0.9)
-        else
-          GameTooltip:AddLine("|cFF666666[ ]|r "..rach.name, 0.5, 0.5, 0.5)
-        end
+      if ACHIEVEMENTS[rachId] and LeafVE_AchTest:HasAchievement(me, rachId) then
+        done = done + 1
       end
     end
+    GameTooltip:AddLine(" ", 1, 1, 1)
     GameTooltip:AddLine(string.format("Criteria: %d / %d raids", done, total), 1.0, 0.82, 0.2)
+    GameTooltip:AddLine("Click to expand checklist", 0.6, 0.6, 0.6)
   end
   -- â”€â”€ Zone-group exploration criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if ad.criteria_type == "zone_group" and ad.criteria_key then
@@ -4623,16 +4609,12 @@ function LeafVE_AchTest.UI:ShowAchievementRowTooltip(owner)
       local pz = LeafVE_AchTest_DB and LeafVE_AchTest_DB.exploredZones
       local myZones = pz and pz[me]
       local found, total = 0, table.getn(zones)
-      GameTooltip:AddLine(" ", 1, 1, 1)
       for _, z in ipairs(zones) do
-        if myZones and myZones[z] then
-          found = found + 1
-          GameTooltip:AddLine("|cFF00CC00[x]|r "..z, 0.9, 0.9, 0.9)
-        else
-          GameTooltip:AddLine("|cFF666666[ ]|r "..z, 0.5, 0.5, 0.5)
-        end
+        if myZones and myZones[z] then found = found + 1 end
       end
+      GameTooltip:AddLine(" ", 1, 1, 1)
       GameTooltip:AddLine(string.format("Discovered: %d / %d locations", found, total), 1.0, 0.82, 0.2)
+      GameTooltip:AddLine("Click to expand checklist", 0.6, 0.6, 0.6)
     end
   end
   -- â”€â”€ Live per-zone exploration criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -4653,16 +4635,12 @@ function LeafVE_AchTest.UI:ShowAchievementRowTooltip(owner)
     local fp = LeafVE_AchTest_DB and LeafVE_AchTest_DB.discoveredFlightPoints
     local myFlightPoints = fp and fp[me]
     local found, total = 0, table.getn(ad.criteria_areas)
-    GameTooltip:AddLine(" ", 1, 1, 1)
     for _, name in ipairs(ad.criteria_areas) do
-      if myFlightPoints and myFlightPoints[name] then
-        found = found + 1
-        GameTooltip:AddLine("|cFF00CC00[x]|r "..name, 0.9, 0.9, 0.9)
-      else
-        GameTooltip:AddLine("|cFF666666[ ]|r "..name, 0.5, 0.5, 0.5)
-      end
+      if myFlightPoints and myFlightPoints[name] then found = found + 1 end
     end
+    GameTooltip:AddLine(" ", 1, 1, 1)
     GameTooltip:AddLine(string.format("Discovered: %d / %d flight points", found, total), 1.0, 0.82, 0.2)
+    GameTooltip:AddLine("Click to expand checklist", 0.6, 0.6, 0.6)
   end
   -- â”€â”€ Total-areas-discovered tiers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if ad.criteria_type == "explore_count" and ad.criteria_goal then
@@ -4688,7 +4666,6 @@ function LeafVE_AchTest.UI:ShowAchievementRowTooltip(owner)
     local myQ = cq and cq[me]
     local done, total = 0, 0
     local normalizeQuestKey = LeafVE_AchTest and LeafVE_AchTest.NormalizeQuestStepKey
-    GameTooltip:AddLine(" ", 1, 1, 1)
     for _, step in ipairs(ad._questSteps) do
       local stepName = step
       local needed = 1
@@ -4720,36 +4697,21 @@ function LeafVE_AchTest.UI:ShowAchievementRowTooltip(owner)
         if contribution > needed then contribution = needed end
         done = done + contribution
         total = total + needed
-
-        local label = stepName
-        if needed > 1 then
-          label = string.format("%s (%d/%d)", stepName, contribution, needed)
-        end
-
-        if stepDone >= needed then
-          GameTooltip:AddLine("|cFF00CC00[x]|r "..label, 0.9, 0.9, 0.9)
-        else
-          GameTooltip:AddLine("|cFF666666[ ]|r "..label, 0.5, 0.5, 0.5)
-        end
       end
     end
+    GameTooltip:AddLine(" ", 1, 1, 1)
     GameTooltip:AddLine(string.format("Progress: %d / %d quests", done, total), 1.0, 0.82, 0.2)
+    GameTooltip:AddLine("Click to expand checklist", 0.6, 0.6, 0.6)
   end
   -- â”€â”€ Achievement meta criteria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if ad.criteria_type == "ach_meta" and ad.criteria_ids then
     local done, total = 0, table.getn(ad.criteria_ids)
-    GameTooltip:AddLine(" ", 1, 1, 1)
     for _, reqId in ipairs(ad.criteria_ids) do
-      local reqAch = ACHIEVEMENTS[reqId]
-      local reqName = reqAch and reqAch.name or reqId
-      if LeafVE_AchTest:HasAchievement(me, reqId) then
-        done = done + 1
-        GameTooltip:AddLine("|cFF00CC00[x]|r "..reqName, 0.9, 0.9, 0.9)
-      else
-        GameTooltip:AddLine("|cFF666666[ ]|r "..reqName, 0.5, 0.5, 0.5)
-      end
+      if LeafVE_AchTest:HasAchievement(me, reqId) then done = done + 1 end
     end
+    GameTooltip:AddLine(" ", 1, 1, 1)
     GameTooltip:AddLine(string.format("Criteria: %d / %d achievements", done, total), 1.0, 0.82, 0.2)
+    GameTooltip:AddLine("Click to expand checklist", 0.6, 0.6, 0.6)
   end
   GameTooltip:Show()
 end
@@ -4835,6 +4797,21 @@ local function CreateAchievementRow(parent)
   checkmark:SetPoint("TOPRIGHT", icon, "TOPRIGHT", 3, 3)
   checkmark:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
   frame.checkmark = checkmark
+
+  -- Expand/collapse cue for any row with an inline checklist (see
+  -- GetChecklistEntries -- dungeon/raid bosses, meta-achievement criteria,
+  -- zone/flight-point lists, quest chain steps) -- same plus/minus
+  -- textures the default UI's own expandable tree headers use (reputation
+  -- panel, quest log), so it reads as "expandable" without inventing a new
+  -- visual language. Bottom-right corner of the icon, not top-right, so it
+  -- never collides with the completed checkmark badge there.
+  local expandIcon = frame:CreateTexture(nil, "OVERLAY")
+  expandIcon:SetWidth(16)
+  expandIcon:SetHeight(16)
+  expandIcon:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 4, -4)
+  expandIcon:SetTexture("Interface\\Buttons\\UI-PlusButton-Up")
+  expandIcon:Hide()
+  frame.expandIcon = expandIcon
 
   -- Soft pulsing glow over the whole row banner, shown by
   -- FlashAchievementRow when navigating here from the Summary or a Title.
@@ -4929,6 +4906,8 @@ local function CreateAchievementRow(parent)
     if ad and ad.criteria_type == "explore_zone_live" and ad.criteria_overlays then
       GameTooltip:Hide()
       LeafVE_AchTest.UI:ShowZoneMapWindow(ad)
+    elseif ad and table.getn(LeafVE_AchTest.UI:GetChecklistEntries(ad)) > 0 then
+      LeafVE_AchTest.UI:ToggleAchievementChecklist(ad)
     end
   end)
   return frame
@@ -5722,6 +5701,289 @@ function LeafVE_AchTest.UI:ShowZoneMapWindow(ad)
   self:ShowZoneMapPreview(ad)
   self:PopulateZoneMapChecklist(ad)
   zm:Show()
+end
+
+-- ===== Achievement checklist expand =====
+-- An expand-in-place checklist for any achievement row with a list to show
+-- (see GetChecklistEntries -- dungeon/raid bosses, dungeon_meta/raid_meta/
+-- ach_meta sub-achievements, zone_group/flight_zone area lists, quest
+-- chain steps), styled like the Zone Map window's checklist rows (same
+-- UI-CheckBox-Up/Check textures, same green/gray discovered coloring) but
+-- laid out 3 columns wide instead of one long vertical list, since several
+-- of these (flight points especially) run long enough to make a single
+-- column awkward. Replaces the tooltip's own per-item list for all of
+-- these types -- the tooltip keeps just its summary count line plus a
+-- "Click to expand checklist" hint now.
+--
+-- True inline row expansion, not a floating overlay: the achievement list
+-- above is a fixed-row-height virtual scroll (ACH_ROW_H, pooled frames
+-- reassigned to different achievements as you scroll -- see
+-- UpdateVisibleAchievements), so the expanded row's checklist actually
+-- reserves space and pushes every row below it down rather than drawing on
+-- top of them -- see GetChecklistRowYOffset. Only one achievement can be
+-- expanded at a time.
+--
+-- Constants hang off LeafVE_AchTest.UI rather than top-level locals, same
+-- reason as ZoneMapUI's own constants above -- this file sits right at
+-- Lua's 200-local ceiling.
+LeafVE_AchTest.UI.CHECKLIST_COLS = 3
+LeafVE_AchTest.UI.CHECKLIST_ROW_H = 20
+LeafVE_AchTest.UI.CHECKLIST_COL_W = 220
+
+-- Single source of truth for "does this achievement have a list, and what
+-- does it look like" -- shared by the expand-icon visibility check, the
+-- click handler, and the checklist panel itself, so all three always agree
+-- on which achievements are expandable. Mirrors the exact same data
+-- sources ShowAchievementRowTooltip's own per-type blocks read (dungeon/
+-- raid boss progress, dungeon_meta/raid_meta/ach_meta sub-achievements,
+-- zone_group/flight_zone area lists, quest chain steps) -- those blocks
+-- keep their own found/total math for the tooltip's summary line
+-- unchanged; this is only for the per-item checkbox list itself.
+-- Returns {} (never nil) for any achievement without a list, and a unit
+-- label ("bosses", "flight points", etc.) for the panel's own subtitle.
+function LeafVE_AchTest.UI:GetChecklistEntries(ad)
+  local me = ShortName(UnitName("player") or "")
+  local entries = {}
+  local unitLabel = "criteria"
+
+  if ad.criteria_key and (ad.criteria_type == "dungeon" or ad.criteria_type == "raid") then
+    local bossList, progress
+    if ad.criteria_type == "dungeon" then
+      bossList = DUNGEON_CLEAR_BOSSES[ad.criteria_key]
+      local dp = LeafVE_AchTest_DB and LeafVE_AchTest_DB.dungeonProgress
+      progress = dp and dp[me] and dp[me][ad.criteria_key]
+    else
+      bossList = RAID_CLEAR_BOSSES[ad.criteria_key]
+      local rp = LeafVE_AchTest_DB and LeafVE_AchTest_DB.raidProgress
+      progress = rp and rp[me] and rp[me][ad.criteria_key]
+    end
+    if bossList then
+      unitLabel = "bosses"
+      for _, bossName in ipairs(bossList) do
+        table.insert(entries, {label = bossName, done = (progress and progress[bossName]) and true or false})
+      end
+    end
+  elseif ad.criteria_type == "dungeon_meta" then
+    unitLabel = "dungeons"
+    for _, dachId in ipairs(ALL_DUNGEON_COMPLETE_IDS) do
+      local dach = ACHIEVEMENTS[dachId]
+      if dach then
+        table.insert(entries, {label = dach.name, done = LeafVE_AchTest:HasAchievement(me, dachId)})
+      end
+    end
+  elseif ad.criteria_type == "raid_meta" then
+    unitLabel = "raids"
+    for _, rachId in ipairs(ALL_RAID_COMPLETE_IDS) do
+      local rach = ACHIEVEMENTS[rachId]
+      if rach then
+        table.insert(entries, {label = rach.name, done = LeafVE_AchTest:HasAchievement(me, rachId)})
+      end
+    end
+  elseif ad.criteria_type == "zone_group" and ad.criteria_key then
+    local zones = ZONE_GROUP_ZONES[ad.criteria_key]
+    if zones then
+      unitLabel = "locations"
+      local pz = LeafVE_AchTest_DB and LeafVE_AchTest_DB.exploredZones
+      local myZones = pz and pz[me]
+      for _, z in ipairs(zones) do
+        table.insert(entries, {label = z, done = (myZones and myZones[z]) and true or false})
+      end
+    end
+  elseif ad.criteria_type == "flight_zone" and ad.criteria_areas then
+    unitLabel = "flight points"
+    local fp = LeafVE_AchTest_DB and LeafVE_AchTest_DB.discoveredFlightPoints
+    local myFlightPoints = fp and fp[me]
+    for _, name in ipairs(ad.criteria_areas) do
+      table.insert(entries, {label = name, done = (myFlightPoints and myFlightPoints[name]) and true or false})
+    end
+  elseif ad._questSteps then
+    unitLabel = "quest steps"
+    local cq = LeafVE_AchTest_DB and LeafVE_AchTest_DB.completedQuests
+    local myQ = cq and cq[me]
+    local normalizeQuestKey = LeafVE_AchTest and LeafVE_AchTest.NormalizeQuestStepKey
+    for _, step in ipairs(ad._questSteps) do
+      local stepName = step
+      local needed = 1
+      if type(step) == "table" then
+        stepName = step.name or step[1]
+        needed = tonumber(step.count) or tonumber(step.required) or 1
+        if needed < 1 then needed = 1 end
+      end
+      if type(stepName) == "string" and stepName ~= "" then
+        local key = normalizeQuestKey and normalizeQuestKey(stepName) or string.lower(stepName)
+        local stepDone = 0
+        local v = myQ and key and myQ[key]
+        if type(v) == "number" then
+          stepDone = v
+        elseif v then
+          stepDone = 1
+        end
+        if stepDone <= 0 and myQ then
+          -- Backward compatibility for pre-normalized quest keys.
+          local legacy = myQ[string.lower(stepName)]
+          if type(legacy) == "number" then
+            stepDone = legacy
+          elseif legacy then
+            stepDone = 1
+          end
+        end
+        local contribution = math.min(stepDone, needed)
+        local label = stepName
+        if needed > 1 then
+          label = string.format("%s (%d/%d)", stepName, contribution, needed)
+        end
+        table.insert(entries, {label = label, done = stepDone >= needed})
+      end
+    end
+  elseif ad.criteria_type == "ach_meta" and ad.criteria_ids then
+    unitLabel = "achievements"
+    for _, reqId in ipairs(ad.criteria_ids) do
+      local reqAch = ACHIEVEMENTS[reqId]
+      local reqName = reqAch and reqAch.name or reqId
+      table.insert(entries, {label = reqName, done = LeafVE_AchTest:HasAchievement(me, reqId)})
+    end
+  end
+
+  return entries, unitLabel
+end
+
+function LeafVE_AchTest.UI:BuildAchievementChecklistPanel()
+  if self.checklistPanel then return end
+
+  local f = CreateFrame("Frame", nil, self.frame)
+  -- Above the achievement rows (which inherit the main window's own
+  -- FULLSCREEN_DIALOG strata) the same way the Zone Map window sits above
+  -- the main window itself -- strata, not frame level, is what guarantees
+  -- this draws over whichever rows end up underneath it.
+  f:SetFrameStrata("TOOLTIP")
+  f:EnableMouse(true)
+  f:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 }
+  })
+  f:SetBackdropColor(0.05, 0.04, 0.03, 0.97)
+  f:SetBackdropBorderColor(THEME.border[1], THEME.border[2], THEME.border[3], 1)
+  f:Hide()
+
+  local subtitle = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  subtitle:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -10)
+  subtitle:SetTextColor(THEME.gold[1], THEME.gold[2], THEME.gold[3])
+  f.subtitle = subtitle
+
+  f.items = {}
+  self.checklistPanel = f
+end
+
+function LeafVE_AchTest.UI:BuildAchievementChecklistItem(index)
+  local panel = self.checklistPanel
+  local item = CreateFrame("Frame", nil, panel)
+  item:SetWidth(self.CHECKLIST_COL_W - 10)
+  item:SetHeight(self.CHECKLIST_ROW_H - 4)
+
+  local box = item:CreateTexture(nil, "ARTWORK")
+  box:SetWidth(14)
+  box:SetHeight(14)
+  box:SetPoint("LEFT", item, "LEFT", 0, 0)
+  box:SetTexture("Interface\\Buttons\\UI-CheckBox-Up")
+  item.box = box
+
+  local mark = item:CreateTexture(nil, "OVERLAY")
+  mark:SetAllPoints(box)
+  mark:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+  item.mark = mark
+
+  local label = item:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  label:SetPoint("LEFT", box, "RIGHT", 6, 0)
+  label:SetPoint("RIGHT", item, "RIGHT", 0, 0)
+  label:SetJustifyH("LEFT")
+  item.label = label
+
+  item:Hide()
+  panel.items[index] = item
+  return item
+end
+
+function LeafVE_AchTest.UI:PopulateAchievementChecklistPanel(ad)
+  local panel = self.checklistPanel
+  local entries, unitLabel = self:GetChecklistEntries(ad)
+  local total = table.getn(entries)
+  local rowsPerCol = math.ceil(total / self.CHECKLIST_COLS)
+  if rowsPerCol < 1 then rowsPerCol = 1 end
+
+  local found = 0
+  for i, entry in ipairs(entries) do
+    local item = panel.items[i] or self:BuildAchievementChecklistItem(i)
+    local col = math.floor((i - 1) / rowsPerCol)
+    local row = (i - 1) - col * rowsPerCol
+    item:ClearAllPoints()
+    item:SetPoint("TOPLEFT", panel, "TOPLEFT",
+      12 + col * self.CHECKLIST_COL_W, -32 - row * self.CHECKLIST_ROW_H)
+    item.label:SetText(entry.label)
+    if entry.done then
+      found = found + 1
+      item.mark:Show()
+      item.label:SetTextColor(0.4, 0.85, 0.4, 1)
+    else
+      item.mark:Hide()
+      item.label:SetTextColor(0.75, 0.75, 0.75, 1)
+    end
+    item:Show()
+  end
+  for i = total + 1, table.getn(panel.items) do
+    panel.items[i]:Hide()
+  end
+
+  panel.subtitle:SetText(found .. " / " .. total .. " " .. unitLabel)
+
+  local usedCols = math.min(self.CHECKLIST_COLS, math.max(1, total))
+  panel:SetWidth(24 + usedCols * self.CHECKLIST_COL_W)
+  panel:SetHeight(42 + rowsPerCol * self.CHECKLIST_ROW_H)
+end
+
+-- True inline expand: the achievement list (RefreshAchievements/
+-- UpdateVisibleAchievements) is a fixed-row-height virtual scroll, so
+-- reflowing rows below the expanded one down means those two functions
+-- need to know how much extra space to reserve and where. expandedChecklistIdx
+-- (position in the current filtered/sorted list) and expandedChecklistExtraH
+-- (the checklist panel's own height plus the gaps around it) are the two
+-- values everything else keys off -- see GetChecklistRowYOffset below.
+--
+-- Toggling the same row closes it; clicking a different checklist row
+-- always repopulates fresh rather than trusting whatever the panel last
+-- showed. Reflow happens via a full RefreshAchievements pass rather than
+-- hand-rolling the scrollChild height/scrollbar-range updates a second
+-- time here -- this list is small enough that re-filtering/re-sorting once
+-- per click is free, and it keeps all of that math in one place.
+function LeafVE_AchTest.UI:ToggleAchievementChecklist(ad)
+  self:BuildAchievementChecklistPanel()
+  local panel = self.checklistPanel
+  if self.expandedChecklistAchId == ad.id then
+    self.expandedChecklistAchId = nil
+    self.expandedChecklistExtraH = 0
+    panel:Hide()
+  else
+    self:PopulateAchievementChecklistPanel(ad)
+    self.expandedChecklistAchId = ad.id
+    -- 2px gap above the panel (matches its old overlay anchor offset) +
+    -- 10px breathing room below it before the next row starts.
+    self.expandedChecklistExtraH = panel:GetHeight() + 12
+  end
+  self:RefreshAchievements()
+end
+
+-- Every row's Y offset within the scrollChild, accounting for the one
+-- expanded row's extra reserved height if there is one. Only ever one row
+-- differs in height at a time, so this is just "normal spacing, plus the
+-- extra once we're past the expanded row" rather than a general variable-
+-- row-height layout.
+function LeafVE_AchTest.UI:GetChecklistRowYOffset(rowIdx)
+  local yOff = (rowIdx - 1) * ACH_ROW_H
+  if self.expandedChecklistIdx and rowIdx > self.expandedChecklistIdx then
+    yOff = yOff + (self.expandedChecklistExtraH or 0)
+  end
+  return yOff
 end
 
 function LeafVE_AchTest.UI:Build()
@@ -7778,8 +8040,30 @@ function LeafVE_AchTest.UI:RefreshAchievements()
   self.currentAchList  = achievementList
   self.currentAchOwner = me
 
+  -- If a checklist is expanded, find its position in THIS pass's filtered/
+  -- sorted list -- category or search changes can filter it out entirely,
+  -- in which case there's no row left to reserve space around, so close it
+  -- rather than leave a floating gap.
+  self.expandedChecklistIdx = nil
+  if self.expandedChecklistAchId then
+    for i, ach in ipairs(achievementList) do
+      if ach.id == self.expandedChecklistAchId then
+        self.expandedChecklistIdx = i
+        break
+      end
+    end
+    if not self.expandedChecklistIdx then
+      self.expandedChecklistAchId = nil
+      self.expandedChecklistExtraH = 0
+      if self.checklistPanel then self.checklistPanel:Hide() end
+    end
+  end
+
   -- Set the scrollChild virtual height so the scrollbar range is correct.
-  local totalHeight = math.max(10, table.getn(achievementList) * ACH_ROW_H + 10)
+  -- Includes the expanded row's reserved extra height, if any, so the
+  -- scrollbar range and the last row's own visibility both account for it.
+  local extraH = self.expandedChecklistIdx and (self.expandedChecklistExtraH or 0) or 0
+  local totalHeight = math.max(10, table.getn(achievementList) * ACH_ROW_H + extraH + 10)
   self.scrollChild:SetHeight(totalHeight)
   if self.scrollFrame and self.scrollFrame.UpdateScrollChildRect then
     self.scrollFrame:UpdateScrollChildRect()
@@ -7816,6 +8100,14 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
       for thumb in pairs(self.visibleZoneThumbFrames) do thumb:Hide() end
       self.visibleZoneThumbFrames = {}
     end
+    -- Leaving the achievements view entirely -- nothing left to reflow
+    -- around, so close any open checklist rather than leave it floating
+    -- (or stale) over a different tab.
+    if self.checklistPanel and self.checklistPanel:IsShown() then
+      self.checklistPanel:Hide()
+    end
+    self.expandedChecklistAchId = nil
+    self.expandedChecklistIdx = nil
     return
   end
   local list = self.currentAchList
@@ -7838,13 +8130,38 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
       for thumb in pairs(self.visibleZoneThumbFrames) do thumb:Hide() end
     end
     self.visibleZoneThumbFrames = newlyVisibleZoneThumbs
+    if self.checklistPanel then self.checklistPanel:Hide() end
     return
   end
 
+  -- First row index (1-based) that is at least partially visible. Uniform
+  -- ACH_ROW_H spacing everywhere except across the expanded row's own
+  -- reserved gap (see GetChecklistRowYOffset) -- scrollOff has to be checked
+  -- against that gap explicitly since it breaks the plain
+  -- floor(scrollOff/ACH_ROW_H) math a uniform-height list could use.
   local scrollOff = self.scrollFrame:GetVerticalScroll() or 0
-  -- First row index (1-based) that is at least partially visible.
-  local firstRow  = math.max(1, math.floor(scrollOff / ACH_ROW_H) + 1)
+  local firstRow
+  if self.expandedChecklistIdx then
+    local expTop = (self.expandedChecklistIdx - 1) * ACH_ROW_H
+    local expBottom = expTop + ACH_ROW_H + (self.expandedChecklistExtraH or 0)
+    if scrollOff < expTop then
+      firstRow = math.floor(scrollOff / ACH_ROW_H) + 1
+    elseif scrollOff < expBottom then
+      firstRow = self.expandedChecklistIdx
+    else
+      firstRow = math.floor((scrollOff - (self.expandedChecklistExtraH or 0)) / ACH_ROW_H) + 1
+    end
+  else
+    firstRow = math.floor(scrollOff / ACH_ROW_H) + 1
+  end
+  firstRow = math.max(1, firstRow)
   local poolSize  = table.getn(self.achievementFrames)
+
+  -- Whether the pass below actually rendered the row the checklist panel
+  -- is expanded for -- if it scrolled outside the pool's window, the panel
+  -- itself has nothing to anchor to this pass (hidden below, once known),
+  -- even though its reserved space keeps everything below it pushed down.
+  local checklistPanelAttached = false
 
   for pi = 1, poolSize do
     local rowIdx = firstRow + pi - 1
@@ -7853,14 +8170,33 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
     local frame = self.achievementFrames[pi]
     if not frame then break end
 
-    local yOff = (rowIdx - 1) * ACH_ROW_H
+    local yOff = self:GetChecklistRowYOffset(rowIdx)
     frame:ClearAllPoints()
     frame:SetPoint("TOPLEFT", self.scrollChild, "TOPLEFT", 8, -yOff)
+
+    if self.expandedChecklistAchId and ach.id == self.expandedChecklistAchId and self.checklistPanel then
+      checklistPanelAttached = true
+      local panel = self.checklistPanel
+      panel:ClearAllPoints()
+      panel:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -2)
+      panel:Show()
+    end
 
     frame.achData       = ach.data
     frame.achCompleted  = ach.completed
     frame.achTimestamp  = ach.timestamp
     frame.achPlayerName = me
+
+    if table.getn(self:GetChecklistEntries(ach.data)) > 0 then
+      frame.expandIcon:Show()
+      if self.expandedChecklistAchId == ach.id then
+        frame.expandIcon:SetTexture("Interface\\Buttons\\UI-MinusButton-Up")
+      else
+        frame.expandIcon:SetTexture("Interface\\Buttons\\UI-PlusButton-Up")
+      end
+    else
+      frame.expandIcon:Hide()
+    end
 
     local isZoneMosaic = ach.data.criteria_type == "explore_zone_live" and ach.data.criteria_overlays
     local zoneThumb = nil
@@ -7949,6 +8285,14 @@ function LeafVE_AchTest.UI:UpdateVisibleAchievements()
     end
   end
   self.visibleZoneThumbFrames = newlyVisibleZoneThumbs
+
+  -- Expanded but scrolled outside this pass's pool window -- its reserved
+  -- space (GetChecklistRowYOffset) still pushed everything below it down
+  -- correctly above, there's just no visible row left to hang the panel
+  -- widget itself off of right now.
+  if self.expandedChecklistAchId and not checklistPanelAttached and self.checklistPanel then
+    self.checklistPanel:Hide()
+  end
 end
 
 -- Summary tab: the 5 most-recently-earned achievements, plus a progress
