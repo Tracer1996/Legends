@@ -812,8 +812,8 @@ local ACHIEVEMENTS = {
   casual_mount_60={id="casual_mount_60",name="First Mount",desc="Obtain your first mount",category="Casual",points=10,icon="Interface\\Icons\\Ability_Mount_Raptor"},
   casual_hearthstone_use={id="casual_hearthstone_use",name="Frequent Traveler",desc="Use your hearthstone 50 times",category="Casual",points=10,icon="Interface\\Icons\\INV_Misc_Rune_01"},
   casual_guild_join={id="casual_guild_join",name="Guild Member",desc="Join a guild",category="Casual",points=5,icon="Interface\\Icons\\INV_Shirt_GuildTabard_01"},
-  guild_rank_ember={id="guild_rank_ember",name="Ember",desc="Attain the guild rank of Ember in The Ashen Banner.",category="Guild",points=1,icon="Interface\\Icons\\INV_Elemental_Primal_Fire"},
-  guild_rank_member_born={id="guild_rank_member_born",name="Born",desc="Attain the guild rank of Born in The Ashen Banner.",category="Guild",points=5,icon="Interface\\Icons\\INV_Shirt_GuildTabard_01"},
+  guild_rank_ember={id="guild_rank_ember",name="Ember",desc="Attain the guild rank of Ember in The Ashen Banner.",category="Guild",points=5,icon="Interface\\Icons\\INV_Elemental_Mote_Fire01"},
+  guild_rank_member_born={id="guild_rank_member_born",name="Born",desc="Attain the guild rank of Born in The Ashen Banner.",category="Guild",points=1,icon="Interface\\Icons\\INV_Shirt_GuildTabard_01"},
   guild_rank_flamebound={id="guild_rank_flamebound",name="Flamebound",desc="Attain the guild rank of Flamebound in The Ashen Banner.",category="Guild",points=10,icon="Interface\\Icons\\Spell_Fire_Immolation"},
   guild_rank_oath_captain={id="guild_rank_oath_captain",name="Oath Captain",desc="Attain the guild rank of Oath Captain in The Ashen Banner.",category="Guild",points=20,icon="Interface\\Icons\\INV_Sword_62"},
   guild_rank_banner_warden={id="guild_rank_banner_warden",name="Banner Warden",desc="Attain the guild rank of Banner Warden in The Ashen Banner.",category="Guild",points=35,icon="Interface\\Icons\\INV_BannerPVP_02"},
@@ -905,8 +905,8 @@ local TITLES = {
   {id="title_elder",name="the Elder",achievement="lvl_60",prefix=false,category="Leveling",icon="Interface\\Icons\\Spell_Holy_BlessingOfStrength"},
 
   -- Guild Rank Titles
-  {id="title_ember",name="Ember",chatName="Ember",achievement="guild_rank_ember",prefix=true,category="Guild",icon="Interface\\Icons\\INV_Elemental_Primal_Fire",guild=true,desc="The first spark of The Ashen Banner -- not yet born to the flame, but already alight with promise."},
-  {id="title_member_born",name="Born",chatName="Born",achievement="guild_rank_member_born",prefix=true,category="Guild",icon="Interface\\Icons\\INV_Shirt_GuildTabard_01",guild=true,desc="A new ember of The Ashen Banner, beginning their path beneath its flame and oath."},
+  {id="title_ember",name="Ember",chatName="Ember",achievement="guild_rank_ember",prefix=true,category="Guild",icon="Interface\\Icons\\INV_Elemental_Mote_Fire01",guild=true,desc="A spark now caught and glowing -- risen past their first oath, alight with promise for what comes next."},
+  {id="title_member_born",name="Born",chatName="Born",achievement="guild_rank_member_born",prefix=true,category="Guild",icon="Interface\\Icons\\INV_Shirt_GuildTabard_01",guild=true,desc="The newest soul taken into The Ashen Banner, standing beneath its flame and oath before their spark has caught."},
   {id="title_flamebound",name="Flamebound",chatName="Bound",achievement="guild_rank_flamebound",prefix=true,category="Guild",icon="Interface\\Icons\\Spell_Fire_Immolation",guild=true,desc="A proven warrior bound to the Banner's flame through loyalty, skill, and battle."},
   {id="title_oath_captain",name="Oath Captain",chatName="Captain",achievement="guild_rank_oath_captain",prefix=true,category="Guild",icon="Interface\\Icons\\INV_Sword_62",guild=true,desc="Keeper of class discipline and raid readiness, leading their sworn allies by example."},
   {id="title_banner_warden",name="Banner Warden",chatName="Warden",achievement="guild_rank_banner_warden",prefix=true,category="Guild",icon="Interface\\Icons\\INV_BannerPVP_02",guild=true,desc="Protector of the Banner's order, enforcing standards and supporting the guild's members."},
@@ -1048,8 +1048,8 @@ local TITLES = {
 }
 
 local TRACKED_GUILD_RANKS = {
-  {rankName="Ember", achievement="guild_rank_ember", title="title_ember"},
   {rankName="Born", achievement="guild_rank_member_born", title="title_member_born"},
+  {rankName="Ember", achievement="guild_rank_ember", title="title_ember"},
   {rankName="Flamebound", achievement="guild_rank_flamebound", title="title_flamebound"},
   {rankName="Oath Captain", achievement="guild_rank_oath_captain", title="title_oath_captain"},
   {rankName="Banner Warden", achievement="guild_rank_banner_warden", title="title_banner_warden"},
