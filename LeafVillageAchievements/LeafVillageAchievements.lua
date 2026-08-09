@@ -9524,7 +9524,18 @@ LeafVE_AchTest.zoneDiscFrame:SetScript("OnEvent", function()
     newlyDiscovered[subzone] = true
   end
   if not anyNew then
-    LeafVE_AchTest:CheckExplorationAchievements(true)
+    -- Nothing changed in exploredZones, so no zone-group/live-zone total in
+    -- CheckExplorationAchievements' loops could have flipped from
+    -- incomplete to complete -- running its full pairs(ACHIEVEMENTS) scan
+    -- here was pure waste on every single zone/subzone crossing (including
+    -- ZONE_CHANGED_INDOORS, which fires on every building/cave doorway).
+    -- The one case that isn't covered by "nothing new here": a fresh
+    -- achievement definition getting registered mid-session for a zone
+    -- already fully explored. That's handled independently by
+    -- CheckZoneExplorationLive (data/LeafVE_Ach_ExplorationLive.lua), which
+    -- polls C_MapExplorationInfo itself and calls CheckExplorationAchievements
+    -- on its own when it finds something newly explored -- it doesn't wait
+    -- on this handler.
     return
   end
   LeafVE_AchTest:CheckExplorationAchievements(false, newlyDiscovered)

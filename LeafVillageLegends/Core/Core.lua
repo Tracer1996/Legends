@@ -41811,8 +41811,12 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
   end
 
   if event == "QUEST_LOG_UPDATE" then
-    -- Keep the cache fresh; turn-in detection is handled by QUEST_COMPLETE + QUEST_FINISHED.
-    LeafVE:CacheQuestLog()
+    -- Keep the cache fresh; turn-in detection is handled by QUEST_COMPLETE + QUEST_FINISHED,
+    -- not by this cache. QUEST_LOG_UPDATE fires on ordinary objective progress too (not just
+    -- accept/turn-in), so debounce the rebuild through the same deferred-task driver
+    -- ScheduleMyGearBroadcast already uses -- a burst of events during active questing
+    -- collapses into one CacheQuestLog() call after things settle, instead of one per tick.
+    LeafVE:ScheduleDeferred("quest_log_cache", 0.3, function() LeafVE:CacheQuestLog() end)
     return
   end
 
