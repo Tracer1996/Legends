@@ -9929,8 +9929,57 @@ minimapButton:SetScript("OnDragStop", function()
   UpdateMinimapPosition()
 end)
 
--- Click to open
+-- Right-click menu: jump straight to any tab (opening the window first if
+-- it isn't already), instead of always landing on whatever tab it was last
+-- left on. Same UIDropDownMenuTemplate/UIDropDownMenu_* API the admin
+-- achievement picker above already uses successfully on this client.
+local minimapMenu = CreateFrame("Frame", "LeafVE_AchTestMinimapMenu", UIParent, "UIDropDownMenuTemplate")
+UIDropDownMenu_Initialize(minimapMenu, function(arg1, arg2, arg3)
+  -- Same normalization the admin achievement dropdown above uses --
+  -- vanilla dropdown callbacks vary by caller: either (level, menuList)
+  -- or (self, level, menuList).
+  local level
+  if type(arg1) == "number" then
+    level = arg1
+  else
+    level = arg2
+  end
+  level = tonumber(level) or UIDROPDOWNMENU_MENU_LEVEL or 1
+
+  local function AddTab(text, view, category)
+    local info = {}
+    info.text = text
+    info.notCheckable = 1
+    info.func = function()
+      LeafVE_AchTest.UI:Build()
+      LeafVE_AchTest.UI.currentView = view
+      if category ~= nil then
+        LeafVE_AchTest.UI.selectedCategory = category
+      end
+      LeafVE_AchTest.UI:Refresh()
+      if CloseDropDownMenus then CloseDropDownMenus() end
+    end
+    UIDropDownMenu_AddButton(info, level)
+  end
+
+  AddTab("Achievements", "achievements", "Summary")
+  AddTab("Titles", "titles")
+  AddTab("Companions", "companions")
+  AddTab("Mounts", "mounts")
+  AddTab("Toys", "toys")
+
+  local _, rankName = GetGuildInfo("player")
+  if IsOfficerRank(rankName) then
+    AddTab("Admin", "admin")
+  end
+end, "MENU")
+
+minimapButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 minimapButton:SetScript("OnClick", function()
+  if arg1 == "RightButton" then
+    ToggleDropDownMenu(1, nil, minimapMenu, "cursor", 0, 0)
+    return
+  end
   if LeafVE_AchTest.UI.frame and LeafVE_AchTest.UI.frame:IsShown() then
     LeafVE_AchTest.UI.frame:Hide()
   else
@@ -9943,6 +9992,7 @@ minimapButton:SetScript("OnEnter", function()
   GameTooltip:SetOwner(this, "ANCHOR_LEFT")
   GameTooltip:SetText("|cFFFFD433Ashen Banner Achievements|r", 1, 1, 1)
   GameTooltip:AddLine("Click to open/close", 0.8, 0.8, 0.8)
+  GameTooltip:AddLine("Right-click to jump to a tab", 0.8, 0.8, 0.8)
   GameTooltip:AddLine("Drag to move", 0.6, 0.6, 0.6)
   GameTooltip:Show()
 end)
