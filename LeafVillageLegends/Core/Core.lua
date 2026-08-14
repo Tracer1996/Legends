@@ -3988,6 +3988,13 @@ local function EnsureDB()
       LeafVE_DB.badgesArchive["legacy"] = LeafVE_DB.badges
       LeafVE_DB.badges = {}
       LeafVE_DB.badgesAnnounced = {}
+      -- Eligibility for these badges comes from persistent lifetime stats
+      -- that this reset doesn't touch, so the very next CheckBadgeMilestones
+      -- pass can instantly re-qualify a veteran player for a dozen
+      -- thresholds at once. This flag tells that pass to award them (the
+      -- reset is real) without blasting each one to guild chat as if it
+      -- were freshly earned -- see CheckBadgeMilestones/CheckAndAwardBadge.
+      LeafVE_DB.badgeBucketJustReset = true
     end
     LeafVE_DB.badgeBucketVersion = currentBadgeBucket
     LeafVE_DB.badgeBucketMigrated = true
@@ -3996,6 +4003,7 @@ local function EnsureDB()
   elseif storedBadgeBucket ~= currentBadgeBucket then
     if type(LeafVE_DB.badges) == "table" and next(LeafVE_DB.badges) then
       LeafVE_DB.badgesArchive[tostring(storedBadgeBucket)] = LeafVE_DB.badges
+      LeafVE_DB.badgeBucketJustReset = true
     end
     LeafVE_DB.badges = {}
     LeafVE_DB.badgesAnnounced = {}
@@ -7992,7 +8000,13 @@ function LeafVE:ProcessNotifications()
   end)
 end
 
-function LeafVE:CheckAndAwardBadge(playerName, badgeId)
+-- silent suppresses only the guild-chat announcement (AnnounceBadgeInGuild)
+-- -- the badge is still awarded, still broadcast to guildmates, and the
+-- player still gets their own local notification/toast. Used for the one
+-- CheckBadgeMilestones pass right after a badge-bucket reset, where a
+-- veteran player can instantly re-qualify for a dozen thresholds at once
+-- and none of them should read as a fresh live moment to the whole guild.
+function LeafVE:CheckAndAwardBadge(playerName, badgeId, silent)
   EnsureDB() playerName = ShortName(playerName) if not playerName then return end
   if not LeafVE_DB.badges[playerName] then LeafVE_DB.badges[playerName] = {} end
   if LeafVE_DB.badges[playerName][badgeId] then return false end
@@ -8008,7 +8022,9 @@ function LeafVE:CheckAndAwardBadge(playerName, badgeId)
         self:ShowNotification("Badge Earned! ["..qualityLabel.."]", badge.name..": "..badge.desc, badge.icon, {qr, qg, qb, 1})
       end
       Print("|cFF"..RGBToHex(qr, qg, qb).."["..qualityLabel.."] Badge Earned:|r "..badge.name.." - "..badge.desc)
-      AnnounceBadgeInGuild(playerName, badge)
+      if not silent then
+        AnnounceBadgeInGuild(playerName, badge)
+      end
       self:BroadcastBadges()
       if LeafVE.UI.cardCurrentPlayer == playerName then
         LeafVE.UI:UpdateCardRecentBadges(playerName)
@@ -8025,7 +8041,14 @@ function LeafVE:CheckBadgeMilestones(playerName)
   EnsureDB()
   playerName = ShortName(playerName)
   if not playerName then return end
-  
+
+  -- See CheckAndAwardBadge -- true only for the one pass right after a
+  -- badge-bucket reset, and only for the local player's own check (that's
+  -- the only case CheckAndAwardBadge would ever announce for anyway).
+  -- Cleared at the end of this function once that pass has actually run.
+  local me = ShortName(UnitName("player"))
+  local silent = (me and playerName == me and LeafVE_DB.badgeBucketJustReset == true) and true or false
+
   -- Get player data (prefer the highest cached all-time snapshot)
   local alltime = GetBestLifetimeEntry(playerName)
   local localAlltime = IsPointEntryInCurrentBucket(LeafVE_DB.alltime[playerName]) and LeafVE_DB.alltime[playerName] or nil
@@ -8036,113 +8059,113 @@ function LeafVE:CheckBadgeMilestones(playerName)
   
   -- === LOGIN & ACTIVITY ===
   if alltime.L >= 100 then 
-    self:CheckAndAwardBadge(playerName, "total_logins_100") 
+    self:CheckAndAwardBadge(playerName, "total_logins_100", silent) 
   end
   if alltime.L >= 365 then
-    self:CheckAndAwardBadge(playerName, "total_logins_365")
+    self:CheckAndAwardBadge(playerName, "total_logins_365", silent)
   end
   
   -- Login streaks
   local streak = GetBestLoginStreak(playerName)
   if streak >= 7 then 
-    self:CheckAndAwardBadge(playerName, "login_streak_7") 
+    self:CheckAndAwardBadge(playerName, "login_streak_7", silent) 
   end
   if streak >= 30 then 
-    self:CheckAndAwardBadge(playerName, "login_streak_30") 
+    self:CheckAndAwardBadge(playerName, "login_streak_30", silent) 
   end
   if streak >= 100 then
-    self:CheckAndAwardBadge(playerName, "login_streak_100")
+    self:CheckAndAwardBadge(playerName, "login_streak_100", silent)
   end
   
   -- === GROUP CONTENT ===
   local groupHours = GetBestGuildieGroupHours(playerName)
   if groupHours >= 1 then 
-    self:CheckAndAwardBadge(playerName, "guildie_hours_1") 
+    self:CheckAndAwardBadge(playerName, "guildie_hours_1", silent) 
   end
   if groupHours >= 10 then 
-    self:CheckAndAwardBadge(playerName, "guildie_hours_10") 
+    self:CheckAndAwardBadge(playerName, "guildie_hours_10", silent) 
   end
   if groupHours >= 25 then 
-    self:CheckAndAwardBadge(playerName, "guildie_hours_25") 
+    self:CheckAndAwardBadge(playerName, "guildie_hours_25", silent) 
   end
   if groupHours >= 50 then 
-    self:CheckAndAwardBadge(playerName, "guildie_hours_50") 
+    self:CheckAndAwardBadge(playerName, "guildie_hours_50", silent) 
   end
   if groupHours >= 100 then 
-    self:CheckAndAwardBadge(playerName, "guildie_hours_100") 
+    self:CheckAndAwardBadge(playerName, "guildie_hours_100", silent) 
   end
   if groupHours >= 250 then
-    self:CheckAndAwardBadge(playerName, "guildie_hours_250")
+    self:CheckAndAwardBadge(playerName, "guildie_hours_250", silent)
   end
   if groupHours >= 500 then
-    self:CheckAndAwardBadge(playerName, "guildie_hours_500")
+    self:CheckAndAwardBadge(playerName, "guildie_hours_500", silent)
   end
   if groupHours >= 1000 then
-    self:CheckAndAwardBadge(playerName, "guildie_hours_1000") 
+    self:CheckAndAwardBadge(playerName, "guildie_hours_1000", silent) 
   end
   if groupHours >= 10000 then
-    self:CheckAndAwardBadge(playerName, "guildie_hours_10000") 
+    self:CheckAndAwardBadge(playerName, "guildie_hours_10000", silent) 
   end
 
   local guildieHonorableKills = GetBestGuildieHonorableKills(playerName)
   if guildieHonorableKills >= 100 then
-    self:CheckAndAwardBadge(playerName, "shinobi_combatant_100")
+    self:CheckAndAwardBadge(playerName, "shinobi_combatant_100", silent)
   end
   if guildieHonorableKills >= 500 then
-    self:CheckAndAwardBadge(playerName, "shinobi_combatant_500")
+    self:CheckAndAwardBadge(playerName, "shinobi_combatant_500", silent)
   end
   if guildieHonorableKills >= 1000 then
-    self:CheckAndAwardBadge(playerName, "shinobi_combatant_1000")
+    self:CheckAndAwardBadge(playerName, "shinobi_combatant_1000", silent)
   end
   if guildieHonorableKills >= 2500 then
-    self:CheckAndAwardBadge(playerName, "shinobi_combatant_2500")
+    self:CheckAndAwardBadge(playerName, "shinobi_combatant_2500", silent)
   end
   if guildieHonorableKills >= 5000 then
-    self:CheckAndAwardBadge(playerName, "shinobi_combatant_5000")
+    self:CheckAndAwardBadge(playerName, "shinobi_combatant_5000", silent)
   end
   if guildieHonorableKills >= 7500 then
-    self:CheckAndAwardBadge(playerName, "shinobi_combatant_7500")
+    self:CheckAndAwardBadge(playerName, "shinobi_combatant_7500", silent)
   end
   if guildieHonorableKills >= 10000 then
-    self:CheckAndAwardBadge(playerName, "shinobi_combatant_10000")
+    self:CheckAndAwardBadge(playerName, "shinobi_combatant_10000", silent)
   end
   if guildieHonorableKills >= 25000 then
-    self:CheckAndAwardBadge(playerName, "shinobi_combatant_25000")
+    self:CheckAndAwardBadge(playerName, "shinobi_combatant_25000", silent)
   end
   if guildieHonorableKills >= 50000 then
-    self:CheckAndAwardBadge(playerName, "shinobi_combatant_50000")
+    self:CheckAndAwardBadge(playerName, "shinobi_combatant_50000", silent)
   end
   
   -- === POINT MILESTONES ===
   if totalPoints >= 2500 then 
-    self:CheckAndAwardBadge(playerName, "total_500") 
+    self:CheckAndAwardBadge(playerName, "total_500", silent) 
   end
   if totalPoints >= 5000 then 
-    self:CheckAndAwardBadge(playerName, "total_1000") 
+    self:CheckAndAwardBadge(playerName, "total_1000", silent) 
   end
   if totalPoints >= 10000 then 
-    self:CheckAndAwardBadge(playerName, "total_2000") 
+    self:CheckAndAwardBadge(playerName, "total_2000", silent) 
   end
   if totalPoints >= 25000 then 
-    self:CheckAndAwardBadge(playerName, "total_5000") 
+    self:CheckAndAwardBadge(playerName, "total_5000", silent) 
   end
   if totalPoints >= 50000 then 
-    self:CheckAndAwardBadge(playerName, "total_10000") 
+    self:CheckAndAwardBadge(playerName, "total_10000", silent) 
   end
   if totalPoints >= 100000 then
-    self:CheckAndAwardBadge(playerName, "total_20000")
+    self:CheckAndAwardBadge(playerName, "total_20000", silent)
   end
   
   -- === RAID ATTENDANCE ===
   local attendCount = GetBestAttendanceCount(playerName)
   if attendCount >= 10 then 
-    self:CheckAndAwardBadge(playerName, "attendance_10") 
+    self:CheckAndAwardBadge(playerName, "attendance_10", silent) 
   end
   if attendCount >= 50 then 
-    self:CheckAndAwardBadge(playerName, "attendance_50") 
+    self:CheckAndAwardBadge(playerName, "attendance_50", silent) 
   end
   if attendCount >= 100 then
-    self:CheckAndAwardBadge(playerName, "attendance_100")
+    self:CheckAndAwardBadge(playerName, "attendance_100", silent)
   end
   
   -- === GUILD LOYALTY (Time-based) ===
@@ -8151,13 +8174,13 @@ function LeafVE:CheckBadgeMilestones(playerName)
     local daysInGuild = math.floor((Now() - joinDate) / SECONDS_PER_DAY)
     
     if daysInGuild >= 30 then 
-      self:CheckAndAwardBadge(playerName, "guild_age_30") 
+      self:CheckAndAwardBadge(playerName, "guild_age_30", silent) 
     end
     if daysInGuild >= 90 then 
-      self:CheckAndAwardBadge(playerName, "guild_age_90") 
+      self:CheckAndAwardBadge(playerName, "guild_age_90", silent) 
     end
     if daysInGuild >= 365 then 
-      self:CheckAndAwardBadge(playerName, "guild_age_365") 
+      self:CheckAndAwardBadge(playerName, "guild_age_365", silent) 
     end
   end
 
@@ -8165,22 +8188,26 @@ function LeafVE:CheckBadgeMilestones(playerName)
   local repEntry = self:GetWorkOrderReputationForPlayer(playerName)
   local workOrderRep = repEntry and (tonumber(repEntry.totalRep) or 0) or 0
   if workOrderRep >= (WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.firstContract or 100) then
-    self:CheckAndAwardBadge(playerName, "work_order_rep_50")
+    self:CheckAndAwardBadge(playerName, "work_order_rep_50", silent)
   end
   if workOrderRep >= (WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.trustedHand or 300) then
-    self:CheckAndAwardBadge(playerName, "work_order_rep_150")
+    self:CheckAndAwardBadge(playerName, "work_order_rep_150", silent)
   end
   if workOrderRep >= (WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.villageArtisan or 750) then
-    self:CheckAndAwardBadge(playerName, "work_order_rep_400")
+    self:CheckAndAwardBadge(playerName, "work_order_rep_400", silent)
   end
   if workOrderRep >= (WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.masterSupplier or 1500) then
-    self:CheckAndAwardBadge(playerName, "work_order_rep_800")
+    self:CheckAndAwardBadge(playerName, "work_order_rep_800", silent)
   end
   if workOrderRep >= (WORK_ORDER_REPUTATION_BADGE_THRESHOLDS.leafLegend or 3000) then
-    self:CheckAndAwardBadge(playerName, "work_order_rep_1500")
+    self:CheckAndAwardBadge(playerName, "work_order_rep_1500", silent)
   end
 
   self:CacheBadgeProgress(playerName)
+
+  if silent then
+    LeafVE_DB.badgeBucketJustReset = nil
+  end
 end
 
 function LeafVE:GetBadgeProgress(playerName, badgeId)
@@ -41778,24 +41805,36 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
   end
   
   if event == "GUILD_ROSTER_UPDATE" then
-    -- Invalidate the roster cache so the next GetGroupGuildies() call rebuilds it
-    -- from the fresh server data (without triggering another GuildRoster() request).
-    LeafVE.guildRosterCacheTime = 0
-    LeafVE:RefreshMinimapButtonAccess()
-    if LeafVE.allianceEnabled == true then
-      LeafVE:CacheLocalAllianceRoster()
-      LeafVE:ScheduleDeferred("alliance_roster_presence_sync", 1.5, function()
-        LeafVE:BroadcastAllianceRosterPresence(false)
-      end)
-    end
-    if LeafVE.UI and LeafVE.UI.frame and LeafVE.UI.frame:IsVisible() then
-      if LeafVE:HasLeafAccess() then
-        LeafVE.UI:Refresh()
-      else
-        LeafVE.UI.frame:Hide()
+    -- Debounced: GUILD_ROSTER_UPDATE can fire repeatedly in a burst (mass
+    -- login/logout, rank/note edits), and this used to invalidate the
+    -- roster cache and immediately call RefreshMinimapButtonAccess ->
+    -- HasLeafAccess -> UpdateGuildRosterCache on every single firing --
+    -- with guildRosterCacheTime just zeroed, that guard never short-
+    -- circuited, so every GUILD_ROSTER_UPDATE ran a full synchronous
+    -- GetGuildRosterInfo() loop over the whole guild for every player,
+    -- not just alliance-sync ones. Collapsing a burst into one deferred
+    -- pass keeps GUILD_ROSTER_CACHE_DURATION's throttle meaningful again
+    -- without losing responsiveness to a real roster change.
+    LeafVE:ScheduleDeferred("guild_roster_cache_invalidate", 1.5, function()
+      -- Invalidate the roster cache so the next GetGroupGuildies() call rebuilds it
+      -- from the fresh server data (without triggering another GuildRoster() request).
+      LeafVE.guildRosterCacheTime = 0
+      LeafVE:RefreshMinimapButtonAccess()
+      if LeafVE.allianceEnabled == true then
+        LeafVE:CacheLocalAllianceRoster()
+        LeafVE:ScheduleDeferred("alliance_roster_presence_sync", 1.5, function()
+          LeafVE:BroadcastAllianceRosterPresence(false)
+        end)
       end
-    end
-    LeafVE:ApplyGuildWipeMarkerIfNeeded()
+      if LeafVE.UI and LeafVE.UI.frame and LeafVE.UI.frame:IsVisible() then
+        if LeafVE:HasLeafAccess() then
+          LeafVE.UI:Refresh()
+        else
+          LeafVE.UI.frame:Hide()
+        end
+      end
+      LeafVE:ApplyGuildWipeMarkerIfNeeded()
+    end)
     return
   end
 
