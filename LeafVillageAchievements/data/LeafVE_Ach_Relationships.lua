@@ -2578,8 +2578,23 @@ local function RA_TooltipText(index, book)
   return string.lower(text)
 end
 
+-- Throttles for the expensive scans below -- each is reachable from many
+-- different events (RA_ScanSpellbook alone from MERCHANT_SHOW,
+-- SPELLS_CHANGED, TIME_PLAYED_MSG, UNIT_MODEL_CHANGED, LEARNED_SPELL_IN_TAB,
+-- and RA_ScanCharacter's own internal call), several of which fire in
+-- bursts during normal play (rep grinding, gathering, shapeshifting).
+-- Guarding inside each function protects it no matter which caller reaches
+-- it, rather than needing every call site individually throttled.
+local RA_lastScanSpellbookAt = 0
+local RA_lastScanEquipmentAndBagsAt = 0
+local RA_lastScanCompanionsAt = 0
+local RA_lastScanCharacterAt = 0
+
 local function RA_ScanSpellbook(silent)
   if not GetSpellName then return end
+  local now = GetTime and GetTime() or 0
+  if now > 0 and (now - RA_lastScanSpellbookAt) < 2 then return end
+  RA_lastScanSpellbookAt = now
   local book = BOOKTYPE_SPELL or "spell"
   local mounts, pets = 0, 0
   local hasEpicMount = false
@@ -2671,6 +2686,9 @@ local function RA_QualityFromLink(link)
 end
 
 local function RA_ScanEquipmentAndBags()
+  local now = GetTime and GetTime() or 0
+  if now > 0 and (now - RA_lastScanEquipmentAndBagsAt) < 1 then return end
+  RA_lastScanEquipmentAndBagsAt = now
   if GetInventoryItemLink then
     if GetInventoryItemLink("player", 4) then AwardRA(1203) end
     if GetInventoryItemLink("player", 19) then AwardRA(109) end
@@ -2725,6 +2743,9 @@ end
 
 local function RA_ScanCompanions()
   if not GetNumCompanions then return end
+  local now = GetTime and GetTime() or 0
+  if now > 0 and (now - RA_lastScanCompanionsAt) < 1 then return end
+  RA_lastScanCompanionsAt = now
   local counted = {}
   local types = {"CRITTER","COMPANION","COMPANIONS","PET","MINIPET"}
   for _, ctype in ipairs(types) do
@@ -2744,6 +2765,9 @@ local function RA_ScanCompanions()
 end
 
 local function RA_ScanCharacter()
+  local now = GetTime and GetTime() or 0
+  if now > 0 and (now - RA_lastScanCharacterAt) < 2 then return end
+  RA_lastScanCharacterAt = now
   local lvl = UnitLevel("player") or 1
   if lvl >= 5  then AwardRA(216) end
   if lvl >= 10 then AwardRA(201) end
