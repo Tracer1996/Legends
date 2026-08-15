@@ -7980,23 +7980,47 @@ function LeafVE:ProcessNotifications()
   if LeafVE_DB.options.notificationSound then PlaySound("AuctionWindowOpen") end
   self.toastShowing = true
   self.toastFrame:Show()
-  local fadeIn = 0 local fadeInFrame = CreateFrame("Frame")
-  fadeInFrame:SetScript("OnUpdate", function()
-    fadeIn = fadeIn + arg1
-    if fadeIn >= 0.3 then self.toastFrame:SetAlpha(1) fadeInFrame:Hide()
-      local hold = 0 local holdFrame = CreateFrame("Frame")
-      holdFrame:SetScript("OnUpdate", function()
-        hold = hold + arg1
-        if hold >= 4 then holdFrame:Hide()
-          local fadeOut = 0 local fadeOutFrame = CreateFrame("Frame")
-          fadeOutFrame:SetScript("OnUpdate", function()
-            fadeOut = fadeOut + arg1
-            if fadeOut >= 0.3 then self.toastFrame:SetAlpha(0) self.toastFrame:Hide() self.toastShowing = false fadeOutFrame:Hide()
-            else self.toastFrame:SetAlpha(1 - (fadeOut / 0.3)) end
-          end)
-        end
-      end)
-    else self.toastFrame:SetAlpha(fadeIn / 0.3) end
+  self.toastFrame:SetAlpha(0)
+
+  -- Single pooled fade driver reused for every toast, instead of the old
+  -- fade-in/hold/fade-out chain that each created its own fresh Frame when
+  -- the previous stage finished. Those were Hide()-d when done but never
+  -- actually freed (Vanilla WoW frames are never GC'd), so every quest/
+  -- badge/point/streak notification permanently leaked 3 frame objects for
+  -- the session. Same self-clearing-OnUpdate convention used elsewhere in
+  -- this file (see RA_OnLogin's scanner) -- unhooked once the fade-out
+  -- finishes rather than left ticking forever doing nothing.
+  if not self.toastFadeDriver then
+    self.toastFadeDriver = CreateFrame("Frame")
+  end
+  local driver = self.toastFadeDriver
+  driver.phase = "in"
+  driver.elapsed = 0
+  driver:SetScript("OnUpdate", function()
+    driver.elapsed = driver.elapsed + arg1
+    if driver.phase == "in" then
+      if driver.elapsed >= 0.3 then
+        self.toastFrame:SetAlpha(1)
+        driver.phase = "hold"
+        driver.elapsed = 0
+      else
+        self.toastFrame:SetAlpha(driver.elapsed / 0.3)
+      end
+    elseif driver.phase == "hold" then
+      if driver.elapsed >= 4 then
+        driver.phase = "out"
+        driver.elapsed = 0
+      end
+    else -- "out"
+      if driver.elapsed >= 0.3 then
+        self.toastFrame:SetAlpha(0)
+        self.toastFrame:Hide()
+        self.toastShowing = false
+        driver:SetScript("OnUpdate", nil)
+      else
+        self.toastFrame:SetAlpha(1 - (driver.elapsed / 0.3))
+      end
+    end
   end)
 end
 
@@ -16287,10 +16311,23 @@ function LeafVE:UpdateAddonMusic(elapsed)
   local progress = state.elapsed / duration
   if progress > 1 then progress = 1 end
 
-  local fromV = tonumber(state.fromVolume) or 0
-  local toV = tonumber(state.toVolume) or 0
-  local volume = fromV + ((toV - fromV) * progress)
-  self:SetCurrentMusicVolume(volume)
+  -- Only touch the CVar while actually mid-fade (progress < 1). Every mode
+  -- transition below already snaps the volume to its own exact target with
+  -- its own explicit SetCurrentMusicVolume call the moment progress hits 1
+  -- (e.g. line ~16380, ~16411, ~16418, ~16427, ~16437), so nothing here
+  -- ever needs to also set it once progress caps out. Previously this ran
+  -- unconditionally on every single OnUpdate tick, including all of
+  -- "playing"/"banner_playing" -- since those modes never reset
+  -- state.elapsed, progress stays pinned at 1 and the volume never
+  -- actually changes, but SetCVar (a known-heavy client call) was still
+  -- firing every rendered frame for as long as addon music stayed active,
+  -- not just during the ~1.5s transitions.
+  if progress < 1 then
+    local fromV = tonumber(state.fromVolume) or 0
+    local toV = tonumber(state.toVolume) or 0
+    local volume = fromV + ((toV - fromV) * progress)
+    self:SetCurrentMusicVolume(volume)
+  end
 
   if state.mode == "opening_fade_out" and progress >= 1 then
     if StopMusic then StopMusic() end
@@ -41928,7 +41965,14 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
   end
 
   if event == "CHARACTER_POINTS_CHANGED" then
-    LeafVE:CaptureAndCacheMyTalents(true)
+    -- BroadcastMyTalents(true) already calls CaptureAndCacheMyTalents(true)
+    -- internally (to build the payload it broadcasts) -- calling it again
+    -- directly here first was doing the exact same full talent-tree
+    -- tooltip scan (every tab x every talent, one GameTooltip:SetTalent +
+    -- line-by-line read each) twice in a row on every single point spent,
+    -- both bypassing CaptureAndCacheMyTalents' own 3s throttle since both
+    -- calls passed force=true. Respeccing (10-51 points) meant a double
+    -- full-tree scan-and-broadcast burst per click.
     LeafVE:BroadcastMyTalents(true)
     local me = ShortName(UnitName("player"))
     if me and LeafVE.UI and LeafVE.UI.cardCurrentPlayer and Lower(LeafVE.UI.cardCurrentPlayer) == Lower(me) then
