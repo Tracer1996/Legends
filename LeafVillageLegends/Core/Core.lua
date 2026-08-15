@@ -276,11 +276,11 @@ WORK_ORDER_REPUTATION_FAST_COMPLETE_12H_BONUS = 5
 WORK_ORDER_REPUTATION_FAST_COMPLETE_24H_BONUS = 3
 WORK_ORDER_REPUTATION_PROMPT_VERIFY_24H_BONUS = 1
 WORK_ORDER_REPUTATION_BADGE_THRESHOLDS = {
-  firstContract = 200,
-  trustedHand = 600,
-  villageArtisan = 1500,
-  masterSupplier = 3000,
-  leafLegend = 6000,
+  firstContract = 800,
+  trustedHand = 2400,
+  villageArtisan = 6000,
+  masterSupplier = 12000,
+  leafLegend = 24000,
 }
 WORK_ORDER_REPUTATION_TIERS = {
   { name = "Ashen Apprentice", min = 0 },
