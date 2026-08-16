@@ -629,7 +629,11 @@ end
 local function AddScrollBarArrows(scrollBar, panel)
   if not scrollBar or not panel then return end
 
-  local arrowSize = 20
+  -- Square, not stretched to the scrollbar's width -- Blizzard's arrow
+  -- textures are square art, and forcing a non-square button distorts
+  -- them.
+  local arrowWidth = 18
+  local arrowSize = 18
   local arrowLevel = (panel:GetFrameLevel() or 0) + 10
 
   local function Step(sign)
@@ -646,24 +650,25 @@ local function AddScrollBarArrows(scrollBar, panel)
     scrollBar:SetValue(newV)
   end
 
-  local upBtn = CreateFrame("Button", nil, panel)
-  upBtn:SetWidth(arrowSize)
+  -- Built with Blizzard's own UIPanelScroll{Up,Down}ButtonTemplate instead
+  -- of manually assigning textures -- that's the exact same template
+  -- UIPanelScrollFrameTemplate uses internally to build its own arrows
+  -- (see the "View All Achievements" popup's native scrollbar), so this
+  -- inherits its textures AND its highlight/pushed/disabled behavior
+  -- automatically, guaranteed pixel-identical instead of us trying to
+  -- re-guess it.
+  local upBtn = CreateFrame("Button", nil, panel, "UIPanelScrollUpButtonTemplate")
+  upBtn:SetWidth(arrowWidth)
   upBtn:SetHeight(arrowSize)
   upBtn:SetPoint("BOTTOM", scrollBar, "TOP", 0, 2)
   upBtn:SetFrameLevel(arrowLevel)
-  if LeafVE_FrameSkins and LeafVE_FrameSkins.ApplyScrollArrow then
-    LeafVE_FrameSkins.ApplyScrollArrow(upBtn, "up")
-  end
   upBtn:SetScript("OnClick", function() Step(-1) end)
 
-  local downBtn = CreateFrame("Button", nil, panel)
-  downBtn:SetWidth(arrowSize)
+  local downBtn = CreateFrame("Button", nil, panel, "UIPanelScrollDownButtonTemplate")
+  downBtn:SetWidth(arrowWidth)
   downBtn:SetHeight(arrowSize)
   downBtn:SetPoint("TOP", scrollBar, "BOTTOM", 0, -2)
   downBtn:SetFrameLevel(arrowLevel)
-  if LeafVE_FrameSkins and LeafVE_FrameSkins.ApplyScrollArrow then
-    LeafVE_FrameSkins.ApplyScrollArrow(downBtn, "down")
-  end
   downBtn:SetScript("OnClick", function() Step(1) end)
 
   return upBtn, downBtn
@@ -35775,18 +35780,17 @@ function BuildBadgesPanel(panel)
   -- Arrow buttons are parented directly to "panel" (not to scrollBar) and
   -- given an explicit frame level above it, so they can't end up buried
   -- behind another sibling layer regardless of build order.
-  local scrollUpBtn = CreateFrame("Button", nil, panel)
-  scrollUpBtn:SetWidth(20)
-  scrollUpBtn:SetHeight(20)
+  -- Built with Blizzard's own UIPanelScrollUpButtonTemplate instead of
+  -- manually assigning textures -- inherits the exact same textures and
+  -- highlight/pushed/disabled behavior as the native scrollbar on the
+  -- "View All Achievements" popup, guaranteed pixel-identical.
+  local scrollUpBtn = CreateFrame("Button", nil, panel, "UIPanelScrollUpButtonTemplate")
+  -- Square -- Blizzard's arrow art is square, and a non-square button
+  -- stretches/distorts it.
+  scrollUpBtn:SetWidth(18)
+  scrollUpBtn:SetHeight(18)
   scrollUpBtn:SetPoint("BOTTOM", scrollBar, "TOP", 0, 2)
   scrollUpBtn:SetFrameLevel((panel:GetFrameLevel() or 0) + 10)
-  -- Not the local "FrameSkins" var -- on this client it resolves to an
-  -- incomplete table (missing ApplyScrollArrow) instead of the real,
-  -- fully-populated global LeafVE_FrameSkins that FrameSkins.lua actually
-  -- builds. Reference the confirmed-good global directly.
-  if LeafVE_FrameSkins and LeafVE_FrameSkins.ApplyScrollArrow then
-    LeafVE_FrameSkins.ApplyScrollArrow(scrollUpBtn, "up")
-  end
   scrollUpBtn:SetScript("OnClick", function()
     local maxScroll = scrollFrame:GetVerticalScrollRange()
     local newScroll = (scrollFrame:GetVerticalScroll() or 0) - 80
@@ -35798,14 +35802,11 @@ function BuildBadgesPanel(panel)
   end)
   panel.scrollUpBtn = scrollUpBtn
 
-  local scrollDownBtn = CreateFrame("Button", nil, panel)
-  scrollDownBtn:SetWidth(20)
-  scrollDownBtn:SetHeight(20)
+  local scrollDownBtn = CreateFrame("Button", nil, panel, "UIPanelScrollDownButtonTemplate")
+  scrollDownBtn:SetWidth(18)
+  scrollDownBtn:SetHeight(18)
   scrollDownBtn:SetPoint("TOP", scrollBar, "BOTTOM", 0, -2)
   scrollDownBtn:SetFrameLevel((panel:GetFrameLevel() or 0) + 10)
-  if LeafVE_FrameSkins and LeafVE_FrameSkins.ApplyScrollArrow then
-    LeafVE_FrameSkins.ApplyScrollArrow(scrollDownBtn, "down")
-  end
   scrollDownBtn:SetScript("OnClick", function()
     local maxScroll = scrollFrame:GetVerticalScrollRange()
     local newScroll = (scrollFrame:GetVerticalScroll() or 0) + 80
