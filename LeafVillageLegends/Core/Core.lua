@@ -17331,6 +17331,15 @@ function LeafVE.UI:BuildGroupedNavigation(parent)
     local btn = CreateWorkOrderModeButton(parent, category.label)
     btn:SetHeight(20)
     btn:SetWidth(category.width or 76)
+    -- Same fix as TabButton (see its comment): these are the actual visible
+    -- nav bar buttons under grouped navigation -- TabButton()'s buttons get
+    -- hidden in this mode instead. Parented directly to f, they default to
+    -- f+1, while content panels default to f+3 (nested three levels deep:
+    -- f -> self.inset -> self.left -> self.panels.X). +4 clears that with a
+    -- little headroom.
+    if btn.SetFrameLevel and parent and parent.GetFrameLevel then
+      btn:SetFrameLevel((parent:GetFrameLevel() or 0) + 4)
+    end
     if previousButton then
       btn:SetPoint("LEFT", previousButton, "RIGHT", 4, 0)
     else
@@ -17382,6 +17391,9 @@ function LeafVE.UI:BuildGroupedNavigation(parent)
     local btn = CreateWorkOrderModeButton(parent, "")
     btn:SetHeight(20)
     btn:SetWidth(80)
+    if btn.SetFrameLevel and parent and parent.GetFrameLevel then
+      btn:SetFrameLevel((parent:GetFrameLevel() or 0) + 4)
+    end
     if i == 1 then
       btn:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -78)
     else
@@ -40655,7 +40667,7 @@ function LeafVE.UI:Build()
     f:ClearAllPoints()
     f:SetPoint(LeafVE_DB.ui.point, UIParent, LeafVE_DB.ui.relativePoint or "CENTER", LeafVE_DB.ui.x, LeafVE_DB.ui.y)
   end
-  
+
   f:Hide()
 end
 
