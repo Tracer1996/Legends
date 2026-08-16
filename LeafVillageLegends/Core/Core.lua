@@ -39387,11 +39387,12 @@ function LeafVE.UI:RefreshBadges()
       currentY = currentY - (row * ySpacing) - rowExtraBefore - 10
     end
 
-    -- Room past the last row's icon for its name label, plus a full extra
-    -- row of slack -- trimming this down to just the label clearance let
-    -- the bottom row get cut off again, so the extra row stays as a safety
-    -- margin even with SetScrollChild re-registered below.
-    local calculatedHeight = math.max(math.abs(currentY) + (ySpacing - badgeSize) + 20 + ySpacing, 100)
+    -- Room past the last row's icon for its name label. The extra full-row
+    -- safety margin this used to carry was masking the real bug (the first
+    -- build not settling in time -- see the initial-refresh follow-up in
+    -- Refresh()); with that fixed at the source, just the label clearance
+    -- is enough.
+    local calculatedHeight = math.max(math.abs(currentY) + (ySpacing - badgeSize) + 6, 100)
     scrollChild:SetHeight(1)
     scrollChild:Show()
     scrollChild:SetHeight(calculatedHeight)
@@ -41028,6 +41029,26 @@ function LeafVE.UI:Refresh()
         and LeafVE.UI.panels and LeafVE.UI.panels.badges
         and LeafVE.UI.panels.badges:IsVisible() then
         LeafVE.UI:RefreshBadges()
+
+        -- First-ever visit only: every badge icon frame is being created
+        -- fresh inside that RefreshBadges call, and this client doesn't
+        -- always finish settling their true layout geometry (widths/
+        -- heights) within the same tick the scroll height gets computed
+        -- from -- so the very first build can undercount it. Navigating
+        -- away and back "fixes" it because by then everything's already
+        -- laid out from the first build. A short follow-up refresh, once
+        -- things have actually settled, gets the same result without
+        -- needing to leave and come back.
+        if not LeafVE.UI.panels.badges._leafveDidInitialRefresh then
+          LeafVE.UI.panels.badges._leafveDidInitialRefresh = true
+          LeafVE:ScheduleDeferred("badges_panel_initial_refresh_settle", 0.2, function()
+            if LeafVE and LeafVE.UI and LeafVE.UI.activeTab == "badges"
+              and LeafVE.UI.panels and LeafVE.UI.panels.badges
+              and LeafVE.UI.panels.badges:IsVisible() then
+              LeafVE.UI:RefreshBadges()
+            end
+          end)
+        end
       end
     end)
 
