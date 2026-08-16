@@ -35505,6 +35505,12 @@ function BuildLiveHistoryPanel(panel)
   subtitle:SetPoint("TOP", h, "BOTTOM", 0, -3)
   subtitle:SetText("|cFF888888Live feed of all guild member point transactions|r")
 
+  -- Same reasoning as BuildOptionsPanel/BuildHistoryPanel: register with the
+  -- shared header system so EnsureTextPageHeaders() updates this title
+  -- instead of creating a second, overlapping one.
+  panel._ashenHeaderTitle = h
+  panel._ashenHeaderSubtitle = subtitle
+
   local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
   scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -75)
   scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -48, 12)
@@ -35599,10 +35605,16 @@ function BuildHistoryPanel(panel)
   local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   h:SetPoint("TOP", headerBG, "TOP", 0, -13)
   h:SetText("|cFFFFD700Point History|r")
-  
+
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   subtitle:SetPoint("TOP", h, "BOTTOM", 0, -3)
   subtitle:SetText("|cFF888888Complete log of all your point transactions|r")
+
+  -- Same reasoning as BuildOptionsPanel/BuildLiveHistoryPanel: register with
+  -- the shared header system so EnsureTextPageHeaders() updates this title
+  -- instead of creating a second, overlapping one.
+  panel._ashenHeaderTitle = h
+  panel._ashenHeaderSubtitle = subtitle
   
 local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
   scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -75)  -- ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Ãƒâ€šÃ‚Â CHANGED from -45
@@ -36224,6 +36236,14 @@ function BuildOptionsPanel(panel)
   local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   subtitle:SetPoint("TOP", h, "BOTTOM", 0, -3)
   subtitle:SetText("|cFF888888Configure addon behaviour|r")
+
+  -- Not registering these with panel._ashenHeaderTitle/_ashenHeaderSubtitle
+  -- (unlike every other panel's own header) left EnsureTextPageHeaders()
+  -- thinking this panel had no title yet, so it created a second,
+  -- independent "Options" title/subtitle overlapping this one at a
+  -- slightly different position -- the "OpOptions" double-render.
+  panel._ashenHeaderTitle = h
+  panel._ashenHeaderSubtitle = subtitle
 
   local yBase = -80
   local gap = 36
