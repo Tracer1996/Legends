@@ -5459,6 +5459,12 @@ function LeafVE_AchTest.UI:BuildZoneMapFrame()
   f:SetFrameLevel(150)
   f:SetToplevel(true)
   f:EnableMouse(true)
+  -- EnableMouse alone doesn't stop wheel scroll from bleeding through to
+  -- the camera over any part of this window not covered by a scrollable
+  -- sub-viewport -- needs EnableMouseWheel plus an OnMouseWheel script
+  -- that actually consumes the event (a no-op is enough).
+  f:EnableMouseWheel(true)
+  f:SetScript("OnMouseWheel", function() end)
   f:SetMovable(true)
   f:RegisterForDrag("LeftButton")
   f:SetScript("OnDragStart", function() f:StartMoving() end)
@@ -6051,6 +6057,12 @@ function LeafVE_AchTest.UI:Build()
   f:SetFrameLevel(100)
   f:SetToplevel(true)
   f:EnableMouse(true)
+  -- EnableMouse alone doesn't stop wheel scroll from bleeding through to
+  -- the camera over any part of this window not covered by a scrollable
+  -- sub-viewport -- needs EnableMouseWheel plus an OnMouseWheel script
+  -- that actually consumes the event (a no-op is enough).
+  f:EnableMouseWheel(true)
+  f:SetScript("OnMouseWheel", function() end)
   f:SetMovable(true)
   f:RegisterForDrag("LeftButton")
   f:SetScript("OnDragStart", function() f:StartMoving() end)
@@ -7241,6 +7253,29 @@ function LeafVE_AchTest.UI:Build()
   end)
 
   scrollFrame:SetScript("OnMouseWheel", function()
+    -- Mounts/Companions/Toys cap their card grid to always fit the
+    -- viewport (see BuildCollectionView), so there's never anything to
+    -- vertically scroll on those tabs -- repurpose the wheel to turn pages
+    -- instead, same as clicking the prev/next page-turn buttons. Any
+    -- overshoot past totalPages gets clamped inside BuildCollectionView
+    -- itself, so no need to recompute it here.
+    local view = LeafVE_AchTest.UI and LeafVE_AchTest.UI.currentView
+    local kind = (view == "mounts" and "mount") or (view == "companions" and "companion") or (view == "toys" and "toy")
+    -- Not a bare "ABC" -- that name is local to LeafVillageAchievementsCollections.lua
+    -- and isn't visible from this file. LeafVE_AchTest.Collections is the
+    -- same table under its real cross-file name (see GetItemIconForAchievement
+    -- elsewhere in this file for the same pattern).
+    local collections = LeafVE_AchTest.Collections
+    if kind and collections and collections.pages and collections.BuildCollectionView then
+      if arg1 > 0 then
+        collections.pages[kind] = math.max((tonumber(collections.pages[kind]) or 1) - 1, 1)
+      else
+        collections.pages[kind] = (tonumber(collections.pages[kind]) or 1) + 1
+      end
+      collections:BuildCollectionView(kind)
+      return
+    end
+
     if this.UpdateScrollChildRect then this:UpdateScrollChildRect() end
     local current = this:GetVerticalScroll()
     local maxScroll = LeafVE_AchTest.UI and LeafVE_AchTest.UI:GetScrollMax() or this:GetVerticalScrollRange()
