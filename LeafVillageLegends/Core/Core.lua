@@ -17032,6 +17032,20 @@ local function TabButton(parent, text, name)
   b:SetText(text)
   LeafVECallSkin("SkinTab", b, false)
   SkinButtonAccent(b)
+  -- Tab buttons parent directly to the main window frame (f), giving them a
+  -- default level of f+1. Content panels are nested three levels deeper
+  -- (f -> self.inset -> self.left -> self.panels.X), defaulting to f+3 --
+  -- structurally above the tabs. There's normally a small gap between the
+  -- tab row and where panel content starts, so this doesn't usually matter,
+  -- but panels only recently gained real backdrop content (previously
+  -- transparent), so that higher layer now has something to paint over the
+  -- tabs whenever that thin margin gets crossed (resize, scale rounding).
+  -- +4 clears panels' f+3 with a little headroom, without the earlier,
+  -- much larger +20 bump that overshot past other elements and broke the
+  -- window's own backdrop.
+  if b.SetFrameLevel and parent and parent.GetFrameLevel then
+    b:SetFrameLevel((parent:GetFrameLevel() or 0) + 4)
+  end
   if LEAFVE_UI_MODERN and LEAFVE_UI_MODERN.StyleButton then
     LEAFVE_UI_MODERN:StyleButton(b)
   end
