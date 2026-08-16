@@ -34,7 +34,7 @@ LeafVE_AshenDossierSkin.DEFAULT_LAYOUT = {
   rank         = { x = -4,  y = -270, w = 382, h = 30,  bleed = 4  },
   recent       = { x = 16,  y = -44,  w = 210, h = 280, bleed = 28 },
   achievements = { x = 10,  y = -22,  w = 228, h = 322, bleed = 8  },
-  name         = { x = -4,  y = -25,  w = 30,  h = 22,  bleed = 0, align = "CENTER" },
+  name         = { x = -4,  y = -25,  w = 380, h = 22,  bleed = 0, align = "CENTER" },
   classText    = { x = -4,  y = -54,  w = 360, h = 34,  bleed = 0, align = "CENTER" },
   topSpec      = { x = 0,   y = -48,  w = 220, h = 16,  bleed = 0, align = "CENTER" },
   specBtn      = { x = 130, y = -66,  w = 116, h = 20,  bleed = 0, align = "CENTER" },
@@ -119,10 +119,23 @@ LeafVE_AshenDossierSkin.PAGE_HEADER_EDITOR_LABELS = {
 }
 
 -- Hardcode the approved layout once so older SavedVariables from the live editor do not override it.
-LeafVE_AshenDossierSkin.LAYOUT_VERSION = 37
-if LeafVE_AshenDossierLayout.__layoutVersion ~= LeafVE_AshenDossierSkin.LAYOUT_VERSION then
+-- Bumped 37 -> 38: "name" piece's saved width was stuck at 30px (a bug --
+-- every other text piece here is 100+), clipping the character card name
+-- down to its first letter plus this client's overflow ellipsis even
+-- though the underlying text was always the full, correct name.
+--
+-- This check used to run immediately at file-load (top-level, no function
+-- wrapper). On this client that's provably too early: LeafVE_AshenDossierLayout
+-- reads as a fresh/empty table at that point (SavedVariables for this addon
+-- apparently aren't injected into the global yet), so the reseed ran against
+-- the wrong table and got silently clobbered once the real disk-loaded data
+-- (still version 37) landed afterward. EnsureLayoutVersion() is idempotent
+-- and safe to call from ApplyLayout on every use -- by the time that actually
+-- runs (UI construction, well after file load), SavedVariables are real.
+function LeafVE_AshenDossierSkin:EnsureLayoutVersion()
+  if LeafVE_AshenDossierLayout.__layoutVersion == self.LAYOUT_VERSION then return end
   local k, v
-  for k, v in pairs(LeafVE_AshenDossierSkin.DEFAULT_LAYOUT) do
+  for k, v in pairs(self.DEFAULT_LAYOUT) do
     LeafVE_AshenDossierLayout[k] = {
       x = v.x,
       y = v.y,
@@ -134,8 +147,9 @@ if LeafVE_AshenDossierLayout.__layoutVersion ~= LeafVE_AshenDossierSkin.LAYOUT_V
   end
   LeafVE_AshenDossierLayout.editorButton = { x = 375, y = 25 }
   LeafVE_AshenDossierLayout.editorFrame = { x = 488, y = 18 }
-  LeafVE_AshenDossierLayout.__layoutVersion = LeafVE_AshenDossierSkin.LAYOUT_VERSION
+  LeafVE_AshenDossierLayout.__layoutVersion = self.LAYOUT_VERSION
 end
+LeafVE_AshenDossierSkin.LAYOUT_VERSION = 38
 
 function LeafVE_AshenDossierSkin:Print(msg)
   if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700AshenLayout:|r " .. tostring(msg)) end
@@ -366,18 +380,18 @@ function LeafVE_AshenDossierSkin:SkinBottomPanel(panel, assetName)
   self:ClearBackdrop(panel)
   self:HideFrameTextures(panel)
 
-  -- Solid dark fill behind the custom art. This fixes transparent/cleaned areas
-  -- and prevents the white checkerboard-looking source background from showing.
-  local fill = panel._abSectionDarkFill
-  if not fill then
-    fill = panel:CreateTexture(nil, "BACKGROUND")
-    panel._abSectionDarkFill = fill
+  local piece = panel._abLayoutPiece or "recent"
+  local bleed = self:GetVal(piece, "bleed") or 10
+
+  -- Used to have a solid black fill behind the art here, to hide a white
+  -- checkerboard-looking source background showing through the art's
+  -- transparent regions. Removed: the card's own backdrop is a solid dark
+  -- color now (was not, when this fill was added), so there's nothing left
+  -- to hide -- and the fill's own edge was itself showing as a stray black
+  -- rectangle wherever it didn't line up exactly with the art's edge.
+  if panel._abSectionDarkFill then
+    panel._abSectionDarkFill:Hide()
   end
-  fill:ClearAllPoints()
-  fill:SetAllPoints(panel)
-  fill:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
-  if fill.SetVertexColor then fill:SetVertexColor(0, 0, 0, 1) end
-  fill:Show()
 
   local art = panel._abSectionArt
   if not art then
@@ -386,8 +400,6 @@ function LeafVE_AshenDossierSkin:SkinBottomPanel(panel, assetName)
   end
   art:ClearAllPoints()
   -- Let the art bleed slightly past the panel edges so the frame fills the box.
-  local piece = panel._abLayoutPiece or "recent"
-  local bleed = self:GetVal(piece, "bleed") or 10
   art:SetPoint("TOPLEFT", panel, "TOPLEFT", -bleed, bleed)
   art:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", bleed, -bleed)
   self:SetTexture(art, assetName, 1)
@@ -714,6 +726,7 @@ end
 
 function LeafVE_AshenDossierSkin:ApplyLayout(ui)
   if not ui or not ui.cardHeroPanel then return end
+  self:EnsureLayoutVersion()
   local hero = ui.cardHeroPanel
   local card = ui.card or (hero.GetParent and hero:GetParent())
 

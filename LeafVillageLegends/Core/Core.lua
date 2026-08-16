@@ -629,7 +629,7 @@ end
 local function AddScrollBarArrows(scrollBar, panel)
   if not scrollBar or not panel then return end
 
-  local arrowSize = 16
+  local arrowSize = 20
   local arrowLevel = (panel:GetFrameLevel() or 0) + 10
 
   local function Step(sign)
@@ -675,13 +675,30 @@ end
 -- user is mid-scroll reading something. GetVerticalScroll() still reports
 -- whatever was last set (it isn't auto-clamped when content resizes), so
 -- restoring it here just needs clamping against the freshly-rebuilt range.
-local function RestoreScrollPosition(scrollFrame)
+--
+-- Optional second arg: most call sites immediately follow this with their
+-- own scrollBar:SetValue(0), which fires that scrollbar's OnValueChanged
+-- and recomputes SetVerticalScroll from the slider's value -- silently
+-- undoing the restore above. Passing the scrollBar here syncs its value to
+-- match the restored fraction instead of hardcoding it back to 0. Using a
+-- fraction of GetMinMaxValues() (not a raw pixel value) works regardless of
+-- whether a given panel's scrollbar uses a raw pixel range or badges' fixed
+-- 0-100 convention.
+local function RestoreScrollPosition(scrollFrame, scrollBar)
   if not scrollFrame then return end
   local saved = scrollFrame:GetVerticalScroll() or 0
   local maxScroll = scrollFrame:GetVerticalScrollRange() or 0
   if saved > maxScroll then saved = maxScroll end
   if saved < 0 then saved = 0 end
   scrollFrame:SetVerticalScroll(saved)
+
+  if scrollBar then
+    local minV, maxV = scrollBar:GetMinMaxValues()
+    if minV and maxV and maxV > minV then
+      local fraction = (maxScroll > 0) and (saved / maxScroll) or 0
+      scrollBar:SetValue(minV + fraction * (maxV - minV))
+    end
+  end
 end
 
 local function LeafVEApplyFont(fontString, styleKey, flags)
@@ -3574,7 +3591,15 @@ do
       end
 
       this.elapsed = (this.elapsed or 0) + (arg1 or 0)
-      if this.elapsed >= (GetRaiseBannerConfig().frameTime or RAISE_BANNER_DEFAULTS.frameTime) then
+      -- Not GetRaiseBannerConfig() here -- it rebuilds and rewrites every
+      -- key in the config table (not just frameTime), unconditionally, and
+      -- this OnUpdate runs every single frame for as long as the banner is
+      -- visible (i.e. continuously, on every tab). That's several table
+      -- writes ~60 times a second for a value that only ever changes via
+      -- the layout editor. Read just frameTime directly instead.
+      local frameTime = (LeafVE_DB and LeafVE_DB.ui and LeafVE_DB.ui.raiseBanner
+        and tonumber(LeafVE_DB.ui.raiseBanner.frameTime)) or RAISE_BANNER_DEFAULTS.frameTime
+      if this.elapsed >= frameTime then
         this.elapsed = 0
         if (this.frameIndex or 1) < RAISE_BANNER_SWAY_START then
           this.frameIndex = (this.frameIndex or 1) + 1
@@ -7265,6 +7290,18 @@ function LeafVE:GetChatBadgeLink(badge)
   return self:GetChatAnnouncementLink("leafve_badge:" .. tostring(badge.id or ""), "[" .. tostring(badge.name or "") .. "]", "FF" .. RGBToHex(qr, qg, qb))
 end
 
+-- WoW character names are 2-12 letters, nothing else -- so this rejects
+-- anything that can't actually be a valid name. Needed because cached
+-- guildInfo.name/persistent.name values can carry forward old corrupted
+-- data (e.g. a name saved mid-ellipsis by a since-fixed bug) indefinitely,
+-- since nothing else ever revalidates or overwrites them.
+local function IsValidPlayerDisplayName(name)
+  if type(name) ~= "string" then return false end
+  local len = string.len(name)
+  if len < 2 or len > 12 then return false end
+  return string.find(name, "^%a+$") ~= nil
+end
+
 function LeafVE:GetStoredDisplayPlayerName(playerName)
   local shortName = ShortName(playerName) or tostring(playerName or "")
   if shortName == "" then
@@ -7272,12 +7309,12 @@ function LeafVE:GetStoredDisplayPlayerName(playerName)
   end
 
   local guildInfo = self:GetGuildInfo(shortName)
-  if guildInfo and guildInfo.name and guildInfo.name ~= "" then
+  if guildInfo and IsValidPlayerDisplayName(guildInfo.name) then
     return guildInfo.name
   end
 
   local persistent = LeafVE_DB and LeafVE_DB.persistentRoster and LeafVE_DB.persistentRoster[Lower(shortName)]
-  if persistent and persistent.name and persistent.name ~= "" then
+  if persistent and IsValidPlayerDisplayName(persistent.name) then
     return persistent.name
   end
 
@@ -17461,8 +17498,8 @@ function LeafVE.UI:BuildPlayerCard(parent)
   -- left a gap above/right of the card exposing the inset's background
   -- behind it (barely visible before the panels had a real backdrop of
   -- their own, obvious once SkinPrimaryPanel started drawing one).
-  c:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
-  c:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, 10)
+  c:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -4, 0)
+  c:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -4, 10)
   c:SetWidth(480)
 
   local heroPanel = CreateFrame("Frame", nil, c)
@@ -18824,6 +18861,15 @@ function LeafVE.UI:ShowPlayerCard(playerName)
   self.cardName:SetPoint("TOP", self.cardHeroPanel or self.card, "TOP", 0, 8)
   self.cardName:SetText(LeafVE:BuildPlayerCardNameMarkup(playerName, class))
   self.cardName:SetTextColor(1, 1, 1)
+  -- Defensive re-assert: the dossier layout's saved width for this piece
+  -- was corrupted by a SavedVariables load-order race (see EnsureLayoutVersion
+  -- in AshenDossierSkin.lua), which is now fixed at the source. Keeping this
+  -- as a cheap safety net so a name never silently clips again either way.
+  local nameWidth = (LeafVE_AshenDossierSkin and LeafVE_AshenDossierSkin.GetVal
+    and LeafVE_AshenDossierSkin:GetVal("name", "w")) or 380
+  if nameWidth and nameWidth > 0 then
+    self.cardName:SetWidth(nameWidth)
+  end
   self.cardClassLevelRank:SetText(string.format("|cFF%sLevel %s %s|r\n|cFFFFD700%s|r", RGBToHex(classColor[1], classColor[2], classColor[3]), tostring(level), class, rank))
   if self.cardHeroAccent then
     self.cardHeroAccent:SetVertexColor(classColor[1], classColor[2], classColor[3], 0.24)
@@ -25252,7 +25298,7 @@ function CreateGuildBankItemButton(parent)
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
   qtyBG:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
-  qtyBG:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
+  qtyBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
   btn.qtyBG = qtyBG
 
   local qtyInput = CreateFrame("EditBox", nil, qtyBG)
@@ -25618,7 +25664,7 @@ function CreateWorkOrderCoinField(parent, width, iconTexture)
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
   bg:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
-  bg:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
+  bg:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
 
   local input = CreateFrame("EditBox", nil, bg)
   input:SetPoint("TOPLEFT", bg, "TOPLEFT", 4, -3)
@@ -26567,7 +26613,7 @@ function BuildWorkOrderCraftersPanel(popup)
   scrollBar:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", 22, -18)
   scrollBar:SetPoint("BOTTOMRIGHT", craftersPanel, "BOTTOMRIGHT", -8, 28)
   AddScrollBarArrows(scrollBar, craftersPanel)
-  scrollBar:SetWidth(16)
+  scrollBar:SetWidth(20)
   scrollBar:SetOrientation("VERTICAL")
   scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   scrollBar:SetMinMaxValues(0, 0)
@@ -26575,8 +26621,8 @@ function BuildWorkOrderCraftersPanel(popup)
   scrollBar:SetValueStep(1)
   scrollBar.popup = popup
   local thumb = scrollBar:GetThumbTexture()
-  thumb:SetWidth(16)
-  thumb:SetHeight(24)
+  thumb:SetWidth(20)
+  thumb:SetHeight(28)
   scrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -26584,7 +26630,7 @@ function BuildWorkOrderCraftersPanel(popup)
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   scrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  scrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  scrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   scrollBar:SetScript("OnValueChanged", function()
     if this.ignoreUpdate then return end
     local owner = this.popup
@@ -27065,7 +27111,7 @@ function LeafVE.UI:CreateWorkOrderCrafterSignupPopup()
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
   searchBG:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
-  searchBG:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
+  searchBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
   popup.searchBG = searchBG
 
   local searchBox = CreateFrame("EditBox", nil, searchBG)
@@ -27117,7 +27163,7 @@ function LeafVE.UI:CreateWorkOrderCrafterSignupPopup()
   recipeScrollBar:SetPoint("TOPRIGHT", recipePanel, "TOPRIGHT", -8, -76)
   recipeScrollBar:SetPoint("BOTTOMRIGHT", recipePanel, "BOTTOMRIGHT", -8, 28)
   AddScrollBarArrows(recipeScrollBar, recipePanel)
-  recipeScrollBar:SetWidth(16)
+  recipeScrollBar:SetWidth(20)
   recipeScrollBar:SetOrientation("VERTICAL")
   recipeScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   recipeScrollBar:SetMinMaxValues(0, 0)
@@ -27125,8 +27171,8 @@ function LeafVE.UI:CreateWorkOrderCrafterSignupPopup()
   recipeScrollBar:SetValueStep(1)
   recipeScrollBar.popup = popup
   local recipeThumb = recipeScrollBar:GetThumbTexture()
-  recipeThumb:SetWidth(16)
-  recipeThumb:SetHeight(24)
+  recipeThumb:SetWidth(20)
+  recipeThumb:SetHeight(28)
   recipeScrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -27134,7 +27180,7 @@ function LeafVE.UI:CreateWorkOrderCrafterSignupPopup()
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   recipeScrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  recipeScrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  recipeScrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   recipeScrollBar:SetScript("OnValueChanged", function()
     if this.ignoreUpdate then return end
     local owner = this.popup
@@ -27840,7 +27886,7 @@ function LeafVE.UI:CreateWorkOrderPopup()
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
   searchBG:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
-  searchBG:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
+  searchBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
 
   local searchBox = CreateFrame("EditBox", nil, searchBG)
   searchBox:SetPoint("TOPLEFT", searchBG, "TOPLEFT", 5, -4)
@@ -27890,7 +27936,7 @@ function LeafVE.UI:CreateWorkOrderPopup()
   recipeScrollBar:SetPoint("TOPRIGHT", recipePanel, "TOPRIGHT", -8, -76)
   recipeScrollBar:SetPoint("BOTTOMRIGHT", recipePanel, "BOTTOMRIGHT", -8, 28)
   AddScrollBarArrows(recipeScrollBar, recipePanel)
-  recipeScrollBar:SetWidth(16)
+  recipeScrollBar:SetWidth(20)
   recipeScrollBar:SetOrientation("VERTICAL")
   recipeScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   recipeScrollBar:SetMinMaxValues(0, 0)
@@ -27898,8 +27944,8 @@ function LeafVE.UI:CreateWorkOrderPopup()
   recipeScrollBar:SetValueStep(1)
   recipeScrollBar.popup = popup
   local recipeThumb = recipeScrollBar:GetThumbTexture()
-  recipeThumb:SetWidth(16)
-  recipeThumb:SetHeight(24)
+  recipeThumb:SetWidth(20)
+  recipeThumb:SetHeight(28)
   recipeScrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -27907,7 +27953,7 @@ function LeafVE.UI:CreateWorkOrderPopup()
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   recipeScrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  recipeScrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  recipeScrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   recipeScrollBar:SetScript("OnValueChanged", function()
     if this.ignoreUpdate then return end
     local owner = this.popup
@@ -28077,7 +28123,7 @@ function LeafVE.UI:CreateWorkOrderPopup()
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
   qtyBG:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
-  qtyBG:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
+  qtyBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
 
   local qtyInput = CreateFrame("EditBox", nil, qtyBG)
   qtyInput:SetPoint("TOPLEFT", qtyBG, "TOPLEFT", 5, -3)
@@ -28157,7 +28203,7 @@ function LeafVE.UI:CreateWorkOrderPopup()
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
   customGatherBG:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
-  customGatherBG:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
+  customGatherBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
   customGatherBG:Hide()
   popup.customGatherBG = customGatherBG
 
@@ -28338,7 +28384,7 @@ function LeafVE.UI:CreateWorkOrderPopup()
   orderScrollBar:SetPoint("TOPRIGHT", orderListFrame, "TOPRIGHT", 22, -18)
   orderScrollBar:SetPoint("BOTTOMRIGHT", ordersPanel, "BOTTOMRIGHT", -8, 28)
   AddScrollBarArrows(orderScrollBar, ordersPanel)
-  orderScrollBar:SetWidth(16)
+  orderScrollBar:SetWidth(20)
   orderScrollBar:SetOrientation("VERTICAL")
   orderScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   orderScrollBar:SetMinMaxValues(0, 0)
@@ -28346,8 +28392,8 @@ function LeafVE.UI:CreateWorkOrderPopup()
   orderScrollBar:SetValueStep(1)
   orderScrollBar.popup = popup
   local orderThumb = orderScrollBar:GetThumbTexture()
-  orderThumb:SetWidth(16)
-  orderThumb:SetHeight(24)
+  orderThumb:SetWidth(20)
+  orderThumb:SetHeight(28)
   orderScrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -28355,7 +28401,7 @@ function LeafVE.UI:CreateWorkOrderPopup()
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   orderScrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  orderScrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  orderScrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   orderScrollBar:SetScript("OnValueChanged", function()
     if this.ignoreUpdate then return end
     local owner = this.popup
@@ -31276,7 +31322,7 @@ function LeafVE.UI:CreateGuildBankPopup()
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
   ownerBG:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
-  ownerBG:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
+  ownerBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
   popup.ownerBG = ownerBG
 
   local ownerInput = CreateFrame("EditBox", nil, ownerBG)
@@ -31425,7 +31471,7 @@ function LeafVE.UI:CreateGuildBankPopup()
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
   searchBG:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
-  searchBG:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
+  searchBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
 
   local searchBox = CreateFrame("EditBox", nil, searchBG)
   searchBox:SetPoint("TOPLEFT", searchBG, "TOPLEFT", 6, -3)
@@ -31474,7 +31520,7 @@ function LeafVE.UI:CreateGuildBankPopup()
   scrollBar:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", 22, -18)
   scrollBar:SetPoint("BOTTOMRIGHT", inventoryPanel, "BOTTOMRIGHT", -8, 28)
   AddScrollBarArrows(scrollBar, inventoryPanel)
-  scrollBar:SetWidth(16)
+  scrollBar:SetWidth(20)
   scrollBar:SetOrientation("VERTICAL")
   scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   scrollBar:SetMinMaxValues(0, 0)
@@ -31482,8 +31528,8 @@ function LeafVE.UI:CreateGuildBankPopup()
   scrollBar:SetValueStep(1)
   scrollBar.popup = popup
   local thumb = scrollBar:GetThumbTexture()
-  thumb:SetWidth(16)
-  thumb:SetHeight(24)
+  thumb:SetWidth(20)
+  thumb:SetHeight(28)
   scrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -31491,7 +31537,7 @@ function LeafVE.UI:CreateGuildBankPopup()
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   scrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  scrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  scrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   scrollBar:SetScript("OnValueChanged", function()
     if this.ignoreUpdate then return end
     local owner = this.popup
@@ -31548,7 +31594,7 @@ function LeafVE.UI:CreateGuildBankPopup()
   requestScrollBar:SetPoint("TOPRIGHT", requestListFrame, "TOPRIGHT", 22, -18)
   requestScrollBar:SetPoint("BOTTOMRIGHT", requestsPanel, "BOTTOMRIGHT", -8, 28)
   AddScrollBarArrows(requestScrollBar, requestsPanel)
-  requestScrollBar:SetWidth(16)
+  requestScrollBar:SetWidth(20)
   requestScrollBar:SetOrientation("VERTICAL")
   requestScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   requestScrollBar:SetMinMaxValues(0, 0)
@@ -31556,8 +31602,8 @@ function LeafVE.UI:CreateGuildBankPopup()
   requestScrollBar:SetValueStep(1)
   requestScrollBar.popup = popup
   local requestThumb = requestScrollBar:GetThumbTexture()
-  requestThumb:SetWidth(16)
-  requestThumb:SetHeight(24)
+  requestThumb:SetWidth(20)
+  requestThumb:SetHeight(28)
   requestScrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -31565,7 +31611,7 @@ function LeafVE.UI:CreateGuildBankPopup()
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   requestScrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  requestScrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  requestScrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   requestScrollBar:SetScript("OnValueChanged", function()
     if this.ignoreUpdate then return end
     local owner = this.popup
@@ -33069,7 +33115,7 @@ function LeafVE.UI:BuildGuildBankPanel(panel)
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
   searchBG:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
-  searchBG:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
+  searchBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
   panel.searchBG = searchBG
 
   local searchLabel = inventoryPane:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -33127,7 +33173,7 @@ function LeafVE.UI:BuildGuildBankPanel(panel)
   scrollBar:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", 22, -18)
   scrollBar:SetPoint("BOTTOMRIGHT", inventoryPane, "BOTTOMRIGHT", -8, 30)
   AddScrollBarArrows(scrollBar, inventoryPane)
-  scrollBar:SetWidth(16)
+  scrollBar:SetWidth(20)
   scrollBar:SetOrientation("VERTICAL")
   scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   scrollBar:SetMinMaxValues(0, 0)
@@ -33135,8 +33181,8 @@ function LeafVE.UI:BuildGuildBankPanel(panel)
   scrollBar:SetValueStep(1)
   scrollBar.popup = panel
   local thumb = scrollBar:GetThumbTexture()
-  thumb:SetWidth(16)
-  thumb:SetHeight(24)
+  thumb:SetWidth(20)
+  thumb:SetHeight(28)
   scrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -33144,7 +33190,7 @@ function LeafVE.UI:BuildGuildBankPanel(panel)
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   scrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  scrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  scrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   scrollBar:SetScript("OnValueChanged", function()
     if this.ignoreUpdate then return end
     local owner = this.popup
@@ -33234,7 +33280,7 @@ function LeafVE.UI:BuildGuildBankPanel(panel)
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
   ownerBG:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
-  ownerBG:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
+  ownerBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
   panel.ownerBG = ownerBG
 
   local ownerInput = CreateFrame("EditBox", nil, ownerBG)
@@ -33320,7 +33366,7 @@ function LeafVE.UI:BuildGuildBankPanel(panel)
   requestScrollBar:SetPoint("TOPRIGHT", requestListFrame, "TOPRIGHT", 22, -18)
   requestScrollBar:SetPoint("BOTTOMRIGHT", sidebarPane, "BOTTOMRIGHT", -8, 32)
   AddScrollBarArrows(requestScrollBar, sidebarPane)
-  requestScrollBar:SetWidth(16)
+  requestScrollBar:SetWidth(20)
   requestScrollBar:SetOrientation("VERTICAL")
   requestScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   requestScrollBar:SetMinMaxValues(0, 0)
@@ -33328,8 +33374,8 @@ function LeafVE.UI:BuildGuildBankPanel(panel)
   requestScrollBar:SetValueStep(1)
   requestScrollBar.popup = panel
   local requestThumb = requestScrollBar:GetThumbTexture()
-  requestThumb:SetWidth(16)
-  requestThumb:SetHeight(24)
+  requestThumb:SetWidth(20)
+  requestThumb:SetHeight(28)
   requestScrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -33337,7 +33383,7 @@ function LeafVE.UI:BuildGuildBankPanel(panel)
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   requestScrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  requestScrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  requestScrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   requestScrollBar:SetScript("OnValueChanged", function()
     if this.ignoreUpdate then return end
     local owner = this.popup
@@ -34099,8 +34145,7 @@ function LeafVE.UI:RefreshAchievementPopup(playerName)
     else
       achPopup.scrollBar:Hide()
     end
-    RestoreScrollPosition(achPopup.scrollFrame)
-    achPopup.scrollBar:SetValue(0)
+    RestoreScrollPosition(achPopup.scrollFrame, achPopup.scrollBar)
     checkFrame:SetScript("OnUpdate", nil)
   end)
 end
@@ -34358,7 +34403,7 @@ function BuildShoutoutsPanel(panel)
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
   targetInputBG:SetBackdropColor(0, 0, 0, 0.5)
-  targetInputBG:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+  targetInputBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
   targetInputBG:SetFrameLevel(targetInput:GetFrameLevel() - 1)
   
   -- Autocomplete suggestion dropdown for target input
@@ -34507,7 +34552,7 @@ function BuildShoutoutsPanel(panel)
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
   reasonBG:SetBackdropColor(0, 0, 0, 0.5)
-  reasonBG:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+  reasonBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
   reasonBG:SetFrameLevel(reasonEdit:GetFrameLevel() - 1)
   reasonEdit:SetScript("OnEscapePressed", function() reasonEdit:ClearFocus() end)
   panel.reasonEdit = reasonEdit
@@ -34583,15 +34628,15 @@ function BuildShoutoutsPanel(panel)
   shoutScrollBar:SetPoint("TOPLEFT", shoutScrollFrame, "TOPRIGHT", 4, -18)
   shoutScrollBar:SetPoint("BOTTOMLEFT", shoutScrollFrame, "BOTTOMRIGHT", 4, 18)
   AddScrollBarArrows(shoutScrollBar, panel)
-  shoutScrollBar:SetWidth(16)
+  shoutScrollBar:SetWidth(20)
   shoutScrollBar:SetOrientation("VERTICAL")
   shoutScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   shoutScrollBar:SetMinMaxValues(0, 100)
   shoutScrollBar:SetValue(0)
 
   local shoutThumb = shoutScrollBar:GetThumbTexture()
-  shoutThumb:SetWidth(16)
-  shoutThumb:SetHeight(24)
+  shoutThumb:SetWidth(20)
+  shoutThumb:SetHeight(28)
 
   shoutScrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -34600,7 +34645,7 @@ function BuildShoutoutsPanel(panel)
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   shoutScrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  shoutScrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  shoutScrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
 
   shoutScrollBar:SetScript("OnValueChanged", function()
     local value = shoutScrollBar:GetValue()
@@ -34662,15 +34707,15 @@ function CreateScrollablePanel(panel, title, desc)
   scrollBar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -30, -98)
   scrollBar:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 30)
   AddScrollBarArrows(scrollBar, panel)
-  scrollBar:SetWidth(16)
+  scrollBar:SetWidth(20)
   scrollBar:SetOrientation("VERTICAL")
   scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   scrollBar:SetMinMaxValues(0, 100)
   scrollBar:SetValue(0)
   
   local thumb = scrollBar:GetThumbTexture()
-  thumb:SetWidth(16)
-  thumb:SetHeight(24)
+  thumb:SetWidth(20)
+  thumb:SetHeight(28)
   
   scrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -34679,7 +34724,7 @@ function CreateScrollablePanel(panel, title, desc)
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   scrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  scrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  scrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   
   scrollBar:SetScript("OnValueChanged", function()
     local value = scrollBar:GetValue()
@@ -34744,15 +34789,15 @@ function BuildLeaderboardPanel(panel, isWeekly)
   scrollBar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -30, -63)
   scrollBar:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 30)
   AddScrollBarArrows(scrollBar, panel)
-  scrollBar:SetWidth(16)
+  scrollBar:SetWidth(20)
   scrollBar:SetOrientation("VERTICAL")
   scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   scrollBar:SetMinMaxValues(0, 100)
   scrollBar:SetValue(0)
   
   local thumb = scrollBar:GetThumbTexture()
-  thumb:SetWidth(16)
-  thumb:SetHeight(24)
+  thumb:SetWidth(20)
+  thumb:SetHeight(28)
   
   scrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -34761,7 +34806,7 @@ function BuildLeaderboardPanel(panel, isWeekly)
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   scrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  scrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  scrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   
   scrollBar:SetScript("OnValueChanged", function()
     local value = scrollBar:GetValue()
@@ -35103,8 +35148,7 @@ function LeafVE.UI:RefreshLeaderboard(panelName)
     else
       panel.scrollBar:Hide()
     end
-    RestoreScrollPosition(panel.scrollFrame)
-    panel.scrollBar:SetValue(0)
+    RestoreScrollPosition(panel.scrollFrame, panel.scrollBar)
     checkFrame:SetScript("OnUpdate", nil)
   end)
 end
@@ -35168,7 +35212,7 @@ function BuildRosterPanel(panel)
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
   searchBG:SetBackdropColor(0, 0, 0, 0.5)
-  searchBG:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+  searchBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
   searchBG:SetFrameLevel(searchBox:GetFrameLevel() - 1)
   
   searchBox:SetScript("OnEscapePressed", function() 
@@ -35224,15 +35268,15 @@ function BuildRosterPanel(panel)
   scrollBar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -30, -93)
   scrollBar:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 30)
   AddScrollBarArrows(scrollBar, panel)
-  scrollBar:SetWidth(16)
+  scrollBar:SetWidth(20)
   scrollBar:SetOrientation("VERTICAL")
   scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   scrollBar:SetMinMaxValues(0, 100)
   scrollBar:SetValue(0)
   
   local thumb = scrollBar:GetThumbTexture()
-  thumb:SetWidth(16)
-  thumb:SetHeight(24)
+  thumb:SetWidth(20)
+  thumb:SetHeight(28)
   
   scrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -35241,7 +35285,7 @@ function BuildRosterPanel(panel)
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   scrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  scrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  scrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   
   scrollBar:SetScript("OnValueChanged", function()
     local value = scrollBar:GetValue()
@@ -35399,8 +35443,7 @@ end)
     else
       rosterPanel.scrollBar:Hide()
     end
-    RestoreScrollPosition(rosterPanel.scrollFrame)
-    rosterPanel.scrollBar:SetValue(0)
+    RestoreScrollPosition(rosterPanel.scrollFrame, rosterPanel.scrollBar)
     checkFrame:SetScript("OnUpdate", nil)
   end)
 end
@@ -35460,15 +35503,15 @@ function BuildLiveHistoryPanel(panel)
   scrollBar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -30, -93)
   scrollBar:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 30)
   AddScrollBarArrows(scrollBar, panel)
-  scrollBar:SetWidth(16)
+  scrollBar:SetWidth(20)
   scrollBar:SetOrientation("VERTICAL")
   scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   scrollBar:SetMinMaxValues(0, 100)
   scrollBar:SetValue(0)
 
   local thumb = scrollBar:GetThumbTexture()
-  thumb:SetWidth(16)
-  thumb:SetHeight(24)
+  thumb:SetWidth(20)
+  thumb:SetHeight(28)
 
   scrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -35477,7 +35520,7 @@ function BuildLiveHistoryPanel(panel)
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   scrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  scrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  scrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
 
   scrollBar:SetScript("OnValueChanged", function()
     local value = scrollBar:GetValue()
@@ -35559,15 +35602,15 @@ local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
   scrollBar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -30, -93)
   scrollBar:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 30)
   AddScrollBarArrows(scrollBar, panel)
-  scrollBar:SetWidth(16)
+  scrollBar:SetWidth(20)
   scrollBar:SetOrientation("VERTICAL")
   scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   scrollBar:SetMinMaxValues(0, 100)
   scrollBar:SetValue(0)
   
   local thumb = scrollBar:GetThumbTexture()
-  thumb:SetWidth(16)
-  thumb:SetHeight(24)
+  thumb:SetWidth(20)
+  thumb:SetHeight(28)
   
   scrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -35576,7 +35619,7 @@ local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   scrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  scrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  scrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   
   scrollBar:SetScript("OnValueChanged", function()
     local value = scrollBar:GetValue()
@@ -35684,7 +35727,7 @@ function BuildBadgesPanel(panel)
   -- the up/down arrow buttons below, so the track doesn't overlap them.
   scrollBar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -30, -106)
   scrollBar:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 46)
-  scrollBar:SetWidth(16)
+  scrollBar:SetWidth(20)
   scrollBar:SetOrientation("VERTICAL")
   scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   scrollBar:SetMinMaxValues(0, 100)
@@ -35695,8 +35738,8 @@ function BuildBadgesPanel(panel)
   -- given an explicit frame level above it, so they can't end up buried
   -- behind another sibling layer regardless of build order.
   local scrollUpBtn = CreateFrame("Button", nil, panel)
-  scrollUpBtn:SetWidth(16)
-  scrollUpBtn:SetHeight(16)
+  scrollUpBtn:SetWidth(20)
+  scrollUpBtn:SetHeight(20)
   scrollUpBtn:SetPoint("BOTTOM", scrollBar, "TOP", 0, 2)
   scrollUpBtn:SetFrameLevel((panel:GetFrameLevel() or 0) + 10)
   -- Not the local "FrameSkins" var -- on this client it resolves to an
@@ -35718,8 +35761,8 @@ function BuildBadgesPanel(panel)
   panel.scrollUpBtn = scrollUpBtn
 
   local scrollDownBtn = CreateFrame("Button", nil, panel)
-  scrollDownBtn:SetWidth(16)
-  scrollDownBtn:SetHeight(16)
+  scrollDownBtn:SetWidth(20)
+  scrollDownBtn:SetHeight(20)
   scrollDownBtn:SetPoint("TOP", scrollBar, "BOTTOM", 0, -2)
   scrollDownBtn:SetFrameLevel((panel:GetFrameLevel() or 0) + 10)
   if LeafVE_FrameSkins and LeafVE_FrameSkins.ApplyScrollArrow then
@@ -35737,8 +35780,8 @@ function BuildBadgesPanel(panel)
   panel.scrollDownBtn = scrollDownBtn
 
   local thumb = scrollBar:GetThumbTexture()
-  thumb:SetWidth(16)
-  thumb:SetHeight(24)
+  thumb:SetWidth(20)
+  thumb:SetHeight(28)
 
   scrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -35747,7 +35790,7 @@ function BuildBadgesPanel(panel)
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   scrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  scrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  scrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   
   scrollBar:SetScript("OnValueChanged", function()
     local value = this:GetValue()
@@ -35821,15 +35864,15 @@ function BuildAchievementsPanel(panel)
   scrollBar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -30, -63)
   scrollBar:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 30)
   AddScrollBarArrows(scrollBar, panel)
-  scrollBar:SetWidth(16)
+  scrollBar:SetWidth(20)
   scrollBar:SetOrientation("VERTICAL")
   scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   scrollBar:SetMinMaxValues(0, 100)
   scrollBar:SetValue(0)
   
   local thumb = scrollBar:GetThumbTexture()
-  thumb:SetWidth(16)
-  thumb:SetHeight(24)
+  thumb:SetWidth(20)
+  thumb:SetHeight(28)
   
   scrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -35838,7 +35881,7 @@ function BuildAchievementsPanel(panel)
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   scrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  scrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  scrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   
   scrollBar:SetScript("OnValueChanged", function()
     local value = scrollBar:GetValue()
@@ -35922,15 +35965,15 @@ function BuildShinobiReputationPanel(panel)
   scrollBar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -30, -63)
   scrollBar:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 30)
   AddScrollBarArrows(scrollBar, panel)
-  scrollBar:SetWidth(16)
+  scrollBar:SetWidth(20)
   scrollBar:SetOrientation("VERTICAL")
   scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   scrollBar:SetMinMaxValues(0, 100)
   scrollBar:SetValue(0)
 
   local thumb = scrollBar:GetThumbTexture()
-  thumb:SetWidth(16)
-  thumb:SetHeight(24)
+  thumb:SetWidth(20)
+  thumb:SetHeight(28)
 
   scrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -35939,7 +35982,7 @@ function BuildShinobiReputationPanel(panel)
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   scrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  scrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  scrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
 
   scrollBar:SetScript("OnValueChanged", function()
     local value = scrollBar:GetValue()
@@ -36042,15 +36085,15 @@ function BuildTitlesPanel(panel)
   scrollBar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -30, -138)
   scrollBar:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -30, 30)
   AddScrollBarArrows(scrollBar, panel)
-  scrollBar:SetWidth(16)
+  scrollBar:SetWidth(20)
   scrollBar:SetOrientation("VERTICAL")
   scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   scrollBar:SetMinMaxValues(0, 100)
   scrollBar:SetValue(0)
 
   local thumb = scrollBar:GetThumbTexture()
-  thumb:SetWidth(16)
-  thumb:SetHeight(24)
+  thumb:SetWidth(20)
+  thumb:SetHeight(28)
 
   scrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -36059,7 +36102,7 @@ function BuildTitlesPanel(panel)
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   scrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  scrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  scrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
 
   scrollBar:SetScript("OnValueChanged", function()
     local value = this:GetValue()
@@ -36468,11 +36511,19 @@ subtitle:SetText("|cFF888888Flame / Flame Keeper only|r")
   scrollBar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -4, -86)
   scrollBar:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -4, 28)
   AddScrollBarArrows(scrollBar, panel)
-  scrollBar:SetWidth(14)
+  scrollBar:SetWidth(18)
   scrollBar:SetOrientation("VERTICAL")
   scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   scrollBar:SetMinMaxValues(0, 1)
   scrollBar:SetValue(0)
+  scrollBar:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 8, edgeSize = 8,
+    insets = {left = 2, right = 2, top = 2, bottom = 2}
+  })
+  scrollBar:SetBackdropColor(0, 0, 0, 0.3)
+  scrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   scrollBar:SetScript("OnValueChanged", function()
     scrollFrame:SetVerticalScroll(this:GetValue())
   end)
@@ -38055,14 +38106,14 @@ function BuildWelcomePanel(panel)
   scrollBar:SetPoint("TOPRIGHT", panel.guidePane, "TOPRIGHT", -8, -18)
   scrollBar:SetPoint("BOTTOMRIGHT", panel.guidePane, "BOTTOMRIGHT", -8, 30)
   AddScrollBarArrows(scrollBar, panel.guidePane)
-  scrollBar:SetWidth(16)
+  scrollBar:SetWidth(20)
   scrollBar:SetOrientation("VERTICAL")
   scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   scrollBar:SetMinMaxValues(0, 100)
   scrollBar:SetValue(0)
   local thumb = scrollBar:GetThumbTexture()
-  thumb:SetWidth(16)
-  thumb:SetHeight(24)
+  thumb:SetWidth(20)
+  thumb:SetHeight(28)
   scrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -38070,7 +38121,7 @@ function BuildWelcomePanel(panel)
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   scrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  scrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  scrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   scrollBar:SetScript("OnValueChanged", function()
     local value = scrollBar:GetValue()
     local maxScroll = scrollFrame:GetVerticalScrollRange()
@@ -38363,7 +38414,7 @@ function BuildWelcomePanel(panel)
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
   allianceInputBG:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
-  allianceInputBG:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
+  allianceInputBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
   panel.allianceInputBG = allianceInputBG
 
   local allianceInput = CreateFrame("EditBox", nil, allianceInputBG)
@@ -38500,7 +38551,7 @@ function BuildWelcomePanel(panel)
   guildScrollBar:SetPoint("TOPRIGHT", guildListFrame, "TOPRIGHT", 18, -18)
   guildScrollBar:SetPoint("BOTTOMRIGHT", guildPanel, "BOTTOMRIGHT", -8, 28)
   AddScrollBarArrows(guildScrollBar, guildPanel)
-  guildScrollBar:SetWidth(16)
+  guildScrollBar:SetWidth(20)
   guildScrollBar:SetOrientation("VERTICAL")
   guildScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   guildScrollBar:SetMinMaxValues(0, 0)
@@ -38513,7 +38564,7 @@ function BuildWelcomePanel(panel)
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   guildScrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  guildScrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  guildScrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   guildScrollBar:SetScript("OnValueChanged", function()
     if this.ignoreUpdate then return end
     local value = math.floor((this:GetValue() or 0) + 0.5)
@@ -38567,7 +38618,7 @@ function BuildWelcomePanel(panel)
     insets = {left = 3, right = 3, top = 3, bottom = 3}
   })
   chatInputBG:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
-  chatInputBG:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
+  chatInputBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
 
   local chatInput = CreateFrame("EditBox", nil, chatInputBG)
   chatInput:SetPoint("TOPLEFT", chatInputBG, "TOPLEFT", 5, -3)
@@ -38637,7 +38688,7 @@ function BuildWelcomePanel(panel)
   rosterScrollBar:SetPoint("TOPRIGHT", rosterListFrame, "TOPRIGHT", 20, -18)
   rosterScrollBar:SetPoint("BOTTOMRIGHT", rosterPanel, "BOTTOMRIGHT", -8, 28)
   AddScrollBarArrows(rosterScrollBar, rosterPanel)
-  rosterScrollBar:SetWidth(16)
+  rosterScrollBar:SetWidth(20)
   rosterScrollBar:SetOrientation("VERTICAL")
   rosterScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   rosterScrollBar:SetMinMaxValues(0, 0)
@@ -38650,7 +38701,7 @@ function BuildWelcomePanel(panel)
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   rosterScrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  rosterScrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  rosterScrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   rosterScrollBar:SetScript("OnValueChanged", function()
     if this.ignoreUpdate then return end
     local value = math.floor((this:GetValue() or 0) + 0.5)
@@ -38857,8 +38908,7 @@ function LeafVE.UI:RefreshHistory()
     else
       panel.scrollBar:Hide()
     end
-    RestoreScrollPosition(panel.scrollFrame)
-    panel.scrollBar:SetValue(0)
+    RestoreScrollPosition(panel.scrollFrame, panel.scrollBar)
     checkFrame:SetScript("OnUpdate", nil)
   end)
 end
@@ -38981,8 +39031,7 @@ function LeafVE.UI:RefreshShoutoutsPanel()
     else
       panel.shoutScrollBar:Hide()
     end
-    RestoreScrollPosition(panel.shoutScrollFrame)
-    panel.shoutScrollBar:SetValue(0)
+    RestoreScrollPosition(panel.shoutScrollFrame, panel.shoutScrollBar)
     checkFrame:SetScript("OnUpdate", nil)
   end)
 end
@@ -39580,8 +39629,7 @@ function LeafVE.UI:RefreshTitlesPanel()
     else
       panel.scrollBar:Hide()
     end
-    RestoreScrollPosition(panel.scrollFrame)
-    panel.scrollBar:SetValue(0)
+    RestoreScrollPosition(panel.scrollFrame, panel.scrollBar)
     checkFrame:SetScript("OnUpdate", nil)
   end)
 end
@@ -39803,8 +39851,7 @@ function LeafVE.UI:RefreshAchievementsLeaderboard()
     else
       panel.scrollBar:Hide()
     end
-    RestoreScrollPosition(panel.scrollFrame)
-    panel.scrollBar:SetValue(0)
+    RestoreScrollPosition(panel.scrollFrame, panel.scrollBar)
     checkFrame:SetScript("OnUpdate", nil)
   end)
 end
@@ -39996,8 +40043,7 @@ function LeafVE.UI:RefreshShinobiReputationLeaderboard()
     else
       panel.scrollBar:Hide()
     end
-    RestoreScrollPosition(panel.scrollFrame)
-    panel.scrollBar:SetValue(0)
+    RestoreScrollPosition(panel.scrollFrame, panel.scrollBar)
     checkFrame:SetScript("OnUpdate", nil)
   end)
 end
@@ -40042,7 +40088,20 @@ function LeafVE.UI:Build()
   if f.SetScale then
     f:SetScale(uiScale)
   end
-  f:EnableMouse(false)
+  -- Not EnableMouse(false): that lets clicks/scroll bleed through any part
+  -- of the window not covered by a specifically mouse-enabled child (the
+  -- drag handle, buttons, scroll frames) straight down to the 3D world
+  -- underneath -- scrolling over plain window background zooms the camera
+  -- instead of doing nothing. Enabling it on the frame itself blocks that
+  -- pass-through; children already handle their own input independently,
+  -- so this doesn't change how any button/scrollbar inside it behaves.
+  f:EnableMouse(true)
+  -- EnableMouse alone doesn't stop wheel scroll from bleeding through to
+  -- the camera -- mouse wheel needs EnableMouseWheel plus an OnMouseWheel
+  -- script that actually consumes the event (a no-op is enough), otherwise
+  -- an unhandled wheel event over the window still falls through to zoom.
+  f:EnableMouseWheel(true)
+  f:SetScript("OnMouseWheel", function() end)
   f:SetMovable(true)
   if f.SetClampedToScreen then
     f:SetClampedToScreen(true)
@@ -41105,8 +41164,7 @@ function LeafVE.UI:RefreshLiveHistory()
   end
 
   scrollChild:SetHeight(math.max(totalHeight + 8, 1))
-  RestoreScrollPosition(p.scrollFrame)
-  if p.scrollBar then p.scrollBar:SetValue(0) end
+  RestoreScrollPosition(p.scrollFrame, p.scrollBar)
 end
 
 function LeafVE.UI:RefreshWelcome()
@@ -41289,14 +41347,14 @@ function LeafVE.UI:CreateLoginBriefingPopup()
   scrollBar:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -10, -106)
   scrollBar:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -10, 76)
   AddScrollBarArrows(scrollBar, popup)
-  scrollBar:SetWidth(16)
+  scrollBar:SetWidth(20)
   scrollBar:SetOrientation("VERTICAL")
   scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
   scrollBar:SetMinMaxValues(0, 100)
   scrollBar:SetValue(0)
   local thumb = scrollBar:GetThumbTexture()
-  thumb:SetWidth(16)
-  thumb:SetHeight(24)
+  thumb:SetWidth(20)
+  thumb:SetHeight(28)
   scrollBar:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -41304,7 +41362,7 @@ function LeafVE.UI:CreateLoginBriefingPopup()
     insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
   scrollBar:SetBackdropColor(0, 0, 0, 0.3)
-  scrollBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
+  scrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
   scrollBar:SetScript("OnValueChanged", function()
     local maxScroll = scrollFrame:GetVerticalScrollRange()
     if maxScroll > 0 then
@@ -41807,10 +41865,7 @@ function LeafVE.UI:RefreshLoginBriefingPopup()
   end
 
   scrollChild:SetHeight(math.max((-yOffset) + dutyCardHeight + 24, 1))
-  RestoreScrollPosition(popup.scrollFrame)
-  if popup.scrollBar then
-    popup.scrollBar:SetValue(0)
-  end
+  RestoreScrollPosition(popup.scrollFrame, popup.scrollBar)
 end
 
 function LeafVE.UI:ShowLoginBriefingPopup(force)

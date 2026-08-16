@@ -160,6 +160,26 @@ function LeafVE_FrameSkins.ApplyScrollArrow(btn, dir)
   if btn.SetNormalTexture then btn:SetNormalTexture(tex) end
   if btn.SetPushedTexture then btn:SetPushedTexture(tex) end
   if btn.SetHighlightTexture then btn:SetHighlightTexture(tex) end
+
+  -- Both source images are 128x128, but the actual painted arrow glyph
+  -- occupies a different fraction of that canvas in each file (measured:
+  -- up ~90x119px of content, down ~115x108px) -- stretched into an
+  -- identically-sized button, the up arrow reads visibly smaller/thinner
+  -- purely from having more transparent padding baked into its source
+  -- file. Cropping each to its own glyph bounds (in normalized 0-1 texture
+  -- coordinates) makes both arrows fill their button the same amount.
+  local left, right, top, bottom
+  if dir == "down" then
+    left, right, top, bottom = 0.0625, 0.9609, 0.0859, 0.9297
+  else
+    left, right, top, bottom = 0.1563, 0.8594, 0.0313, 0.9609
+  end
+  local normalTex = btn.GetNormalTexture and btn:GetNormalTexture()
+  if normalTex and normalTex.SetTexCoord then normalTex:SetTexCoord(left, right, top, bottom) end
+  local pushedTex = btn.GetPushedTexture and btn:GetPushedTexture()
+  if pushedTex and pushedTex.SetTexCoord then pushedTex:SetTexCoord(left, right, top, bottom) end
+  local highlightTex = btn.GetHighlightTexture and btn:GetHighlightTexture()
+  if highlightTex and highlightTex.SetTexCoord then highlightTex:SetTexCoord(left, right, top, bottom) end
 end
 
 function LeafVE_FrameSkins.ApplyScrollThumb(tex)
