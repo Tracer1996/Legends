@@ -156,10 +156,25 @@ end
 
 function LeafVE_FrameSkins.ApplyScrollArrow(btn, dir)
   if not btn then return end
-  local tex = dir == "down" and LeafVE_FrameSkins.TEXTURES.scrollDown or LeafVE_FrameSkins.TEXTURES.scrollUp
-  if btn.SetNormalTexture then btn:SetNormalTexture(tex) end
-  if btn.SetPushedTexture then btn:SetPushedTexture(tex) end
-  if btn.SetHighlightTexture then btn:SetHighlightTexture(tex) end
+  -- Blizzard's own scrollbar arrow art instead of the custom TGA set --
+  -- these are already correctly centered/proportioned for a standard
+  -- button (that's the whole reason every native WoW scrollbar uses them),
+  -- so there's no per-direction crop math needed to make them line up.
+  -- Separate normal/pushed/disabled states too, instead of one texture
+  -- reused for every state.
+  local upOrDown = dir == "down" and "Down" or "Up"
+  if btn.SetNormalTexture then
+    btn:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-Scroll" .. upOrDown .. "Button-Up")
+  end
+  if btn.SetPushedTexture then
+    btn:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-Scroll" .. upOrDown .. "Button-Down")
+  end
+  if btn.SetDisabledTexture then
+    btn:SetDisabledTexture("Interface\\Buttons\\UI-ScrollBar-Scroll" .. upOrDown .. "Button-Disabled")
+  end
+  if btn.SetHighlightTexture then
+    btn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+  end
 end
 
 function LeafVE_FrameSkins.ApplyScrollThumb(tex)

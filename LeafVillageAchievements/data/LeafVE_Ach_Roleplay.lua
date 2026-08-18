@@ -91,7 +91,7 @@ local RP_INTERACTION_ACHIEVEMENTS = {
     zone = "Darnassus",
     triggerName = "Tyrande Whisperwind",
     points = 10,
-    icon = "Interface\\Icons\\INV_Staff_43",
+    icon = "Interface\\Icons\\Spell_Nature_Tranquility",
   },
   {
     id = "rp_historians_ear",

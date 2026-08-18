@@ -163,7 +163,7 @@ local QUEST_CHAINS = {
     name   = "A Diplomat's Journey",
     desc   = "Unravel the disappearance of King Varian Wrynn across Azeroth.",
     points = 75,
-    icon   = "Interface\\Icons\\INV_Misc_Map_02",
+    icon   = "Interface\\Icons\\INV_Scroll_03",
     title  = {id="title_kingfinder", name="Kingfinder", prefix=false},
     steps  = {
       "A Fishy Peril",
@@ -404,7 +404,7 @@ local QUEST_CHAINS = {
     name   = "Mint Condition",
     desc   = "Complete both stages of Chicken Clucking for a Mint.",
     points = 25,
-    icon   = "Interface\\Icons\\INV_Egg_06",
+    icon   = "Interface\\Icons\\INV_Egg_02",
     steps  = {
       {name = "Chicken Clucking for a Mint", count = 2},
     },

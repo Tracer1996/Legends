@@ -131,7 +131,7 @@ local QUEST_REWARD_USE_ACHIEVEMENTS = {
     name = "Dinner Bell",
     desc = "Sound the call of old nobility by using Barov Peasant Caller and summoning servants long after their master's fall.",
     points = 45,
-    icon = "Interface\\Icons\\INV_Bell_01",
+    icon = "Interface\\Icons\\INV_Misc_Bell_01",
     items = {"Barov Peasant Caller"},
   },
   {
@@ -139,7 +139,7 @@ local QUEST_REWARD_USE_ACHIEVEMENTS = {
     name = "The House Still Serves",
     desc = "Use Barov Servant Caller and command the lingering obedience of a house that never truly learned how to die.",
     points = 45,
-    icon = "Interface\\Icons\\INV_Bell_01",
+    icon = "Interface\\Icons\\Spell_Shadow_Possession",
     items = {"Barov Servant Caller"},
   },
   {

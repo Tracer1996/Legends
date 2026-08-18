@@ -17,5 +17,6 @@ data\LeafVE_Ach_Mounts.lua
 data\LeafVE_Ach_Toys.lua
 data\LeafVE_Ach_Probe.lua
 data\LeafVE_Ach_ExplorationLive.lua
+data\LeafVE_Ach_FlightPoints.lua
 LeafVillageAchievementsCollectionsPortraits.lua
 LeafVillageAchievementsCollections.lua

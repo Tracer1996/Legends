@@ -4745,74 +4745,68 @@ local function ABC_StableTrim(text, maxLength)
   return string.sub(text, 1, maxLength - 3).."..."
 end
 
-local function ABC_StableCard(parent, index, data, kind)
-  local cols = 3
-  local cardW = 218
-  -- Shrunk from 198 (21px off the portrait area below) so a full 2-row
-  -- page fits inside the window's existing scroll viewport instead of
-  -- needing the window itself grown taller.
-  local cardH = 177
-  local gapX = 14
-  local gapY = 10
-  local col = math.mod(index - 1, cols)
-  local row = math.floor((index - 1) / cols)
-  local collected = data and data.collected == true
+-- Card pool: same create-once-reuse-forever convention as achievement/title
+-- rows elsewhere in this addon. Cards used to be built fresh (CreateFrame +
+-- ~15 sub-widgets: background, border, accent, name/status/date/item text,
+-- portrait frame + background + border + glow + icon + ring, source label,
+-- detail text, and a conditional Summon/Call button) on every page turn,
+-- filter-chip click, tab switch, and the 0.5s icon-refresh ticker, with the
+-- old ones left for ClearScrollChild's blanket GetChildren()/GetRegions()
+-- sweep to hide -- so both that sweep and the total live frame count grew
+-- without bound over a session. Split into a one-time skeleton build
+-- (ABC_BuildCardSkeleton) and a per-call content update (ABC_PopulateCard)
+-- that writes into the same widgets every time instead of recreating them.
+ABC.cardPool = ABC.cardPool or {}
 
+local ABC_CARD_W = 218
+-- Shrunk from 198 (21px off the portrait area below) so a full 2-row page
+-- fits inside the window's existing scroll viewport instead of needing the
+-- window itself grown taller.
+local ABC_CARD_H = 177
+
+local function ABC_BuildCardSkeleton(parent, index)
   local card = CreateFrame("Button", nil, parent)
-  card:SetWidth(cardW)
-  card:SetHeight(cardH)
-  card:SetPoint("TOPLEFT", parent, "TOPLEFT", 10 + col * (cardW + gapX), -8 - row * (cardH + gapY))
-  card.data = data
-  card.kind = kind
-  ABC_StableBackground(card, collected and 0.105 or 0.050, collected and 0.070 or 0.046, collected and 0.038 or 0.042, 0.98)
-  ABC_StableCreateBorder(card, 2, collected and 0.72 or 0.31, collected and 0.43 or 0.27, collected and 0.12 or 0.22, 1)
+  card:SetWidth(ABC_CARD_W)
+  card:SetHeight(ABC_CARD_H)
+
+  -- Colors here are placeholders -- ABC_PopulateCard sets the real ones
+  -- (which depend on collected state) via the *Set* helpers below, every
+  -- populate. The *Create*/*Make* helpers must only ever run once per
+  -- widget: calling them again would mint new textures on top of the old
+  -- ones instead of updating them.
+  ABC_StableBackground(card, 0, 0, 0, 0.98)
+  ABC_StableCreateBorder(card, 2, 0, 0, 0, 1)
 
   local accent = ABC_StableMakeSolid(card, "ARTWORK")
   accent:SetPoint("TOPLEFT", card, "TOPLEFT", 3, -3)
   accent:SetPoint("TOPRIGHT", card, "TOPRIGHT", -3, -3)
   accent:SetHeight(4)
-  ABC_StableSetTextureColor(accent, collected and 0.95 or 0.34, collected and 0.45 or 0.30, collected and 0.08 or 0.24, 1)
+  card.accent = accent
 
-  -- Only the big portrait below shows the icon now -- a second small copy
-  -- up here next to the name was pure duplication on a card this size.
-  local iconPath, iconSource = ABC_StableFamilyIcon(data, kind)
-
+  -- Warm off-white for the name, matching the achievement/title rows'
+  -- convention -- gold is reserved for points/accents there, not names.
   local nameText = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   nameText:SetPoint("TOPLEFT", card, "TOPLEFT", 10, -13)
   nameText:SetWidth(145)
   nameText:SetJustifyH("LEFT")
-  nameText:SetText(ABC_StableTrim(data and data.name or "Unknown", 28))
-  -- Warm off-white for the name, matching the achievement/title rows'
-  -- convention -- gold is reserved for points/accents there, not names.
-  nameText:SetTextColor(collected and 0.90 or 0.67, collected and 0.88 or 0.65, collected and 0.84 or 0.62)
+  card.nameText = nameText
 
   local status = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   status:SetPoint("TOPRIGHT", card, "TOPRIGHT", -9, -14)
-  status:SetText(collected and "COLLECTED" or "MISSING")
-  status:SetTextColor(collected and 0.42 or 0.68, collected and 0.92 or 0.66, collected and 0.34 or 0.58)
+  card.status = status
 
-  if collected then
-    local collectedTs = ABC_CollectedTimestamp(data)
-    if collectedTs and collectedTs > 0 and date then
-      local collectedDate = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-      collectedDate:SetPoint("TOP", status, "BOTTOM", 0, -2)
-      collectedDate:SetText(date("%m/%d/%Y", collectedTs))
-      collectedDate:SetTextColor(0.62, 0.60, 0.56)
-    end
-  end
+  local collectedDate = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  collectedDate:SetPoint("TOP", status, "BOTTOM", 0, -2)
+  collectedDate:SetTextColor(0.62, 0.60, 0.56)
+  collectedDate:Hide()
+  card.collectedDate = collectedDate
 
   local itemLine = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   itemLine:SetPoint("TOPLEFT", nameText, "BOTTOMLEFT", 0, -3)
   itemLine:SetWidth(190)
   itemLine:SetJustifyH("LEFT")
-  local secondary
-  if kind == "mount" then
-    secondary = tostring(data.category or "Mount")
-  else
-    secondary = tostring(data.sourceCategory or data.category or data.source or "Companion")
-  end
-  itemLine:SetText(ABC_StableTrim(secondary, 38))
   itemLine:SetTextColor(0.62, 0.62, 0.61)
+  card.itemLine = itemLine
 
   -- Shrunk from 91 (21px, matching cardH's own reduction) -- top offset
   -- (-51) is unchanged, so everything below (sourceLabel, and the
@@ -4820,106 +4814,203 @@ local function ABC_StableCard(parent, index, data, kind)
   -- between them as before; only the portrait's own height shrank.
   local portraitFrame = CreateFrame("Frame", nil, card)
   portraitFrame:SetPoint("TOPLEFT", card, "TOPLEFT", 8, -51)
-  portraitFrame:SetWidth(cardW - 16)
+  portraitFrame:SetWidth(ABC_CARD_W - 16)
   portraitFrame:SetHeight(70)
   ABC_StableBackground(portraitFrame, 0.012, 0.012, 0.012, 1)
-  ABC_StableCreateBorder(portraitFrame, 2, collected and 0.53 or 0.24, collected and 0.30 or 0.22, collected and 0.07 or 0.19, 1)
+  ABC_StableCreateBorder(portraitFrame, 2, 0, 0, 0, 1)
+  card.portraitFrame = portraitFrame
 
   local centerGlow = ABC_StableMakeSolid(portraitFrame, "BACKGROUND")
   centerGlow:SetPoint("CENTER", portraitFrame, "CENTER", 0, 0)
   centerGlow:SetWidth(138)
   centerGlow:SetHeight(55)
-  ABC_StableSetTextureColor(centerGlow, collected and 0.20 or 0.07, collected and 0.075 or 0.07, collected and 0.020 or 0.07, 0.72)
+  card.centerGlow = centerGlow
 
   local portrait = portraitFrame:CreateTexture(nil, "ARTWORK")
   portrait:SetPoint("CENTER", portraitFrame, "CENTER", 0, 0)
   portrait:SetWidth(62)
   portrait:SetHeight(62)
-  portrait:SetTexture(iconPath or ABC_STABLE_TEX_ICON_FALLBACK)
   portrait:SetTexCoord(0.06, 0.94, 0.06, 0.94)
-  if not collected then portrait:SetVertexColor(0.34, 0.34, 0.34, 0.86) end
+  card.portrait = portrait
 
+  -- This depends only on a static global resource, not per-card data, so
+  -- it's safe to decide once here instead of every populate.
   if LeafVE_AchTest.TEX and LeafVE_AchTest.TEX.iconFrame then
     local portraitRing = portraitFrame:CreateTexture(nil, "OVERLAY")
     portraitRing:SetWidth(73); portraitRing:SetHeight(73)
     portraitRing:SetPoint("CENTER", portrait, "CENTER", 0, 0)
     portraitRing:SetTexture(LeafVE_AchTest.TEX.iconFrame)
-    portraitRing:SetVertexColor(1, 1, 1, collected and 0.92 or 0.55)
+    card.portraitRing = portraitRing
   end
 
   -- Toys have no verified acquisition source (the catalogue's obtainedFrom
   -- is just generic boilerplate for every entry) -- the item's own flavor
   -- description is far more useful here, so it takes this slot instead.
-  local obtained = data and data.obtainedFrom or nil
   local sourceLabel = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   sourceLabel:SetPoint("TOPLEFT", portraitFrame, "BOTTOMLEFT", 2, -5)
-  sourceLabel:SetWidth(cardW - 20)
+  sourceLabel:SetWidth(ABC_CARD_W - 20)
   sourceLabel:SetHeight(30)
   sourceLabel:SetJustifyH("LEFT")
   sourceLabel:SetJustifyV("TOP")
-  if kind == "toy" then
-    local description = data and data.description or nil
-    if description and description ~= "" then
-      sourceLabel:SetText(ABC_StableTrim(description, 78))
-      sourceLabel:SetTextColor(0.73, 0.69, 0.61)
-    else
-      sourceLabel:SetText("")
-    end
-  elseif obtained and obtained ~= "" then
-    sourceLabel:SetText("Source: "..ABC_StableTrim(obtained, 78))
-    sourceLabel:SetTextColor(0.73, 0.69, 0.61)
-  else
-    sourceLabel:SetText("")
-  end
+  sourceLabel:SetTextColor(0.73, 0.69, 0.61)
+  card.sourceLabel = sourceLabel
 
-  local detail = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  detail:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 9, 9)
-  detail:SetWidth(collected and 122 or 195)
-  detail:SetJustifyH("LEFT")
-  local pointValue = tonumber(data and data.points) or 25
   -- Points shown in the same gold used for achievement points everywhere
   -- else, instead of buried in the same plain gray as the category text.
-  local detailText = "|cFFFFD433"..tostring(pointValue).." pts|r  |  "..(kind == "mount" and tostring(data.category or "Mount") or tostring(data.sourceCategory or data.category or data.source or "Companion"))
-  -- Level requirement gets its own soft-blue badge instead of blending
-  -- into the plain category text as one more pipe-separated clause.
-  if kind == "mount" and data.requiredLevel then detailText = detailText.."  |  |cFF6DAEDBLv "..tostring(data.requiredLevel).."|r" end
-  detail:SetText(ABC_StableTrim(detailText, 64))
+  local detail = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  detail:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 9, 9)
+  detail:SetJustifyH("LEFT")
   detail:SetTextColor(0.54, 0.52, 0.48)
+  card.detail = detail
 
-  if collected and data.spellIndex then
-    local summon = CreateFrame("Button", nil, card, "UIPanelButtonTemplate")
-    summon:SetWidth(72); summon:SetHeight(21)
-    summon:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -8, 7)
-    summon:SetText(kind == "mount" and "Summon" or "Call")
-    summon:SetScript("OnClick", function()
-      local d = card.data
-      if d and d.spellIndex then CastSpell(d.spellIndex, d.bookType or BOOK_SPELL) end
-    end)
-    if LeafVE_AchTest.SkinAshenButton then LeafVE_AchTest.SkinAshenButton(summon) end
-  end
+  local summon = CreateFrame("Button", nil, card, "UIPanelButtonTemplate")
+  summon:SetWidth(72); summon:SetHeight(21)
+  summon:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -8, 7)
+  summon:SetScript("OnClick", function()
+    -- Reads card.data at click time, not a closure-captured value -- this
+    -- button is reused across different mounts/companions as the card gets
+    -- repopulated, so a stale closure would summon whatever was shown here
+    -- when the button was first built, not what's currently displayed.
+    local d = card.data
+    if d and d.spellIndex then CastSpell(d.spellIndex, d.bookType or BOOK_SPELL) end
+  end)
+  if LeafVE_AchTest.SkinAshenButton then LeafVE_AchTest.SkinAshenButton(summon) end
+  summon:Hide()
+  card.summonBtn = summon
 
+  -- Same reasoning as the Summon button: reads this.data/this.kind/
+  -- this.obtained at hover time so a reused card's tooltip always reflects
+  -- whatever it's currently populated with.
   card:SetScript("OnEnter", function()
-    ABC_StableSetBorder(this, collected and 1.0 or 0.58, collected and 0.58 or 0.48, collected and 0.14 or 0.36, 1)
+    local d = this.data
+    local coll = d and d.collected == true
+    ABC_StableSetBorder(this, coll and 1.0 or 0.58, coll and 0.58 or 0.48, coll and 0.14 or 0.36, 1)
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
-    GameTooltip:SetText(tostring(data and data.name or "Unknown"), 1, 0.82, 0.36)
-    GameTooltip:AddLine(collected and "Collected" or "Not collected", collected and 0.45 or 0.72, collected and 1.0 or 0.68, collected and 0.42 or 0.62)
-    GameTooltip:AddLine("Achievement points: "..tostring(tonumber(data and data.points) or 25), 1.0, 0.72, 0.25)
-    if data and data.difficulty then GameTooltip:AddLine("Difficulty tier: "..tostring(data.difficulty), 0.72, 0.72, 0.72) end
-    if data and data.description and data.description ~= "" then GameTooltip:AddLine(data.description, 0.90, 0.90, 0.90, true) end
+    GameTooltip:SetText(tostring(d and d.name or "Unknown"), 1, 0.82, 0.36)
+    GameTooltip:AddLine(coll and "Collected" or "Not collected", coll and 0.45 or 0.72, coll and 1.0 or 0.68, coll and 0.42 or 0.62)
+    GameTooltip:AddLine("Achievement points: "..tostring(tonumber(d and d.points) or 25), 1.0, 0.72, 0.25)
+    if d and d.difficulty then GameTooltip:AddLine("Difficulty tier: "..tostring(d.difficulty), 0.72, 0.72, 0.72) end
+    if d and d.description and d.description ~= "" then GameTooltip:AddLine(d.description, 0.90, 0.90, 0.90, true) end
     -- Toys have no verified acquisition source -- obtainedFrom is just
     -- generic boilerplate, so skip the redundant "Source" section for them.
-    if kind ~= "toy" and obtained and obtained ~= "" then
+    if this.kind ~= "toy" and this.obtained and this.obtained ~= "" then
       GameTooltip:AddLine(" ")
       GameTooltip:AddLine("Source", 1.0, 0.72, 0.25)
-      GameTooltip:AddLine(tostring(obtained), 0.84, 0.84, 0.82, true)
+      GameTooltip:AddLine(tostring(this.obtained), 0.84, 0.84, 0.82, true)
     end
     GameTooltip:Show()
   end)
   card:SetScript("OnLeave", function()
-    ABC_StableSetBorder(this, collected and 0.72 or 0.31, collected and 0.43 or 0.27, collected and 0.12 or 0.22, 1)
+    local d = this.data
+    local coll = d and d.collected == true
+    ABC_StableSetBorder(this, coll and 0.72 or 0.31, coll and 0.43 or 0.27, coll and 0.12 or 0.22, 1)
     GameTooltip:Hide()
   end)
 
+  ABC.cardPool[index] = card
+  return card
+end
+
+local function ABC_PopulateCard(card, parent, index, data, kind)
+  local cols = 3
+  local gapX, gapY = 14, 10
+  local col = math.mod(index - 1, cols)
+  local row = math.floor((index - 1) / cols)
+  local collected = data and data.collected == true
+
+  -- parent (shim) is itself pooled/reused by BuildCollectionView now rather
+  -- than recreated every call, but reparenting defensively here costs
+  -- nothing and guards against that ever changing.
+  card:SetParent(parent)
+  card:ClearAllPoints()
+  card:SetPoint("TOPLEFT", parent, "TOPLEFT", 10 + col * (ABC_CARD_W + gapX), -8 - row * (ABC_CARD_H + gapY))
+  card.data = data
+  card.kind = kind
+
+  ABC_StableSetTextureColor(card._abcStableBackground, collected and 0.105 or 0.050, collected and 0.070 or 0.046, collected and 0.038 or 0.042, 0.98)
+  ABC_StableSetBorder(card, collected and 0.72 or 0.31, collected and 0.43 or 0.27, collected and 0.12 or 0.22, 1)
+  ABC_StableSetTextureColor(card.accent, collected and 0.95 or 0.34, collected and 0.45 or 0.30, collected and 0.08 or 0.24, 1)
+
+  -- Only the big portrait below shows the icon now -- a second small copy
+  -- up here next to the name was pure duplication on a card this size.
+  local iconPath = ABC_StableFamilyIcon(data, kind)
+
+  card.nameText:SetText(ABC_StableTrim(data and data.name or "Unknown", 28))
+  card.nameText:SetTextColor(collected and 0.90 or 0.67, collected and 0.88 or 0.65, collected and 0.84 or 0.62)
+
+  card.status:SetText(collected and "COLLECTED" or "MISSING")
+  card.status:SetTextColor(collected and 0.42 or 0.68, collected and 0.92 or 0.66, collected and 0.34 or 0.58)
+
+  local collectedTs = collected and ABC_CollectedTimestamp(data) or nil
+  if collectedTs and collectedTs > 0 and date then
+    card.collectedDate:SetText(date("%m/%d/%Y", collectedTs))
+    card.collectedDate:Show()
+  else
+    card.collectedDate:Hide()
+  end
+
+  local secondary
+  if kind == "mount" then
+    secondary = tostring(data.category or "Mount")
+  else
+    secondary = tostring(data.sourceCategory or data.category or data.source or "Companion")
+  end
+  card.itemLine:SetText(ABC_StableTrim(secondary, 38))
+
+  ABC_StableSetBorder(card.portraitFrame, collected and 0.53 or 0.24, collected and 0.30 or 0.22, collected and 0.07 or 0.19, 1)
+  ABC_StableSetTextureColor(card.centerGlow, collected and 0.20 or 0.07, collected and 0.075 or 0.07, collected and 0.020 or 0.07, 0.72)
+
+  card.portrait:SetTexture(iconPath or ABC_STABLE_TEX_ICON_FALLBACK)
+  -- The original only ever set this for the not-collected case (a fresh
+  -- texture defaults to full color) -- now that the same texture is reused
+  -- across different data, the collected case has to be reset explicitly
+  -- too, or a card that was last shown dimmed would stay dimmed forever.
+  if collected then
+    card.portrait:SetVertexColor(1, 1, 1, 1)
+  else
+    card.portrait:SetVertexColor(0.34, 0.34, 0.34, 0.86)
+  end
+
+  if card.portraitRing then
+    card.portraitRing:SetVertexColor(1, 1, 1, collected and 0.92 or 0.55)
+  end
+
+  local obtained = data and data.obtainedFrom or nil
+  card.obtained = obtained
+  if kind == "toy" then
+    local description = data and data.description or nil
+    if description and description ~= "" then
+      card.sourceLabel:SetText(ABC_StableTrim(description, 78))
+    else
+      card.sourceLabel:SetText("")
+    end
+  elseif obtained and obtained ~= "" then
+    card.sourceLabel:SetText("Source: "..ABC_StableTrim(obtained, 78))
+  else
+    card.sourceLabel:SetText("")
+  end
+
+  card.detail:SetWidth(collected and 122 or 195)
+  local pointValue = tonumber(data and data.points) or 25
+  local detailText = "|cFFFFD433"..tostring(pointValue).." pts|r  |  "..(kind == "mount" and tostring(data.category or "Mount") or tostring(data.sourceCategory or data.category or data.source or "Companion"))
+  -- Level requirement gets its own soft-blue badge instead of blending
+  -- into the plain category text as one more pipe-separated clause.
+  if kind == "mount" and data.requiredLevel then detailText = detailText.."  |  |cFF6DAEDBLv "..tostring(data.requiredLevel).."|r" end
+  card.detail:SetText(ABC_StableTrim(detailText, 64))
+
+  if collected and data.spellIndex then
+    card.summonBtn:SetText(kind == "mount" and "Summon" or "Call")
+    card.summonBtn:Show()
+  else
+    card.summonBtn:Hide()
+  end
+
+  card:Show()
+end
+
+local function ABC_StableCard(parent, index, data, kind)
+  local card = ABC.cardPool[index] or ABC_BuildCardSkeleton(parent, index)
+  ABC_PopulateCard(card, parent, index, data, kind)
   table.insert(ABC.activeCards, card)
   return card
 end
@@ -5073,9 +5164,20 @@ function ABC:BuildCollectionView(kind)
   -- Anchored to the progress bar's actual bottom edge (not a guessed fixed
   -- offset) so the card grid always starts right after the header/summary/
   -- bar block regardless of font metrics -- no overlap, no wasted space.
-  local shim = CreateFrame("Frame", nil, ui.scrollChild)
+  -- Pooled the same way `bar` above already is: the cards parent to this,
+  -- so recreating it fresh every call (as before) would leave every
+  -- previous call's cards hanging off an abandoned parent frame instead of
+  -- the reused card pool actually being reachable from the current one.
+  local shim = ui.abcCardShim
+  if not shim then
+    shim = CreateFrame("Frame", nil, ui.scrollChild)
+    ui.abcCardShim = shim
+  end
+  shim:SetParent(ui.scrollChild)
+  shim:ClearAllPoints()
   shim:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -8)
   shim:SetWidth(690); shim:SetHeight(1)
+  shim:Show()
 
   local firstCardY = 82
   if shim.GetTop and ui.scrollChild.GetTop then
@@ -5105,6 +5207,13 @@ function ABC:BuildCollectionView(kind)
       CreateCardFailure(shim, localIndex, rowData, err)
     end
     localIndex = localIndex + 1
+  end
+  -- A shorter last page (or a filter that now matches fewer items) means
+  -- some pool slots that were shown by a previous call aren't touched by
+  -- the loop above -- hide whatever's left over instead of leaving stale
+  -- cards visible below wherever this page's real content ends.
+  for i = localIndex, table.getn(ABC.cardPool) do
+    if ABC.cardPool[i] then ABC.cardPool[i]:Hide() end
   end
 
   -- Pager position is derived from a full page's row count (perPage / 3
