@@ -600,3 +600,103 @@ SlashCmdList["LEAFZONEDEBUG"] = function(msg)
     end
   end
 end
+
+-- ===== Zone table reconciliation dump =====
+-- /leafzonereconcile -- resolves every group in ZONE_GROUP_ZONES that's
+-- meant to track a real parent zone's subzones against this server's own
+-- live area table (via ClassicAPI's C_Map, same call ClassicAPI's
+-- C_MapExplorationInfo-based tracking above already depends on) and prints
+-- a ready-to-paste Lua block, one line per group, in the exact
+-- `groupKey = { "Sub One", "Sub Two" },` syntax ZONE_GROUP_ZONES already
+-- uses -- so a mismatch (like the Talonbranch Glade/Thalanaar ones fixed by
+-- hand) shows up as a plain text diff instead of needing another
+-- one-zone-at-a-time research pass.
+local ZONE_RECONCILE_GROUPS = {
+  { key = "ashenvale_tw",      zone = "Ashenvale" },
+  { key = "stonetalon_tw",     zone = "Stonetalon Mountains" },
+  { key = "arathi_tw",         zone = "Arathi Highlands" },
+  { key = "badlands_tw",       zone = "Badlands" },
+  { key = "elwynn",            zone = "Elwynn Forest" },
+  { key = "barrens",           zone = "The Barrens" },
+  { key = "balor",             zone = "Balor" },
+  { key = "gilneas",           zone = "Gilneas" },
+  { key = "northwind",         zone = "Northwind" },
+  { key = "lapidis",           zone = "Lapidis Isle" },
+  { key = "gillijim",          zone = "Gillijim's Isle" },
+  { key = "scarlet_enclave",   zone = "The Scarlet Enclave" },
+  { key = "grim_reaches",      zone = "The Grim Reaches" },
+  { key = "telabim",           zone = "Tel'Abim" },
+  { key = "hyjal",             zone = "Hyjal" },
+  { key = "tirisfal_uplands",  zone = "Tirisfal Uplands" },
+}
+
+local function BuildZoneReconcileDump()
+  local lines = {}
+  table.insert(lines, "-- Live C_Map subzone data, one line per ZONE_GROUP_ZONES group.")
+  table.insert(lines, "-- Paste this whole block back so it can be diffed against the")
+  table.insert(lines, "-- hand-typed lists in LeafVillageAchievements.lua.")
+  for _, entry in ipairs(ZONE_RECONCILE_GROUPS) do
+    local zoneAreaID = ResolveZoneAreaID(entry.zone)
+    if not zoneAreaID then
+      table.insert(lines, "-- "..entry.key..": COULD NOT RESOLVE ZONE '"..entry.zone.."' (name mismatch against this server's area table?)")
+    else
+      local areas = BuildZoneCriteria(zoneAreaID)
+      if not areas or table.getn(areas) == 0 then
+        table.insert(lines, "-- "..entry.key..": resolved zoneAreaID="..zoneAreaID..", but zero named subzones")
+      else
+        local quoted = {}
+        for i = 1, table.getn(areas) do
+          quoted[i] = string.format("%q", areas[i])
+        end
+        table.insert(lines, entry.key.." = { "..table.concat(quoted, ", ").." },")
+      end
+    end
+  end
+  return table.concat(lines, "\n")
+end
+
+function LeafVE_AchTest:ShowZoneReconcileDump()
+  if not C_Map or not C_Map.GetAreas or not C_Map.GetMapOverlays or not C_Map.GetAreaInfo then
+    DEFAULT_CHAT_FRAME:AddMessage("ClassicAPI's C_Map isn't available -- is the DLL loaded this session?")
+    return
+  end
+  local text = BuildZoneReconcileDump()
+  if not self.zoneReconcileFrame then
+    local f = CreateFrame("Frame", "LeafVEZoneReconcileFrame", UIParent)
+    f:SetWidth(700); f:SetHeight(440)
+    f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    f:SetFrameStrata("TOOLTIP")
+    f:SetBackdrop({ bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background", edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border", tile = true, tileSize = 32, edgeSize = 32, insets = { left = 11, right = 12, top = 12, bottom = 11 } })
+    f:EnableMouse(true); f:SetMovable(true); f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function() this:StartMoving() end)
+    f:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
+    local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -18)
+    title:SetText("Zone Table Reconciliation Dump")
+    title:SetTextColor(1.0, 0.82, 0.36)
+    local help = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    help:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -5)
+    help:SetText("Ctrl+A, Ctrl+C, then send the complete block back to me.")
+    local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -5, -5)
+    local box = CreateFrame("EditBox", nil, f)
+    box:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -68)
+    box:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -22, 22)
+    box:SetFontObject(ChatFontNormal or GameFontHighlightSmall)
+    box:SetMultiLine(true); box:SetAutoFocus(true); box:SetMaxLetters(200000)
+    box:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", tile = true, tileSize = 16, edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 } })
+    box:SetBackdropColor(0.02, 0.02, 0.02, 0.96)
+    box:SetScript("OnEscapePressed", function() this:GetParent():Hide() end)
+    f.editBox = box
+    self.zoneReconcileFrame = f
+  end
+  self.zoneReconcileFrame.editBox:SetText(text)
+  self.zoneReconcileFrame:Show()
+  self.zoneReconcileFrame.editBox:SetFocus()
+  if self.zoneReconcileFrame.editBox.HighlightText then self.zoneReconcileFrame.editBox:HighlightText() end
+end
+
+SLASH_LEAFZONERECONCILE1 = "/leafzonereconcile"
+SlashCmdList["LEAFZONERECONCILE"] = function()
+  LeafVE_AchTest:ShowZoneReconcileDump()
+end
