@@ -3072,7 +3072,7 @@ function ABC:InstallTabs()
   -- single character while this tab is still being built out -- everyone
   -- else never gets the button (and thus never the "guildcollection" view)
   -- at all.
-  if not ui.guildCollectionTab and ui.toyTab and UnitName("player") == "Kamehameha" then
+  if not ui.guildCollectionTab and ui.toyTab and UnitName("player") == "Kamehameheal" then
     local guildCollectionTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     guildCollectionTab:SetPoint("LEFT", ui.toyTab, "RIGHT", 5, 0)
     guildCollectionTab:SetWidth(60)

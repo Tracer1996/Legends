@@ -748,6 +748,7 @@ WORK_ORDER_PROFESSION_ORDER = {
   "Jewelcrafting",
   "Leatherworking",
   "Tailoring",
+  "Survival",
 }
 
 WORK_ORDER_REQUEST_CATEGORY_ORDER = {
@@ -760,6 +761,7 @@ WORK_ORDER_REQUEST_CATEGORY_ORDER = {
   "Jewelcrafting",
   "Leatherworking",
   "Tailoring",
+  "Survival",
   "Gathering",
 }
 
@@ -797,6 +799,8 @@ WORK_ORDER_PROFESSION_META = {
   ["Mining"] = {icon = "Interface\\Icons\\Trade_Mining"},
   ["Skinning"] = {icon = "Interface\\Icons\\INV_Misc_Pelt_Wolf_01"},
   ["Tailoring"] = {icon = "Interface\\Icons\\Trade_Tailoring"},
+  ["Survival"] = {icon = "Interface\\Icons\\Trade_Survival"},
+  ["Gardening"] = {icon = "Interface\\Icons\\Trade_Survival"},
   ["Gathering"] = {icon = "Interface\\Icons\\INV_Misc_Bag_10_Blue"},
 }
 
@@ -827,11 +831,13 @@ WORK_ORDER_TABLE_PREFIX_MAP = {
   Enchanting = "Enchanting",
   Engineering = "Engineering",
   FirstAid = "First Aid",
+  Gardening = "Gardening",
   Gnomish = "Engineering",
   Goblin = "Engineering",
   Hammersmith = "Blacksmithing",
   Jewelcrafting = "Jewelcrafting",
   Leather = "Leatherworking",
+  Survival = "Survival",
   Smithing = "Blacksmithing",
   Swordsmith = "Blacksmithing",
   Tailoring = "Tailoring",
@@ -4050,6 +4056,7 @@ local function EnsureDB()
   if not LeafVE_GlobalDB.workOrderCrafterSignups then LeafVE_GlobalDB.workOrderCrafterSignups = {} end
   if not LeafVE_GlobalDB.workOrderCrafterSignupMeta then LeafVE_GlobalDB.workOrderCrafterSignupMeta = {} end
   if not LeafVE_GlobalDB.workOrderIdentityLinks then LeafVE_GlobalDB.workOrderIdentityLinks = {} end
+  if not LeafVE_GlobalDB.recipeKnowledge then LeafVE_GlobalDB.recipeKnowledge = {} end
   if LeafVE.allianceEnabled == true then
     if type(LeafVE_GlobalDB.allianceRosters) ~= "table" then LeafVE_GlobalDB.allianceRosters = {} end
     if type(LeafVE_GlobalDB.allianceAccessSnapshot) ~= "table" then LeafVE_GlobalDB.allianceAccessSnapshot = { updatedAt = 0, guilds = {} } end
@@ -14527,6 +14534,20 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
   end
 
+  if message == "RECIPELINKREQ" or message == "RECIPELINKREQ_FORCE" then
+    local forceRespond = (message == "RECIPELINKREQ_FORCE")
+    local me = ShortName(UnitName("player"))
+    if me and sender ~= me then
+      self:BroadcastMyRecipeLinks(forceRespond)
+    end
+    return
+  end
+
+  if string.sub(message, 1, 11) == "RECIPELINK:" then
+    self:HandleIncomingRecipeLink(string.sub(message, 12), sender)
+    return
+  end
+
   if message == "RAIDREQ" or message == "RAIDREQ_FORCE" then
     local forceRespond = (message == "RAIDREQ_FORCE")
     local me = ShortName(UnitName("player"))
@@ -16699,6 +16720,7 @@ local LEAFVE_TEXT_PAGE_HEADERS = {
   admin = {"Admin", "Officer tools and guild settings"},
   liveHistory = {"Live History", "Real-time addon activity feed"},
   guildEvents = {"Calendar", "Guild events and scheduled runs"},
+  recipes = {"Recipe Browser", "Every known craft recipe, and who in the guild can make it"},
   shinobiDuties = {"Weekly Duties", "Weekly Banner Duty quests"},
   bannerDutyBoard = {"Bulletin Board", "Post group, help, crafting, and quest requests"},
   bannerDutyLive = {"Banner Duty Live Updates", "Joins, leaves, completions, and automatic Banner Rep awards appear here instead of chat spam"},
@@ -16757,7 +16779,7 @@ function LeafVE.UI:HideAllMainPanels()
   local panelNames = {
     "me", "shoutouts", "leaderWeek", "leaderLife", "roster", "history", "badges",
     "titles", "achievements", "shinobiReputation", "options", "admin", "liveHistory",
-    "guildEvents", "workOrders", "shinobiDuties", "bannerDutyBoard", "bannerDutyLive", "workOrderRep", "welcome", "join"
+    "guildEvents", "workOrders", "shinobiDuties", "bannerDutyBoard", "bannerDutyLive", "workOrderRep", "welcome", "join", "recipes"
   }
 
   for i = 1, table.getn(panelNames) do
@@ -17172,6 +17194,14 @@ local LEAFVE_GROUPED_NAV = {
     },
   },
   {
+    key = "recipes",
+    label = "Recipes",
+    width = 76,
+    standalone = true,
+    defaultTab = "recipes",
+    subtabs = {},
+  },
+  {
     key = "calendar",
     label = "Calendar",
     width = 82,
@@ -17206,6 +17236,7 @@ local LEAFVE_GROUPED_TAB_TO_CATEGORY = {
   roster = "character",
   shoutouts = "character",
   guildEvents = "calendar",
+  recipes = "recipes",
   shinobiDuties = "orders",
   bannerDutyBoard = "orders",
   bannerDutyLive = "orders",
@@ -17327,6 +17358,7 @@ function LeafVE.UI:BuildGroupedNavigation(parent)
     character = "me",
     calendar = "guildEvents",
     orders = "workOrders",
+    recipes = "recipes",
     options = "options",
   }
 
@@ -24439,7 +24471,15 @@ function LeafVE:EnsureWorkOrderCatalog()
                 sourceTable = tableKey,
               }
               if recipe.name and recipe.name ~= "" then
-                self:ApplyWorkOrderSpellInfo(recipe)
+                -- Jewelcrafting/Survival/Gardening data has no real spellId (see the
+                -- Atlas-CFM transcription note above) -- letting ApplyWorkOrderSpellInfo's
+                -- itemId-based fallback run for these risks matching an unrelated vanilla
+                -- recipe that happens to reuse the same numeric itemId (its own fallback
+                -- returns candidates[1] even when no name matches), poisoning the recipe
+                -- with a bogus spellId/reagent list. Skip it for these three professions.
+                if profession ~= "Jewelcrafting" and profession ~= "Survival" and profession ~= "Gardening" then
+                  self:ApplyWorkOrderSpellInfo(recipe)
+                end
                 recipe.icon = self:GetWorkOrderResultIcon(recipe.itemId, recipe.spellId, recipe.icon)
                 if not self:IsWorkOrderItemBindOnPickup(recipe.itemId) then
                   recipe.uid = GetWorkOrderRecipeKey(recipe)
@@ -24517,6 +24557,257 @@ function LeafVE:FindWorkOrderCatalogRecipe(profession, recipeName, itemId, spell
     return FindWorkOrderCatalogRecipeInList(catalog.byProfession and catalog.byProfession["Gathering"], expectedName, itemId, spellId)
   end
   return nil
+end
+
+-- ============================================================================
+-- Recipe Browser: a guild-wide "who can make this recipe" index, independent
+-- of Banner Duties / Work Orders (it only shares the static recipe catalog
+-- above as a read-only data source). Knowledge is captured automatically via
+-- ClassicAPI's C_TradeSkillUI trade-skill link backport -- when a player
+-- opens their own profession window, the resulting link (their known-recipe
+-- bitfield for that skill line) is broadcast guild-wide; every other client
+-- decodes it locally. See https://github.com/brues-code/ClassicAPI.
+-- ============================================================================
+
+function LeafVE:HasRecipeLinkAPI()
+  return type(C_TradeSkillUI) == "table"
+    and type(C_TradeSkillUI.GetTradeSkillListLink) == "function"
+    and type(C_TradeSkillUI.GetTradeSkillListRecipes) == "function"
+end
+
+-- Parses a `|Htrade:<skillLineID>:<cur>:<max>:<linkerName>:<bits>|h[<Profession>]|h|r`
+-- link (ClassicAPI's backport of the 2.x+ trade-skill link) into its fields.
+function LeafVE:ParseTradeSkillLink(link)
+  if type(link) ~= "string" then return nil end
+  local skillLineID, cur, max, linkerName, bits, profName =
+    string.match(link, "Htrade:(%d+):(%d+):(%d+):([^:]+):([^|]+)|h%[(.-)%]")
+  skillLineID = tonumber(skillLineID)
+  if not skillLineID or not bits or bits == "" then
+    return nil
+  end
+  return {
+    skillLineID = skillLineID,
+    cur = tonumber(cur) or 0,
+    max = tonumber(max) or 0,
+    linkerName = ShortName(linkerName),
+    bits = bits,
+    profession = CanonicalWorkOrderProfession(profName) or Trim(tostring(profName or "")),
+  }
+end
+
+-- Decodes a stored (skillLineID, bits) pair into the "s<spellId>" tokens the
+-- player is known to have -- same token shape GetWorkOrderCrafterRecipeToken
+-- uses, so decoded results resolve through the shared recipe catalog for free.
+function LeafVE:GetKnownRecipeTokensForLink(skillLineID, bits)
+  local tokens = {}
+  if not self:HasRecipeLinkAPI() or not skillLineID or not bits or bits == "" then
+    return tokens
+  end
+  local decoded = C_TradeSkillUI.GetTradeSkillListRecipes(skillLineID, bits)
+  if type(decoded) ~= "table" then return tokens end
+  for i = 1, table.getn(decoded) do
+    local row = decoded[i]
+    if type(row) == "table" and row.isKnown and tonumber(row.spellID) then
+      table.insert(tokens, "s" .. tostring(row.spellID))
+    end
+  end
+  return tokens
+end
+
+function LeafVE:StoreRecipeKnowledgeLink(playerName, parsed, updatedAt)
+  playerName = ShortName(playerName)
+  if not playerName or type(parsed) ~= "table" or not parsed.profession or parsed.profession == "" then
+    return false
+  end
+  EnsureDB()
+  updatedAt = tonumber(updatedAt) or Now()
+
+  local key = Lower(playerName)
+  local bucket = LeafVE_GlobalDB.recipeKnowledge[key]
+  if type(bucket) ~= "table" then
+    bucket = { player = playerName, professions = {} }
+    LeafVE_GlobalDB.recipeKnowledge[key] = bucket
+  end
+  bucket.player = playerName
+  if type(bucket.professions) ~= "table" then
+    bucket.professions = {}
+  end
+
+  local existing = bucket.professions[parsed.profession]
+  if type(existing) == "table" and (tonumber(existing.updatedAt) or 0) >= updatedAt then
+    return false
+  end
+
+  bucket.professions[parsed.profession] = {
+    profession = parsed.profession,
+    skillLineID = parsed.skillLineID,
+    bits = parsed.bits,
+    cur = parsed.cur,
+    max = parsed.max,
+    updatedAt = updatedAt,
+  }
+  bucket.updatedAt = math.max(tonumber(bucket.updatedAt) or 0, updatedAt)
+  self.recipeKnowledgeVersion = (self.recipeKnowledgeVersion or 0) + 1
+  return true
+end
+
+-- Builds token -> {playerName, ...} for every crafter with known-recipe data
+-- for `profession`, decoding each stored link once. Cheap to rebuild per
+-- profession selection; callers should cache it against recipeKnowledgeVersion.
+function LeafVE:BuildRecipeKnowledgeIndex(profession)
+  EnsureDB()
+  local index = {}
+  for key, bucket in pairs(LeafVE_GlobalDB.recipeKnowledge or {}) do
+    local entry = type(bucket) == "table" and type(bucket.professions) == "table" and bucket.professions[profession]
+    if type(entry) == "table" and entry.bits and entry.skillLineID then
+      local tokens = self:GetKnownRecipeTokensForLink(entry.skillLineID, entry.bits)
+      for i = 1, table.getn(tokens) do
+        local token = tokens[i]
+        index[token] = index[token] or {}
+        table.insert(index[token], bucket.player or key)
+      end
+    end
+  end
+  for _, names in pairs(index) do
+    table.sort(names, function(a, b) return Lower(a) < Lower(b) end)
+  end
+  return index
+end
+
+function LeafVE:RefreshRecipeBrowserViews()
+  if not LeafVE.UI or not LeafVE.UI.activeTab or LeafVE.UI.activeTab ~= "recipes" then return end
+  if LeafVE.UI.RefreshRecipeBrowserPanel then
+    LeafVE.UI:RefreshRecipeBrowserPanel()
+  end
+end
+
+function LeafVE:BroadcastRecipeLink(parsed, updatedAt)
+  if not InGuild() or type(parsed) ~= "table" or not parsed.skillLineID then return end
+  local payload = table.concat({
+    tostring(tonumber(updatedAt) or Now()),
+    tostring(parsed.skillLineID),
+    tostring(parsed.cur or 0),
+    tostring(parsed.max or 0),
+    EncodeTalentField(parsed.linkerName or ""),
+    EncodeTalentField(parsed.profession or ""),
+    EncodeTalentField(parsed.bits or ""),
+  }, SEP)
+  SendAddonMessage("LeafVE", "RECIPELINK:" .. payload, "GUILD")
+end
+
+function LeafVE:BroadcastMyRecipeLinks(force)
+  EnsureDB()
+  local me = ShortName(UnitName("player"))
+  if not me or not InGuild() then return end
+
+  self.lastRecipeLinkBroadcastAt = self.lastRecipeLinkBroadcastAt or 0
+  local now = Now()
+  if not force and (now - self.lastRecipeLinkBroadcastAt) < 30 then
+    return
+  end
+
+  local bucket = LeafVE_GlobalDB.recipeKnowledge[Lower(me)]
+  if type(bucket) ~= "table" or type(bucket.professions) ~= "table" then
+    return
+  end
+
+  self.lastRecipeLinkBroadcastAt = now
+  for profession, entry in pairs(bucket.professions) do
+    if type(entry) == "table" and entry.bits and entry.skillLineID then
+      self:BroadcastRecipeLink({
+        skillLineID = entry.skillLineID,
+        cur = entry.cur,
+        max = entry.max,
+        linkerName = me,
+        profession = profession,
+        bits = entry.bits,
+      }, entry.updatedAt)
+    end
+  end
+end
+
+function LeafVE:RequestRecipeLinkSync(force)
+  if not InGuild() then return end
+  local now = Now()
+  if not force and (now - (self.lastRecipeLinkSyncRequestAt or 0)) < 20 then
+    return
+  end
+  self.lastRecipeLinkSyncRequestAt = now
+  SendAddonMessage("LeafVE", force and "RECIPELINKREQ_FORCE" or "RECIPELINKREQ", "GUILD")
+end
+
+function LeafVE:HandleIncomingRecipeLink(payload, sender)
+  local fields = SplitByLiteralSep(payload, SEP)
+  if table.getn(fields) < 7 then return end
+
+  local updatedAt = tonumber(fields[1]) or 0
+  local skillLineID = tonumber(fields[2])
+  local cur = tonumber(fields[3]) or 0
+  local max = tonumber(fields[4]) or 0
+  local linkerName = ShortName(DecodeTalentField(fields[5] or ""))
+  local profession = CanonicalWorkOrderProfession(DecodeTalentField(fields[6] or "")) or DecodeTalentField(fields[6] or "")
+  local bits = DecodeTalentField(fields[7] or "")
+
+  local senderName = ShortName(sender)
+  if not linkerName or not skillLineID or bits == "" or updatedAt < 1 then return end
+  if senderName and Lower(senderName) ~= Lower(linkerName) then return end
+  if not profession or profession == "" then return end
+
+  local stored = self:StoreRecipeKnowledgeLink(linkerName, {
+    skillLineID = skillLineID,
+    cur = cur,
+    max = max,
+    linkerName = linkerName,
+    profession = profession,
+    bits = bits,
+  }, updatedAt)
+  if stored then
+    self:RefreshRecipeBrowserViews()
+  end
+end
+
+-- Captures the local player's own known-recipe link the moment their
+-- TradeSkill (isCraft=false) or Craft (isCraft=true) window opens, stores it,
+-- and broadcasts it guild-wide.
+function LeafVE:CaptureOwnRecipeLink(isCraft)
+  if not self:HasRecipeLinkAPI() then return end
+  local link = isCraft and C_TradeSkillUI.GetCraftListLink() or C_TradeSkillUI.GetTradeSkillListLink()
+  if not link or link == "" then return end
+
+  local parsed = self:ParseTradeSkillLink(link)
+  if not parsed or not parsed.profession or parsed.profession == "" then return end
+
+  local me = ShortName(UnitName("player"))
+  if not me or not parsed.linkerName or Lower(parsed.linkerName) ~= Lower(me) then return end
+
+  local updatedAt = Now()
+  local stored = self:StoreRecipeKnowledgeLink(me, parsed, updatedAt)
+  if stored then
+    self:RefreshRecipeBrowserViews()
+  end
+  self:BroadcastRecipeLink(parsed, updatedAt)
+end
+
+-- TradeSkillFrame/CraftFrame are lazy-loaded (Blizzard_TradeSkillUI /
+-- Blizzard_CraftUI aren't in memory at PLAYER_LOGIN on this client -- they
+-- only appear once the player opens that window for the first time this
+-- session), so a single PLAYER_LOGIN hook attempt would silently miss both
+-- frames forever. This is safe to call repeatedly (each frame hooks once);
+-- callers should retry it on ADDON_LOADED so it catches the frames whenever
+-- their owning addon actually loads.
+function LeafVE:HookRecipeScanFrames()
+  if not self.recipeTradeSkillFrameHooked and TradeSkillFrame and TradeSkillFrame.HookScript then
+    self.recipeTradeSkillFrameHooked = true
+    TradeSkillFrame:HookScript("OnShow", function()
+      LeafVE:CaptureOwnRecipeLink(false)
+    end)
+  end
+  if not self.recipeCraftFrameHooked and CraftFrame and CraftFrame.HookScript then
+    self.recipeCraftFrameHooked = true
+    CraftFrame:HookScript("OnShow", function()
+      LeafVE:CaptureOwnRecipeLink(true)
+    end)
+  end
 end
 
 function LeafVE:IsValidWorkOrderRecord(order)
@@ -38046,6 +38337,317 @@ function LeafVE.UI:RefreshAllianceWelcomePanel()
   end
 end
 
+function BuildRecipeBrowserPanel(panel)
+  if not panel or panel.isRecipeBrowserBuilt then return end
+  panel.isRecipeBrowserBuilt = true
+
+  local headerBG = panel:CreateTexture(nil, "BACKGROUND")
+  headerBG:SetPoint("TOP", panel, "TOP", -15, -6)
+  headerBG:SetWidth(512)
+  headerBG:SetHeight(64)
+  headerBG:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+  headerBG:SetTexCoord(0, 1, 0, 1)
+  panel._ashenHeaderBG = headerBG
+  if LeafVE_AshenDossierSkin and LeafVE_AshenDossierSkin.ApplyPageHeaderToPanel then
+    LeafVE_AshenDossierSkin:ApplyPageHeaderToPanel(panel)
+  end
+  headerBG:SetVertexColor(1, 1, 1, 1)
+  if headerBG.SetAlpha then headerBG:SetAlpha(0) end
+  if headerBG.Hide then headerBG:Hide() end
+
+  local accentTop = panel:CreateTexture(nil, "BORDER")
+  accentTop:SetPoint("TOPLEFT", headerBG, "TOPLEFT", 0, 0)
+  accentTop:SetPoint("TOPRIGHT", headerBG, "TOPRIGHT", 0, 0)
+  accentTop:SetHeight(3)
+  accentTop:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
+  accentTop:SetVertexColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 0)
+
+  local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
+  h:SetText("|cFFFFD700Recipe Browser|r")
+
+  local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  subtitle:SetPoint("TOP", h, "BOTTOM", 0, -3)
+  subtitle:SetText("|cFF888888Every known craft recipe, and who in the guild can make it|r")
+  panel._ashenHeaderTitle = h
+  panel._ashenHeaderSubtitle = subtitle
+  if h.Show then h:Show() end
+  if subtitle.Show then subtitle:Show() end
+
+  local professionPanel = CreateInset(panel)
+  professionPanel:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -95)
+  professionPanel:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, 14)
+  professionPanel:SetWidth(180)
+  panel.professionPanel = professionPanel
+
+  local professionTitle = professionPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  professionTitle:SetPoint("TOPLEFT", professionPanel, "TOPLEFT", 10, -10)
+  professionTitle:SetText("|cFFFFD700Professions|r")
+
+  panel.professionButtons = {}
+  for i = 1, table.getn(WORK_ORDER_PROFESSION_ORDER) do
+    local profession = WORK_ORDER_PROFESSION_ORDER[i]
+    local btn = CreateWorkOrderProfessionButton(professionPanel, profession)
+    btn.recipePanelOwner = panel
+    btn:SetWidth(160)
+    btn:SetHeight(28)
+    if btn.icon then
+      btn.icon:SetWidth(20)
+      btn.icon:SetHeight(20)
+    end
+    if btn.text then
+      btn.text:SetFontObject(GameFontNormal)
+    end
+    btn:SetPoint("TOPLEFT", professionPanel, "TOPLEFT", 10, -30 - ((i - 1) * 32))
+    btn:SetScript("OnClick", function()
+      if not this:IsEnabled() then return end
+      local owner = this.recipePanelOwner
+      owner.selectedProfession = this.profession
+      owner.lastListKey = nil
+      if LeafVE and LeafVE.UI and LeafVE.UI.RefreshRecipeBrowserPanel then
+        LeafVE.UI:RefreshRecipeBrowserPanel()
+      end
+    end)
+    panel.professionButtons[i] = btn
+  end
+
+  local recipePanel = CreateInset(panel)
+  recipePanel:SetPoint("TOPLEFT", professionPanel, "TOPRIGHT", 10, 0)
+  recipePanel:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -14, 14)
+  panel.recipePanel = recipePanel
+
+  local searchLabel = recipePanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  searchLabel:SetPoint("TOPLEFT", recipePanel, "TOPLEFT", 10, -12)
+  searchLabel:SetText("|cFFFFD700Recipe Search|r")
+
+  local searchBG = CreateFrame("Frame", nil, recipePanel)
+  searchBG:SetPoint("TOPLEFT", searchLabel, "BOTTOMLEFT", 0, -6)
+  searchBG:SetWidth(190)
+  searchBG:SetHeight(22)
+  searchBG:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 12,
+    insets = {left = 3, right = 3, top = 3, bottom = 3}
+  })
+  searchBG:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
+  searchBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
+
+  local searchBox = CreateFrame("EditBox", nil, searchBG)
+  searchBox:SetPoint("TOPLEFT", searchBG, "TOPLEFT", 5, -4)
+  searchBox:SetPoint("BOTTOMRIGHT", searchBG, "BOTTOMRIGHT", -5, 4)
+  searchBox:SetFontObject(GameFontHighlightSmall)
+  searchBox:SetTextInsets(0, 0, 0, 0)
+  searchBox:SetAutoFocus(false)
+  searchBox:SetText("")
+  searchBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+  searchBox:SetScript("OnTextChanged", function()
+    if LeafVE and LeafVE.UI and LeafVE.UI.activeTab == "recipes" and LeafVE.UI.RefreshRecipeBrowserPanel then
+      LeafVE.UI:RefreshRecipeBrowserPanel()
+    end
+  end)
+  panel.searchBox = searchBox
+
+  local summaryText = recipePanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  summaryText:SetPoint("TOPLEFT", searchBG, "TOPRIGHT", 12, -4)
+  summaryText:SetPoint("RIGHT", recipePanel, "RIGHT", -14, 0)
+  summaryText:SetJustifyH("LEFT")
+  summaryText:SetText("")
+  panel.summaryText = summaryText
+
+  local recipeListFrame = CreateFrame("Frame", nil, recipePanel)
+  recipeListFrame:SetPoint("TOPLEFT", recipePanel, "TOPLEFT", 8, -58)
+  recipeListFrame:SetPoint("BOTTOMRIGHT", recipePanel, "BOTTOMRIGHT", -30, 10)
+  recipeListFrame:EnableMouse(true)
+  recipeListFrame:EnableMouseWheel(true)
+  recipeListFrame.recipePanelOwner = panel
+  recipeListFrame:SetScript("OnMouseWheel", function()
+    local owner = this.recipePanelOwner
+    local totalRows = table.getn(owner.filteredRecipes or {})
+    local visibleRows = owner.recipeVisibleRows or 1
+    local maxOffset = math.max(0, totalRows - visibleRows)
+    local newOffset = (owner.recipeOffset or 0) - (arg1 or 0)
+    if newOffset < 0 then newOffset = 0 end
+    if newOffset > maxOffset then newOffset = maxOffset end
+    if newOffset == (owner.recipeOffset or 0) then return end
+    owner.recipeOffset = newOffset
+    if LeafVE and LeafVE.UI and LeafVE.UI.RefreshRecipeBrowserPanel then
+      LeafVE.UI:RefreshRecipeBrowserPanel()
+    end
+  end)
+  panel.recipeListFrame = recipeListFrame
+  panel.recipeButtons = {}
+  panel.recipeRowHeight = 66
+  panel.recipeVisibleRows = 7
+  panel.recipeOffset = 0
+  panel.filteredRecipes = {}
+  panel.recipeKnowledgeIndex = {}
+
+  local recipeScrollBar = CreateFrame("Slider", nil, recipePanel)
+  -- The up/down arrow buttons AddScrollBarArrows adds sit OUTSIDE the
+  -- scrollbar's own track (~20px above/below it), so the track itself is
+  -- inset that far from recipeListFrame's top and recipePanel's bottom --
+  -- otherwise the arrows poke out past the search box above and the
+  -- panel's own border below instead of landing inside recipePanel.
+  recipeScrollBar:SetPoint("TOPRIGHT", recipeListFrame, "TOPRIGHT", 22, -22)
+  recipeScrollBar:SetPoint("BOTTOMRIGHT", recipePanel, "BOTTOMRIGHT", -8, 32)
+  AddScrollBarArrows(recipeScrollBar, recipePanel)
+  recipeScrollBar:SetWidth(20)
+  recipeScrollBar:SetOrientation("VERTICAL")
+  recipeScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+  recipeScrollBar:SetMinMaxValues(0, 0)
+  recipeScrollBar:SetValue(0)
+  recipeScrollBar:SetValueStep(1)
+  recipeScrollBar.recipePanelOwner = panel
+  local recipeThumb = recipeScrollBar:GetThumbTexture()
+  recipeThumb:SetWidth(20)
+  recipeThumb:SetHeight(28)
+  recipeScrollBar:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 8, edgeSize = 8,
+    insets = {left = 2, right = 2, top = 2, bottom = 2}
+  })
+  recipeScrollBar:SetBackdropColor(0, 0, 0, 0.3)
+  recipeScrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
+  recipeScrollBar:SetScript("OnValueChanged", function()
+    if this.ignoreUpdate then return end
+    local owner = this.recipePanelOwner
+    local value = math.floor((this:GetValue() or 0) + 0.5)
+    if value < 0 then value = 0 end
+    if value == (owner.recipeOffset or 0) then return end
+    owner.recipeOffset = value
+    if LeafVE and LeafVE.UI and LeafVE.UI.RefreshRecipeBrowserPanel then
+      LeafVE.UI:RefreshRecipeBrowserPanel()
+    end
+  end)
+  panel.recipeScrollBar = recipeScrollBar
+
+  local emptyText = recipeListFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  emptyText:SetPoint("TOPLEFT", recipeListFrame, "TOPLEFT", 8, -8)
+  emptyText:SetWidth(260)
+  emptyText:SetJustifyH("LEFT")
+  emptyText:SetJustifyV("TOP")
+  emptyText:SetText("|cFF888888Select a profession to browse recipes.|r")
+  panel.emptyText = emptyText
+end
+
+function LeafVE.UI:RefreshRecipeBrowserPanel()
+  local panel = self.panels and self.panels.recipes
+  if not panel or not panel.professionPanel then return end
+
+  local catalog = LeafVE:EnsureWorkOrderCatalog()
+
+  local selectedProfession = panel.selectedProfession
+  if not selectedProfession or not catalog.byProfession[selectedProfession] then
+    selectedProfession = WORK_ORDER_PROFESSION_ORDER[1]
+    panel.selectedProfession = selectedProfession
+  end
+
+  for i = 1, table.getn(panel.professionButtons) do
+    local btn = panel.professionButtons[i]
+    local recipes = catalog.byProfession[btn.profession] or {}
+    UpdateWorkOrderProfessionButtonVisual(btn, btn.profession == selectedProfession)
+    if btn.countText then
+      btn.countText:SetText(tostring(table.getn(recipes)))
+      btn.countText:Show()
+    end
+  end
+
+  local recipes = selectedProfession and catalog.byProfession[selectedProfession] or {}
+  local filterText = Lower(Trim(panel.searchBox and panel.searchBox:GetText() or ""))
+  local listKey = tostring(selectedProfession or "") .. "|" .. filterText .. "|" .. tostring(LeafVE.recipeKnowledgeVersion or 0)
+  if panel.lastListKey ~= listKey then
+    local filtered = {}
+    for i = 1, table.getn(recipes) do
+      local recipe = recipes[i]
+      if filterText == "" or string.find(recipe.searchKey or "", filterText, 1, true) then
+        table.insert(filtered, recipe)
+      end
+    end
+    panel.filteredRecipes = filtered
+    panel.lastListKey = listKey
+    panel.recipeOffset = 0
+    panel.recipeKnowledgeIndex = selectedProfession and LeafVE:BuildRecipeKnowledgeIndex(selectedProfession) or {}
+  end
+
+  local filtered = panel.filteredRecipes or {}
+  local rowHeight = panel.recipeRowHeight or 66
+  local visibleRows = math.max(7, GetWorkOrderVisibleRowCount(panel.recipeListFrame, rowHeight, 7))
+  local totalRows = table.getn(filtered)
+  local maxOffset = math.max(0, totalRows - visibleRows)
+  if (panel.recipeOffset or 0) > maxOffset then
+    panel.recipeOffset = maxOffset
+  end
+  panel.recipeVisibleRows = visibleRows
+
+  while table.getn(panel.recipeButtons) < visibleRows do
+    local btn = CreateWorkOrderRecipeButton(panel.recipeListFrame)
+    table.insert(panel.recipeButtons, btn)
+  end
+
+  local listWidth = panel.recipeListFrame:GetWidth() or 0
+  if not listWidth or listWidth < 240 then
+    listWidth = 260
+  end
+
+  local startIndex = (panel.recipeOffset or 0) + 1
+  for row = 1, table.getn(panel.recipeButtons) do
+    local btn = panel.recipeButtons[row]
+    local dataIndex = startIndex + row - 1
+    if row <= visibleRows and dataIndex <= totalRows then
+      local recipe = filtered[dataIndex]
+      btn.recipe = recipe
+      btn:SetWidth(listWidth - 4)
+      if btn.text then btn.text:SetWidth(math.max(140, listWidth - 96)) end
+      if btn.metaText then btn.metaText:SetWidth(math.max(140, listWidth - 96)) end
+      if btn.reagentText then btn.reagentText:SetWidth(math.max(150, listWidth - 96)) end
+      btn:ClearAllPoints()
+      btn:SetPoint("TOPLEFT", panel.recipeListFrame, "TOPLEFT", 2, -((row - 1) * rowHeight) - 2)
+      btn.icon:SetTexture(recipe.icon or LEAF_FALLBACK)
+      btn.text:SetText((WORK_ORDER_QUALITY_COLORS[recipe.quality or 1] or "|cFFFFFFFF") .. tostring(recipe.name or "Recipe") .. "|r")
+      if btn.metaText then
+        btn.metaText:SetText("|cFF88CCFF" .. tostring(LeafVE:GetWorkOrderRecipeMetaText(recipe)) .. "|r")
+      end
+      if btn.reagentText then
+        local token = GetWorkOrderCrafterRecipeToken(recipe)
+        local knownBy = token and panel.recipeKnowledgeIndex and panel.recipeKnowledgeIndex[token]
+        if type(knownBy) == "table" and table.getn(knownBy) > 0 then
+          btn.reagentText:SetText("|cFF66FF66Known by:|r " .. LeafVEEllipsizeText(table.concat(knownBy, ", "), 46))
+        else
+          btn.reagentText:SetText("|cFF888888No known crafters yet|r")
+        end
+      end
+      if btn.idText then
+        btn.idText:SetText("")
+        btn.idText:Hide()
+      end
+      if btn.accent then
+        btn.accent:SetVertexColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 0.55)
+      end
+      UpdateWorkOrderRecipeButtonVisual(btn, false)
+      btn:Show()
+    else
+      btn.recipe = nil
+      btn:Hide()
+    end
+  end
+
+  SyncWorkOrderSlider(panel.recipeScrollBar, panel.recipeOffset or 0, maxOffset)
+
+  if totalRows > 0 then
+    panel.emptyText:Hide()
+  else
+    panel.emptyText:Show()
+    panel.emptyText:SetText(filterText ~= "" and "|cFF888888No recipes match that search.|r" or "|cFF888888No recipes found for this profession.|r")
+  end
+
+  if panel.summaryText then
+    local apiNote = LeafVE:HasRecipeLinkAPI() and "" or "  |cFFFF6666(ClassicAPI not detected -- auto-detection disabled)|r"
+    panel.summaryText:SetText("|cFFAAAAAA" .. tostring(selectedProfession or "") .. ": " .. tostring(totalRows) .. " recipe(s)|r" .. apiNote)
+  end
+end
+
 function BuildWelcomePanel(panel)
   -- Header
   local headerBG = panel:CreateTexture(nil, "BACKGROUND")
@@ -40574,6 +41176,12 @@ function LeafVE.UI:Build()
   SkinPrimaryPanel(self.panels.welcome)
   BuildWelcomePanel(self.panels.welcome)
 
+  self.panels.recipes = CreateFrame("Frame", nil, self.inset)
+  self.panels.recipes:SetAllPoints(self.inset)
+  self.panels.recipes._ashenHeaderKey = "recipes"
+  SkinPrimaryPanel(self.panels.recipes)
+  BuildRecipeBrowserPanel(self.panels.recipes)
+
   self.panels.join = CreateFrame("Frame", nil, self.left)
   self.panels.join:SetAllPoints(self.left)
   SkinPrimaryPanel(self.panels.join)
@@ -40792,7 +41400,7 @@ function LeafVE.UI:Refresh()
   self:RefreshGroupedNavigation(hasAccess)
 
   if self.card then
-    if hasAccess and self.activeTab ~= "guildEvents" and self.activeTab ~= "workOrderRep" and self.activeTab ~= "shinobiDuties" and self.activeTab ~= "bannerDutyBoard" and self.activeTab ~= "bannerDutyLive" and self.activeTab ~= "welcome" then
+    if hasAccess and self.activeTab ~= "guildEvents" and self.activeTab ~= "workOrderRep" and self.activeTab ~= "shinobiDuties" and self.activeTab ~= "bannerDutyBoard" and self.activeTab ~= "bannerDutyLive" and self.activeTab ~= "welcome" and self.activeTab ~= "recipes" then
       self.card:Show()
     else
       self.card:Hide()
@@ -41134,6 +41742,12 @@ function LeafVE.UI:Refresh()
   elseif self.activeTab == "welcome" and self.panels.welcome then
     ShowPanelWithTransition(self.panels.welcome)
     self:RefreshWelcome()
+
+  elseif self.activeTab == "recipes" and self.panels.recipes then
+    ShowPanelWithTransition(self.panels.recipes)
+    if self.RefreshRecipeBrowserPanel then
+      self:RefreshRecipeBrowserPanel()
+    end
   end
 end
 
@@ -42122,6 +42736,9 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
     if LeafVE and LeafVE.PatchAchievementsChatAnnouncements then
       pcall(LeafVE.PatchAchievementsChatAnnouncements, LeafVE)
     end
+    if LeafVE and LeafVE.HookRecipeScanFrames then
+      pcall(LeafVE.HookRecipeScanFrames, LeafVE)
+    end
   end
   
   if event == "PLAYER_LOGIN" then
@@ -42170,6 +42787,8 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
     LeafVE:CheckDailyLogin()
     LeafVE:PurgeStaleWeeklyData()
     LeafVE:PurgeInvalidWorkOrders()
+    LeafVE:HookRecipeScanFrames()
+    LeafVE:RequestRecipeLinkSync(false)
     LeafVE:PrimeHonorableKillTracker()
     LeafVE:EnsureChatLoggingEnabled()
     if LeafVE.allianceEnabled == true then
