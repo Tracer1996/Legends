@@ -4776,6 +4776,7 @@ local ABC_GUILD_COLLECTION_KINDS = {
   {value="mount", label="Mounts"},
   {value="companion", label="Companions"},
   {value="toy", label="Toys"},
+  {value="leaderboard", label="Leaderboard"},
 }
 
 -- Same visual template as EnsureMountSidebar/EnsureCompanionSidebar above
@@ -5319,6 +5320,10 @@ function ABC:BuildGuildCollectionView()
   ABC_StableShowSearch(ui, "guild")
 
   local kind = ABC.guildCollectionKind or "mount"
+  if kind == "leaderboard" then
+    self:BuildGuildLeaderboardView(ui)
+    return
+  end
   local dbKey = (kind == "mount" and "mounts") or (kind == "toy" and "toys") or "companions"
 
   -- Full master-list data (category/source/points/requiredLevel/description)
@@ -5486,6 +5491,90 @@ function ABC:BuildGuildCollectionView()
   end
 
   SetScrollHeight(ui, pagerY + 24 + 10)
+  ABC.buildingCollectionView = false
+end
+
+-- Guild-wide "top collectors" leaderboard: ranks players by how many
+-- distinct mounts/companions/toys they own, one top-10 column per kind,
+-- built by inverting the same guildCollections[dbKey][itemName][playerName]
+-- = true tables the item-grid view above reads. Reuses the "guild" search
+-- box as a player-name filter instead of an item-name one.
+function ABC:BuildGuildLeaderboardView(ui)
+  local header = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  header:SetPoint("TOPLEFT", ui.scrollChild, "TOPLEFT", 10, -4)
+  header:SetText("Guild Collector Leaderboard")
+  header:SetTextColor(1.0, 0.82, 0.36)
+
+  local summary = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  summary:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -3)
+  summary:SetText("Top 10 collectors by distinct mounts, companions, and toys owned")
+  summary:SetTextColor(0.78, 0.78, 0.78)
+
+  local query = Lower(ABC_StableSearchText("guild") or "")
+
+  local columns = {
+    {dbKey = "mounts", title = "Top Mount Collectors"},
+    {dbKey = "companions", title = "Top Companion Collectors"},
+    {dbKey = "toys", title = "Top Toy Collectors"},
+  }
+
+  local columnWidth = 220
+  local startX = 10
+  local startY = 60
+  local rowHeight = 16
+
+  for colIndex = 1, table.getn(columns) do
+    local col = columns[colIndex]
+    local bucket = (LeafVE_AchTest_DB.guildCollections and LeafVE_AchTest_DB.guildCollections[col.dbKey]) or {}
+
+    -- Invert item->owners into player->count.
+    local counts = {}
+    for _, owners in pairs(bucket) do
+      for playerName in pairs(owners) do
+        counts[playerName] = (counts[playerName] or 0) + 1
+      end
+    end
+
+    local ranked = {}
+    for playerName, count in pairs(counts) do
+      if query == "" or string.find(Lower(playerName), query, 1, true) then
+        table.insert(ranked, {name = playerName, count = count})
+      end
+    end
+    table.sort(ranked, function(a, b)
+      if a.count ~= b.count then return a.count > b.count end
+      return Lower(a.name) < Lower(b.name)
+    end)
+
+    local x = startX + (colIndex - 1) * columnWidth
+
+    local colTitle = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    colTitle:SetPoint("TOPLEFT", ui.scrollChild, "TOPLEFT", x, -startY)
+    colTitle:SetText(col.title)
+    colTitle:SetTextColor(1.0, 0.82, 0.36)
+
+    if table.getn(ranked) == 0 then
+      local emptyText = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+      emptyText:SetPoint("TOPLEFT", colTitle, "BOTTOMLEFT", 4, -8)
+      emptyText:SetWidth(columnWidth - 14)
+      emptyText:SetJustifyH("LEFT")
+      emptyText:SetText(query ~= "" and "No matches." or "No guild data yet.")
+      emptyText:SetTextColor(0.6, 0.6, 0.6)
+    else
+      local limit = math.min(10, table.getn(ranked))
+      for i = 1, limit do
+        local entry = ranked[i]
+        local rowText = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        rowText:SetPoint("TOPLEFT", colTitle, "BOTTOMLEFT", 4, -8 - (i - 1) * rowHeight)
+        rowText:SetWidth(columnWidth - 14)
+        rowText:SetJustifyH("LEFT")
+        local rankColor = (i == 1 and "|cFFFFD700") or (i == 2 and "|cFFC0C0C0") or (i == 3 and "|cFFCD7F32") or "|cFFFFFFFF"
+        rowText:SetText(rankColor..tostring(i)..".|r "..tostring(entry.name).." |cFF88CCFF("..tostring(entry.count)..")|r")
+      end
+    end
+  end
+
+  SetScrollHeight(ui, startY + 10 * rowHeight + 40)
   ABC.buildingCollectionView = false
 end
 
