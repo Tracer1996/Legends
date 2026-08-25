@@ -30628,9 +30628,7 @@ function LeafVE.UI:RefreshBannerDutyCraftableOrders()
   local panel = self.panels and self.panels.bannerDutyBoard
   if not panel or not panel.bannerDutyCraftRows then return end
   local me = ShortName(UnitName("player") or "") or ""
-  local craftableOnly = panel.bannerDutyCraftableOnly
-  if craftableOnly == nil then craftableOnly = true end
-  local orders = LeafVE:GetCraftableWorkOrdersForBulletinBoard(me, craftableOnly)
+  local orders = LeafVE:GetCraftableWorkOrdersForBulletinBoard(me, true)
   local rows = panel.bannerDutyCraftRows
   for i = 1, table.getn(rows) do
     local row = rows[i]
@@ -30840,22 +30838,6 @@ function BuildBannerDutyBoardPanel(panel)
   local craftTitle = craftCard:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   craftTitle:SetPoint("TOPLEFT", craftCard, "TOPLEFT", 14, -10)
   craftTitle:SetText("|cFFD8A24ACraftable Work Orders|r")
-
-  local craftOnlyCheck = CreateFrame("CheckButton", "LeafVE_BannerDutyCraftableOnlyCheck", craftCard, "UICheckButtonTemplate")
-  craftOnlyCheck:SetWidth(20)
-  craftOnlyCheck:SetHeight(20)
-  craftOnlyCheck:SetChecked(true)
-  craftOnlyCheck:SetPoint("TOPRIGHT", craftCard, "TOPRIGHT", -150, -6)
-  craftOnlyCheck:SetScript("OnClick", function()
-    panel.bannerDutyCraftableOnly = (this:GetChecked() and true) or false
-    LeafVE.UI:RefreshBannerDutyCraftableOrders()
-  end)
-  panel.bannerDutyCraftableOnly = true
-  panel.bannerDutyCraftOnlyCheck = craftOnlyCheck
-
-  local craftOnlyLabel = craftCard:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  craftOnlyLabel:SetPoint("LEFT", craftOnlyCheck, "RIGHT", 2, -1)
-  craftOnlyLabel:SetText("Only what I can craft")
 
   local craftEmpty = craftCard:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   craftEmpty:SetPoint("TOP", craftCard, "TOP", 0, -46)
