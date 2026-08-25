@@ -31878,6 +31878,14 @@ function LeafVE.UI:CreateWorkOrderQuickRequestPopup()
   detailText:SetText("")
   popup.detailText = detailText
 
+  -- Fallback left edge (relative to reagentsLabel's horizontal center, which
+  -- is itself centered on the popup) used only until the first refresh --
+  -- RefreshWorkOrderQuickRequestPopup recomputes this every time based on
+  -- the widest reagent name actually showing, so a request with only short
+  -- names centers tightly and one with a long name centers around that
+  -- wider block, instead of a column fixed to some guessed width.
+  local REAGENT_ROW_LEFT_X = -125
+
   local reagentsLabel = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   -- Bare "TOP" anchor (no LEFT/RIGHT) centers this on detailText's own
   -- horizontal center, which is itself centered on popup -- so this reads
@@ -31887,10 +31895,10 @@ function LeafVE.UI:CreateWorkOrderQuickRequestPopup()
   popup.reagentsLabel = reagentsLabel
 
   local reagentsText = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  reagentsText:SetPoint("TOP", reagentsLabel, "BOTTOM", 0, -4)
-  reagentsText:SetWidth(300)
+  reagentsText:SetPoint("TOPLEFT", reagentsLabel, "BOTTOM", REAGENT_ROW_LEFT_X, -4)
+  reagentsText:SetWidth(260)
   reagentsText:SetHeight(30)
-  reagentsText:SetJustifyH("CENTER")
+  reagentsText:SetJustifyH("LEFT")
   reagentsText:SetJustifyV("TOP")
   reagentsText:SetText("")
   popup.reagentsText = reagentsText
@@ -31898,10 +31906,10 @@ function LeafVE.UI:CreateWorkOrderQuickRequestPopup()
   popup.reagentRows = {}
   for i = 1, 6 do
     local reagentRow = CreateFrame("Frame", nil, popup)
-    -- Row frame itself is centered under the (centered) label; the
-    -- icon/qty/name inside it still reads left-to-right from the row's own
-    -- left edge, same as before.
-    reagentRow:SetPoint("TOP", reagentsLabel, "BOTTOM", 0, -4 - ((i - 1) * 20))
+    -- TOPLEFT (not TOP) so every row's left edge -- and therefore its
+    -- icon and qty/name text -- sits at the exact same X regardless of how
+    -- wide that row shrinks to fit its own content (see below).
+    reagentRow:SetPoint("TOPLEFT", reagentsLabel, "BOTTOM", REAGENT_ROW_LEFT_X, -4 - ((i - 1) * 20))
     reagentRow:SetWidth(290)
     reagentRow:SetHeight(18)
     reagentRow:EnableMouse(true)
@@ -32082,30 +32090,34 @@ function LeafVE.UI:CreateWorkOrderQuickRequestPopup()
   UpdateWorkOrderModeButtonVisual(myMatsBtn, true)
   UpdateWorkOrderModeButtonVisual(yourMatsBtn, false)
 
-  local feedbackText = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  local submitBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
+  submitBtn:SetWidth(110)
+  submitBtn:SetHeight(24)
+  -- Sits directly under My Mats/Crafter Mats now (feedbackText moved below
+  -- the button instead of between them -- see below) so Place Order reads
+  -- as the immediate next step after picking a materials mode, not
+  -- separated from it by a reserved-but-usually-empty feedback line.
   -- myMatsBtn's own center is 50px left of popup's center (its 85px-left
   -- TOPLEFT offset, minus half its own 70px width); the +50 here cancels
   -- that back out to center this on the window.
-  feedbackText:SetPoint("TOP", myMatsBtn, "BOTTOM", 50, -12)
+  submitBtn:SetPoint("TOP", myMatsBtn, "BOTTOM", 50, -10)
+  submitBtn:SetText("Place Order")
+  SkinButtonAccent(submitBtn)
+  submitBtn:Disable()
+
+  local feedbackText = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  -- Chained off submitBtn (which chains off myMatsBtn, matsLabel, qtyBG,
+  -- qtyLabel, all the way up to the reagent list) instead of pinned to the
+  -- popup's own bottom edge -- so the whole form rides up together for a
+  -- short reagent list and any leftover space collects as one clean margin
+  -- below the feedback text instead of splitting into dead gaps mid-form.
+  feedbackText:SetPoint("TOP", submitBtn, "BOTTOM", 0, -10)
   feedbackText:SetWidth(300)
   feedbackText:SetJustifyH("CENTER")
   feedbackText:SetJustifyV("TOP")
   feedbackText:SetHeight(28)
   feedbackText:SetText("")
   popup.feedbackText = feedbackText
-
-  local submitBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
-  submitBtn:SetWidth(110)
-  submitBtn:SetHeight(24)
-  -- Chained off feedbackText (which chains off myMatsBtn, matsLabel, qtyBG,
-  -- qtyLabel, all the way up to the reagent list) instead of pinned to the
-  -- popup's own bottom edge -- so the whole form rides up together for a
-  -- short reagent list and any leftover space collects as one clean margin
-  -- below the button instead of splitting into dead gaps mid-form.
-  submitBtn:SetPoint("TOP", feedbackText, "BOTTOM", 0, -18)
-  submitBtn:SetText("Place Order")
-  SkinButtonAccent(submitBtn)
-  submitBtn:Disable()
   submitBtn:SetScript("OnClick", function()
     local popupRef = LeafVE.UI.workOrderQuickRequestPopup
     if not popupRef then return end
@@ -32180,6 +32192,8 @@ function LeafVE.UI:RefreshWorkOrderQuickRequestPopup()
   if type(reagentEntries) == "table" and table.getn(reagentEntries) > 0 then
     popup.reagentsLabel:SetText(quantity > 1 and ("Exact Materials (x" .. tostring(quantity) .. ")") or "Exact Materials")
     local visibleReagentRows = 0
+    local rowContentWidths = {}
+    local maxContentWidth = 0
     for i = 1, table.getn(popup.reagentRows) do
       local row = popup.reagentRows[i]
       local entry = reagentEntries[i]
@@ -32188,21 +32202,35 @@ function LeafVE.UI:RefreshWorkOrderQuickRequestPopup()
         row.icon:SetTexture(entry.icon or LEAF_FALLBACK)
         row.qtyText:SetText("|cFFFFD700" .. tostring(entry.totalQuantity or entry.quantity or 1) .. "x|r")
         row.nameText:SetText(tostring(entry.name or "Unknown Reagent"))
-        -- Row frame is centered (see its creation), but it's a fixed 290px
-        -- wide -- shrinking it to hug the actual icon+qty+name content
-        -- width, rather than leaving nameText's stretch-anchor to trail off
-        -- into empty space on the right, is what actually centers the
-        -- visible content instead of just the invisible container.
         local nameWidth = row.nameText:GetStringWidth() or 0
         local contentWidth = 60 + nameWidth -- 16 icon + 6 gap + 34 qty + 4 gap
         if contentWidth < 90 then contentWidth = 90 end
-        if contentWidth > 290 then contentWidth = 290 end
-        row:SetWidth(contentWidth)
-        row:Show()
+        -- Capped so a long reagent name can't push nameText's right edge
+        -- past the popup's right border once the column below centers on it.
+        if contentWidth > 250 then contentWidth = 250 end
+        rowContentWidths[i] = contentWidth
+        if contentWidth > maxContentWidth then maxContentWidth = contentWidth end
         visibleReagentRows = i
       elseif row then
         row.entry = nil
         row:Hide()
+      end
+    end
+
+    -- Column left edge is recomputed every refresh from the widest reagent
+    -- name actually showing this time, not a fixed guess -- a request for
+    -- only short-named reagents centers tightly, one with a long name (e.g.
+    -- "Heavy Silken Bandage") centers around that wider block instead.
+    -- Every row still shares this same left edge (a real column), so icons
+    -- and text all start at the same X; only the shared X itself moves.
+    local columnLeftX = -math.floor(maxContentWidth / 2)
+    for i = 1, visibleReagentRows do
+      local row = popup.reagentRows[i]
+      if row and row.entry then
+        row:SetWidth(rowContentWidths[i])
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", popup.reagentsLabel, "BOTTOM", columnLeftX, -4 - ((i - 1) * 20))
+        row:Show()
       end
     end
     reagentAreaBottom = -4 - ((visibleReagentRows - 1) * 20) - 18
@@ -32212,8 +32240,9 @@ function LeafVE.UI:RefreshWorkOrderQuickRequestPopup()
       popup.reagentsText:SetText("|cFF888888+" .. tostring(remainingCount) .. " more material" .. (remainingCount ~= 1 and "s" or "") .. " for this craft.|r")
       popup.reagentsText:Show()
       popup.reagentsText:ClearAllPoints()
-      popup.reagentsText:SetPoint("TOP", popup.reagentsLabel, "BOTTOM", 0, reagentAreaBottom - 4)
-      popup.reagentsText:SetWidth(300)
+      local textWidth = popup.reagentsText:GetStringWidth() or 0
+      popup.reagentsText:SetPoint("TOPLEFT", popup.reagentsLabel, "BOTTOM", -math.floor(math.min(textWidth, 260) / 2), reagentAreaBottom - 4)
+      popup.reagentsText:SetWidth(260)
       popup.reagentsText:SetHeight(14)
       reagentAreaBottom = reagentAreaBottom - 4 - 14
     else
@@ -32229,8 +32258,9 @@ function LeafVE.UI:RefreshWorkOrderQuickRequestPopup()
     popup.reagentsText:SetText("|cFF888888No reagent data is cached for this recipe yet.|r")
     popup.reagentsText:Show()
     popup.reagentsText:ClearAllPoints()
-    popup.reagentsText:SetPoint("TOP", popup.reagentsLabel, "BOTTOM", 0, -4)
-    popup.reagentsText:SetWidth(300)
+    local textWidth = popup.reagentsText:GetStringWidth() or 0
+    popup.reagentsText:SetPoint("TOPLEFT", popup.reagentsLabel, "BOTTOM", -math.floor(math.min(textWidth, 260) / 2), -4)
+    popup.reagentsText:SetWidth(260)
     popup.reagentsText:SetHeight(28)
     reagentAreaBottom = -4 - 28
   end
