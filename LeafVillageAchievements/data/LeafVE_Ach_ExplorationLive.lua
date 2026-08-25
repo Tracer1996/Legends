@@ -392,6 +392,36 @@ local function TickLiveInitScan()
   end
 end
 
+-- This server's own GetMapZones(2) [Kalimdor] response has been observed to
+-- include Western Plaguelands, which is really an Eastern Kingdoms zone (as
+-- the hand-typed fallback list in LeafVillageAchievements.lua already has
+-- it) -- some Turtle-WoW map/continent data quirk, not anything this addon
+-- controls. Correct known cases like this after pulling in the live split
+-- rather than trusting GetMapZones' continent assignment blindly.
+local KNOWN_EASTERN_KINGDOMS_ZONES = { ["Western Plaguelands"] = true }
+local function FixKnownContinentMisplacements(zgz)
+  if not zgz or type(zgz.kalimdor) ~= "table" or type(zgz.eastern_kingdoms) ~= "table" then return end
+  local kalimdorFixed = {}
+  for i = 1, table.getn(zgz.kalimdor) do
+    local zname = zgz.kalimdor[i]
+    if KNOWN_EASTERN_KINGDOMS_ZONES[zname] then
+      local alreadyThere = false
+      for j = 1, table.getn(zgz.eastern_kingdoms) do
+        if zgz.eastern_kingdoms[j] == zname then
+          alreadyThere = true
+          break
+        end
+      end
+      if not alreadyThere then
+        table.insert(zgz.eastern_kingdoms, zname)
+      end
+    else
+      table.insert(kalimdorFixed, zname)
+    end
+  end
+  zgz.kalimdor = kalimdorFixed
+end
+
 -- Kicks off (or restarts) the throttled scan above; the OnUpdate driver
 -- below calls TickLiveInitScan a couple of zones at a time.
 function LeafVE_AchTest_ExplorationLive_Init()
@@ -409,6 +439,7 @@ function LeafVE_AchTest_ExplorationLive_Init()
   if zgz and zonesByContinent then
     if table.getn(zonesByContinent[2]) > 0 then zgz.kalimdor = zonesByContinent[2] end
     if table.getn(zonesByContinent[1]) > 0 then zgz.eastern_kingdoms = zonesByContinent[1] end
+    FixKnownContinentMisplacements(zgz)
   end
 
   liveZoneAchievementIds = {}
