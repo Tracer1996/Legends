@@ -33661,7 +33661,11 @@ function LeafVE.UI:RefreshWorkOrderHistoryView(playerName, popup)
       if btn.statusLabelText then btn.statusLabelText:SetText("") end
       if status == "finalized" then
         btn.statusText:SetText("|cFF88FF88Finalized|r  |  Crafted by " .. tostring(fulfiller or "Unknown") .. "  |  " .. tostring(whenText))
-      elseif status == "cancelled" and order.cancelReason == "released" then
+      -- "requeued" was this same released/requeued-back-to-the-pool tag's
+      -- old name, from before it was split into "released" vs "reassigned" --
+      -- any order already saved with the old tag still needs to match here,
+      -- or it falls all the way through to the generic "Cancelled" case.
+      elseif status == "cancelled" and (order.cancelReason == "released" or order.cancelReason == "requeued") then
         btn.statusText:SetText("|cFFFFCC66Released|r  |  " .. tostring(fulfiller or "Unknown") .. " gave it back  |  " .. tostring(whenText))
       elseif status == "cancelled" and order.cancelReason == "reassigned" then
         btn.statusText:SetText("|cFFFFCC66Reassigned|r  |  " .. tostring(order.requester or "Unknown") .. " reassigned it  |  " .. tostring(whenText))
