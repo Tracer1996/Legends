@@ -26501,6 +26501,16 @@ function CreateWorkOrderCoinField(parent, width, iconTexture)
   icon:SetPoint("RIGHT", bg, "RIGHT", -4, 0)
   icon:SetTexture(iconTexture or "Interface\\MoneyFrame\\UI-CopperIcon")
 
+  -- input's own clickable rect is inset from bg (room for the coin icon on
+  -- the right, a little padding on the left/top/bottom), so clicking
+  -- anywhere in that visual margin -- which still looks like part of the
+  -- box -- missed the EditBox entirely. Clicking anywhere on bg now focuses
+  -- input directly instead of requiring the exact inset sub-rect.
+  bg:EnableMouse(true)
+  bg:SetScript("OnMouseDown", function()
+    input:SetFocus()
+  end)
+
   bg.input = input
   bg.icon = icon
   return bg
