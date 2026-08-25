@@ -25156,6 +25156,10 @@ function LeafVE:StoreWorkOrderRecord(order)
     matsMode = NormalizeWorkOrderMatsMode(order.matsMode),
     icon = NormalizeIconPath(order.icon),
     status = status,
+    -- Only meaningful (and only ever set by callers) when status=="cancelled"
+    -- -- cleared otherwise so a stale reason can't outlive the state it
+    -- described if a record's status is ever produced by a different path.
+    cancelReason = status == "cancelled" and order.cancelReason or nil,
   }
   if record.requestedQuantity < record.quantity then
     record.requestedQuantity = record.quantity
@@ -25619,6 +25623,7 @@ function LeafVE:BroadcastWorkOrder(order, messageType)
     tostring(tonumber(order.completedAt) or 0),
     tostring(GetWorkOrderRequestedQuantity(order)),
     tostring(GetWorkOrderCompletedQuantity(order)),
+    EncodeTalentField(order.status == "cancelled" and order.cancelReason or ""),
   }, SEP)
   SendAddonMessage("LeafVE", messageType .. payload, "GUILD")
 end
@@ -25709,7 +25714,30 @@ function LeafVE:HandleIncomingWorkOrderMessage(payload, sender, isRelay)
   if fieldCount < 10 then return end
 
   local order
-  if fieldCount >= 19 then
+  if fieldCount >= 20 then
+    order = {
+      id = DecodeTalentField(fields[1] or ""),
+      parentOrderId = DecodeTalentField(fields[2] or ""),
+      requester = ShortName(DecodeTalentField(fields[3] or "")),
+      fulfiller = ShortName(DecodeTalentField(fields[4] or "")),
+      createdAt = tonumber(fields[5]) or Now(),
+      updatedAt = tonumber(fields[6]) or tonumber(fields[5]) or Now(),
+      claimExpiresAt = tonumber(fields[7]) or 0,
+      profession = DecodeTalentField(fields[8] or ""),
+      recipeName = DecodeTalentField(fields[9] or ""),
+      itemId = tonumber(fields[10]),
+      spellId = tonumber(fields[11]),
+      quantity = tonumber(fields[12]) or 1,
+      icon = NormalizeIconPath(DecodeTalentField(fields[13] or "")),
+      status = DecodeTalentField(fields[14] or "open"),
+      tipCopper = ClampWorkOrderTipCopper(fields[15]),
+      matsMode = NormalizeWorkOrderMatsMode(DecodeTalentField(fields[16] or "requester")),
+      completedAt = tonumber(fields[17]) or 0,
+      requestedQuantity = tonumber(fields[18]) or tonumber(fields[12]) or 1,
+      completedQuantity = tonumber(fields[19]) or 0,
+      cancelReason = (DecodeTalentField(fields[20] or "") ~= "" and DecodeTalentField(fields[20])) or nil,
+    }
+  elseif fieldCount >= 19 then
     order = {
       id = DecodeTalentField(fields[1] or ""),
       parentOrderId = DecodeTalentField(fields[2] or ""),
@@ -33659,19 +33687,34 @@ function LeafVE.UI:RefreshWorkOrderHistoryView(playerName, popup)
       -- this same button pool (Live/My Requests/Work In Progress) doesn't
       -- linger when switching to History.
       if btn.statusLabelText then btn.statusLabelText:SetText("") end
+      -- status is the single source of truth for which family a row falls
+      -- into (GetWorkOrderHistory only ever returns "finalized" or
+      -- "cancelled" -- the trailing else below is unreachable defensive
+      -- code, not a real third case); cancelReason only ever refines the
+      -- label WITHIN the "cancelled" family, and only using values a cancel
+      -- path actually writes (see the cancelReason assignments in
+      -- ReleaseWorkOrder/ReassignWorkOrder/CancelWorkOrderForDepartedRequester/
+      -- CancelWorkOrderForExpiredUnfilled, plus "requeued" as those first
+      -- two's pre-rename legacy tag) -- so "Finalized" can never appear on a
+      -- non-finalized row and "Cancelled" (or one of its sub-labels) can
+      -- never appear on a non-cancelled row.
       if status == "finalized" then
         btn.statusText:SetText("|cFF88FF88Finalized|r  |  Crafted by " .. tostring(fulfiller or "Unknown") .. "  |  " .. tostring(whenText))
-      -- "requeued" was this same released/requeued-back-to-the-pool tag's
-      -- old name, from before it was split into "released" vs "reassigned" --
-      -- any order already saved with the old tag still needs to match here,
-      -- or it falls all the way through to the generic "Cancelled" case.
-      elseif status == "cancelled" and (order.cancelReason == "released" or order.cancelReason == "requeued") then
-        btn.statusText:SetText("|cFFFFCC66Released|r  |  " .. tostring(fulfiller or "Unknown") .. " gave it back  |  " .. tostring(whenText))
-      elseif status == "cancelled" and order.cancelReason == "reassigned" then
-        btn.statusText:SetText("|cFFFFCC66Reassigned|r  |  " .. tostring(order.requester or "Unknown") .. " reassigned it  |  " .. tostring(whenText))
       elseif status == "cancelled" then
-        local reasonText = (order.cancelReason == "requester_left_guild") and "  |  requester left the guild" or ""
-        btn.statusText:SetText("|cFFFF6666Cancelled|r" .. reasonText .. "  |  " .. tostring(whenText))
+        local reason = order.cancelReason
+        if reason == "released" or reason == "requeued" then
+          btn.statusText:SetText("|cFFFFCC66Released|r  |  " .. tostring(fulfiller or "Unknown") .. " gave it back  |  " .. tostring(whenText))
+        elseif reason == "reassigned" then
+          btn.statusText:SetText("|cFFFFCC66Reassigned|r  |  " .. tostring(order.requester or "Unknown") .. " reassigned it  |  " .. tostring(whenText))
+        elseif reason == "requester_left_guild" then
+          btn.statusText:SetText("|cFFFF6666Cancelled|r  |  requester left the guild  |  " .. tostring(whenText))
+        elseif reason == "expired_unfilled" then
+          btn.statusText:SetText("|cFFFF6666Expired|r  |  never claimed within 14 days  |  " .. tostring(whenText))
+        else
+          -- No reason on file -- a real, explicit Cancel via CancelWorkOrder
+          -- never sets one, so this is the correct default for that case.
+          btn.statusText:SetText("|cFFFF6666Cancelled|r  |  " .. tostring(whenText))
+        end
       else
         -- GetWorkOrderHistory only ever returns finalized/cancelled records,
         -- so this shouldn't be reachable -- but shows the real status
