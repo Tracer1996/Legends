@@ -24072,7 +24072,13 @@ function LeafVE:GetWorkOrderHistory()
   for _, order in pairs(LeafVE_GlobalDB.workOrders or {}) do
     if type(order) == "table" and self:IsValidWorkOrderRecord(order) then
       local status = self:GetEffectiveWorkOrderStatus(order, now)
-      if status == "finalized" or status == "cancelled" then
+      -- "requeued" child records are a partial claim that got released,
+      -- reassigned, or reverted back to the open pool -- its quantity
+      -- already returned to the root order, so nothing was actually
+      -- cancelled. Without this, every requeue of the same underlying
+      -- request shows up as its own "Cancelled" entry in History even
+      -- though the request eventually got fulfilled by someone else.
+      if status == "finalized" or (status == "cancelled" and order.cancelReason ~= "requeued") then
         table.insert(orders, order)
       end
     end
@@ -24341,6 +24347,13 @@ function LeafVE:ReleaseWorkOrder(orderId)
   if IsWorkOrderPartialClaim(order) then
     self:RestoreWorkOrderPartialQuantity(order, updatedAt)
     order.status = "cancelled"
+    -- This child record only ever existed to track this one fulfiller's
+    -- reservation; its quantity is already folded back into the root order
+    -- above, so nothing was actually cancelled from the requester's point of
+    -- view. Tag it so GetWorkOrderHistory can leave it out of Order History
+    -- instead of showing a spurious "Cancelled" entry for an order that's
+    -- really just back in the open pool.
+    order.cancelReason = "requeued"
     order.updatedAt = updatedAt + 1
     order.claimExpiresAt = 0
     order.completedAt = 0
@@ -24466,19 +24479,18 @@ function LeafVE:RevertCompletedWorkOrder(orderId)
     updatedAt = priorUpdatedAt + 1
   end
 
-  if IsWorkOrderPartialClaim(order) then
-    self:RestoreWorkOrderPartialQuantity(order, updatedAt)
-    order.status = "cancelled"
-    order.updatedAt = updatedAt + 1
-    order.completedAt = 0
-    order.claimExpiresAt = 0
-    order.completedQuantity = 0
-    self:StoreWorkOrderRecord(order)
-    self:BroadcastWorkOrder(order)
-    PrintWorkOrderMessage("|cFF88CCFFWork Order|r " .. self:BuildWorkOrderRevertLine(order, me))
-    return order
-  end
-
+  -- Reverting just undoes a premature "Complete" click -- the SAME
+  -- fulfiller keeps working the SAME reservation with a fresh 48h window.
+  -- This used to branch on IsWorkOrderPartialClaim and, for partial-claim
+  -- child orders (which is what virtually every claimed order actually is,
+  -- since ClaimWorkOrder always routes through CreateWorkOrderPartialClaim),
+  -- called RestoreWorkOrderPartialQuantity + marked the order "cancelled".
+  -- That folded the quantity back into the root order and threw this
+  -- fulfiller's claim back into the open pool for anyone to grab -- so a
+  -- revert would silently cancel the fulfiller's own claim (or let someone
+  -- else pick it up) instead of just giving them another shot at finishing
+  -- it, which is why some orders appeared to get cancelled or vanish after
+  -- a revert.
   order.status = "pending"
   order.fulfiller = fulfiller
   order.crafter = fulfiller
@@ -24521,6 +24533,7 @@ function LeafVE:ReassignWorkOrder(orderId)
   if IsWorkOrderPartialClaim(order) then
     self:RestoreWorkOrderPartialQuantity(order, updatedAt)
     order.status = "cancelled"
+    order.cancelReason = "requeued"
     order.updatedAt = updatedAt + 1
     order.completedAt = 0
     order.claimExpiresAt = 0
@@ -31818,10 +31831,14 @@ function LeafVE.UI:CreateWorkOrderQuickRequestPopup()
   popup:SetScript("OnDragStart", function() this:StartMoving() end)
   popup:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
 
+  if UISpecialFrames then
+    table.insert(UISpecialFrames, "LeafVE_WorkOrderQuickRequestPopup")
+  end
+
   local titleText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   titleText:SetPoint("TOP", popup, "TOP", 0, -18)
   titleText:SetTextColor(THEME.gold[1], THEME.gold[2], THEME.gold[3])
-  titleText:SetText("Place a Craft Request")
+  titleText:SetText("Place a Work Order")
 
   local closeBtn = CreateFrame("Button", nil, popup, "UIPanelCloseButton")
   closeBtn:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -5, -5)
