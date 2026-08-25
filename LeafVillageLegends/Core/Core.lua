@@ -17206,7 +17206,8 @@ local LEAFVE_GROUPED_NAV = {
     subtabs = {
       {tab = "recipes", label = "Request", width = 78},
       {tab = "workordersLive", label = "Live Orders", width = 92},
-      {tab = "workordersMine", label = "My Orders", width = 86},
+      {tab = "workordersMine", label = "My Requests", width = 96},
+      {tab = "workordersProgress", label = "Work In Progress", width = 128},
       {tab = "workordersHistory", label = "History", width = 74},
     },
   },
@@ -17248,6 +17249,7 @@ local LEAFVE_GROUPED_TAB_TO_CATEGORY = {
   recipes = "recipes",
   workordersLive = "recipes",
   workordersMine = "recipes",
+  workordersProgress = "recipes",
   workordersHistory = "recipes",
   shinobiDuties = "orders",
   bannerDutyBoard = "orders",
@@ -24072,13 +24074,11 @@ function LeafVE:GetWorkOrderHistory()
   for _, order in pairs(LeafVE_GlobalDB.workOrders or {}) do
     if type(order) == "table" and self:IsValidWorkOrderRecord(order) then
       local status = self:GetEffectiveWorkOrderStatus(order, now)
-      -- "requeued" child records are a partial claim that got released,
-      -- reassigned, or reverted back to the open pool -- its quantity
-      -- already returned to the root order, so nothing was actually
-      -- cancelled. Without this, every requeue of the same underlying
-      -- request shows up as its own "Cancelled" entry in History even
-      -- though the request eventually got fulfilled by someone else.
-      if status == "finalized" or (status == "cancelled" and order.cancelReason ~= "requeued") then
+      -- "released"/"reassigned" child records are a partial claim that got
+      -- handed back to the open pool rather than a real Cancel -- they still
+      -- show up here (RefreshWorkOrderHistoryView labels them distinctly)
+      -- instead of the generic "Cancelled" a plain status check would give.
+      if status == "finalized" or status == "cancelled" then
         table.insert(orders, order)
       end
     end
@@ -24350,10 +24350,9 @@ function LeafVE:ReleaseWorkOrder(orderId)
     -- This child record only ever existed to track this one fulfiller's
     -- reservation; its quantity is already folded back into the root order
     -- above, so nothing was actually cancelled from the requester's point of
-    -- view. Tag it so GetWorkOrderHistory can leave it out of Order History
-    -- instead of showing a spurious "Cancelled" entry for an order that's
-    -- really just back in the open pool.
-    order.cancelReason = "requeued"
+    -- view -- tag it "released" (distinct from a real Cancel) so Order
+    -- History can show it as "Released" instead of a generic "Cancelled".
+    order.cancelReason = "released"
     order.updatedAt = updatedAt + 1
     order.claimExpiresAt = 0
     order.completedAt = 0
@@ -24533,7 +24532,9 @@ function LeafVE:ReassignWorkOrder(orderId)
   if IsWorkOrderPartialClaim(order) then
     self:RestoreWorkOrderPartialQuantity(order, updatedAt)
     order.status = "cancelled"
-    order.cancelReason = "requeued"
+    -- Distinct from "released" -- this is the requester pulling it back
+    -- from the fulfiller, not the fulfiller giving it up voluntarily.
+    order.cancelReason = "reassigned"
     order.updatedAt = updatedAt + 1
     order.completedAt = 0
     order.claimExpiresAt = 0
@@ -25331,45 +25332,34 @@ end
 -- Live or switching profession filters made it easy to lose track of what
 -- you'd actually claimed. Only pending ones (not completed) -- once an
 -- order is completed, the requester's own copy already reflects that.
-function LeafVE:GetWorkOrdersForRequesterOrFulfiller(playerName)
+-- Orders the player is currently fulfilling -- claimed and pending, or
+-- already marked complete and waiting on the requester to verify. Data
+-- source for the "My Work In Progress" tab, mirroring GetWorkOrdersForRequester
+-- but scoped to the fulfiller side of a claim instead of the requester side.
+function LeafVE:GetWorkOrdersInProgressForFulfiller(playerName)
   EnsureDB()
   playerName = ShortName(playerName)
   if not playerName then return {} end
 
-  local orders = self:GetWorkOrdersForRequester(playerName)
-  local seen = {}
-  for i = 1, table.getn(orders) do
-    seen[orders[i].id] = true
-  end
-
   local now = Now()
-  local claimed = {}
+  local orders = {}
   for _, order in pairs(LeafVE_GlobalDB.workOrders or {}) do
-    if type(order) == "table" and self:IsValidWorkOrderRecord(order) and not seen[order.id] then
+    if type(order) == "table" and self:IsValidWorkOrderRecord(order) then
       local status = self:GetEffectiveWorkOrderStatus(order, now)
-      if status == "pending" then
+      if status == "pending" or status == "completed" then
         local fulfiller = self:GetStoredWorkOrderFulfiller(order)
         if fulfiller and Lower(fulfiller) == Lower(playerName) then
-          table.insert(claimed, order)
+          table.insert(orders, order)
         end
       end
     end
   end
 
-  if table.getn(claimed) < 1 then
-    return orders
-  end
-
-  local combined = orders
-  for i = 1, table.getn(claimed) do
-    table.insert(combined, claimed[i])
-  end
-
-  table.sort(combined, function(a, b)
+  table.sort(orders, function(a, b)
     local aStatus = LeafVE:GetEffectiveWorkOrderStatus(a, now)
     local bStatus = LeafVE:GetEffectiveWorkOrderStatus(b, now)
     if aStatus ~= bStatus then
-      local priority = { completed = 1, pending = 2, open = 3 }
+      local priority = { completed = 1, pending = 2 }
       return (priority[aStatus] or 9) < (priority[bStatus] or 9)
     end
 
@@ -25395,7 +25385,7 @@ function LeafVE:GetWorkOrdersForRequesterOrFulfiller(playerName)
     return Lower(a.recipeName or "") < Lower(b.recipeName or "")
   end)
 
-  return combined
+  return orders
 end
 
 function LeafVE:CancelWorkOrder(orderId)
@@ -27307,6 +27297,20 @@ function CreateWorkOrderOrderButton(parent)
   end)
   btn.secondaryActionBtn = secondaryActionBtn
 
+  -- Short status label (e.g. "Reserved by you", "Pending partial", "Eligible
+  -- to fulfill") that used to lead statusText's own sentence -- callers now
+  -- split that lead-in out here, right above the action button(s), and
+  -- leave the rest of the sentence in statusText at its original spot.
+  -- Anchored off secondaryActionBtn's fixed TOPRIGHT point (not affected by
+  -- Show/Hide) so this sits just above whichever button ends up on top,
+  -- whether one or both are shown for a given row.
+  local statusLabelText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  statusLabelText:SetPoint("BOTTOMRIGHT", secondaryActionBtn, "TOPRIGHT", 0, 4)
+  statusLabelText:SetWidth(110)
+  statusLabelText:SetJustifyH("RIGHT")
+  statusLabelText:SetText("")
+  btn.statusLabelText = statusLabelText
+
   btn:SetScript("OnEnter", function()
     if not this.order then return end
     this:SetBackdropColor(0.13, 0.13, 0.16, 0.98)
@@ -28752,7 +28756,7 @@ function LeafVE.UI:CreateWorkOrderPopup()
   end)
   popup.browseModeBtn = browseModeBtn
 
-  local ordersModeBtn = CreateWorkOrderModeButton(popup, "My Orders")
+  local ordersModeBtn = CreateWorkOrderModeButton(popup, "My Requests")
   ordersModeBtn:SetWidth(98)
   ordersModeBtn:SetPoint("LEFT", browseModeBtn, "RIGHT", 8, 0)
   ordersModeBtn.popup = popup
@@ -32847,10 +32851,10 @@ function LeafVE.UI:RefreshWorkOrderLiveView(playerName, popup)
       if matchesProfession and popup.craftableOnly then
         matchesProfession = me and LeafVE:CanPlayerFulfillWorkOrder(me, order)
       end
-      -- Orders this player has already claimed themselves now live in My
-      -- Orders instead (Complete/Release actions there), so they no longer
-      -- need to also clutter the live board they're not actually "live"
-      -- for anymore.
+      -- Orders this player has already claimed themselves live on the "My
+      -- Work In Progress" tab instead (Complete/Release actions there), so
+      -- they no longer need to also clutter the live board they're not
+      -- actually "live" for anymore.
       if matchesProfession and me
         and LeafVE:GetEffectiveWorkOrderStatus(order, now) == "pending" then
         local fulfiller = LeafVE:GetStoredWorkOrderFulfiller(order)
@@ -32944,27 +32948,31 @@ function LeafVE.UI:RefreshWorkOrderLiveView(playerName, popup)
       btn.actionType = nil
       btn.secondaryActionType = nil
       btn.statusText:SetText("")
+      if btn.statusLabelText then btn.statusLabelText:SetText("") end
       if status == "pending" then
         if me and fulfiller and Lower(fulfiller) == Lower(me) then
           btn.actionType = "complete"
           btn.secondaryActionType = "release"
+          if btn.statusLabelText then btn.statusLabelText:SetText("|cFFFFFF99Pending by you|r") end
           if IsWorkOrderPartialClaim(order) then
-            btn.statusText:SetText("|cFFFFFF99Pending by you.|r Reserved " .. tostring(order.quantity or 1) .. " for this request. " .. tostring(timerText) .. " left.")
+            btn.statusText:SetText("Reserved " .. tostring(order.quantity or 1) .. " for this request. " .. tostring(timerText) .. " left.")
           else
-            btn.statusText:SetText("|cFFFFFF99Pending by you.|r " .. tostring(timerText) .. " left.")
+            btn.statusText:SetText(tostring(timerText) .. " left.")
           end
         else
-          btn.statusText:SetText("|cFFFFFF99Pending:|r " .. tostring(fulfiller or "Unknown") .. "  |  " .. tostring(timerText) .. " left")
+          if btn.statusLabelText then btn.statusLabelText:SetText("|cFFFFFF99Pending|r") end
+          btn.statusText:SetText(tostring(fulfiller or "Unknown") .. "  |  " .. tostring(timerText) .. " left")
         end
       elseif me and not IsWorkOrderPartialClaim(order) and LeafVE:CanPlayerFulfillWorkOrder(me, order) then
         btn.actionType = "fulfill"
         if (tonumber(order.quantity) or 0) > 1 then
           btn.secondaryActionType = "partial_fulfill"
         end
+        if btn.statusLabelText then btn.statusLabelText:SetText("|cFF88FF88Eligible to fulfill|r") end
         if requiresDesignation then
-          btn.statusText:SetText("|cFF88FF88Eligible to fulfill.|r You know this recipe." .. openExpiryText)
+          btn.statusText:SetText("You know this recipe." .. openExpiryText)
         else
-          btn.statusText:SetText("|cFF88FF88Eligible to fulfill.|r This farming request can be claimed by anyone." .. openExpiryText)
+          btn.statusText:SetText("This farming request can be claimed by anyone." .. openExpiryText)
         end
       elseif me and order.requester and Lower(order.requester) == Lower(me) then
         if requiresDesignation then
@@ -32976,7 +32984,8 @@ function LeafVE.UI:RefreshWorkOrderLiveView(playerName, popup)
         if requiresDesignation then
           btn.statusText:SetText("|cFFAAAAAARequires knowing this " .. tostring(order.profession or "profession") .. " recipe to fulfill." .. openExpiryText)
         else
-          btn.statusText:SetText("|cFFAAAAAAOpen farming request.|r Anyone can pick this up." .. openExpiryText)
+          if btn.statusLabelText then btn.statusLabelText:SetText("|cFFAAAAAAOpen farming request|r") end
+          btn.statusText:SetText("Anyone can pick this up." .. openExpiryText)
         end
       end
       if btn.reagentText then
@@ -33044,6 +33053,9 @@ function LeafVE.UI:RefreshWorkOrderLiveView(playerName, popup)
       if btn.reagentText then
         btn.reagentText:SetText("")
       end
+      if btn.statusLabelText then
+        btn.statusLabelText:SetText("")
+      end
       btn:Hide()
     end
   end
@@ -33106,10 +33118,10 @@ function LeafVE.UI:RefreshWorkOrderOrdersView(playerName, popup)
 
   popup.subtitleText:SetText("Track your requests from posting to verification")
   if popup.ordersTitle then
-    popup.ordersTitle:SetText("|cFFFFD700My Orders|r")
+    popup.ordersTitle:SetText("|cFFFFD700My Requests|r")
   end
   if popup.pageTitleText then
-    popup.pageTitleText:SetText("|cFFFFD700My Orders|r")
+    popup.pageTitleText:SetText("|cFFFFD700My Requests|r")
   end
   if popup.ordersHint then
     popup.ordersHint:SetText("|cFFAAAAAACancel open requests here, reassign pending ones if needed, and use |cFFFFD700Verify|r or |cFFFFD700Revert|r once a crafter marks an order complete. Partial fills stay separate so the remaining quantity can keep moving on the live board.|r")
@@ -33125,7 +33137,7 @@ function LeafVE.UI:RefreshWorkOrderOrdersView(playerName, popup)
     pendingCount = popup._orderPendingCount or 0
     completedCount = popup._orderCompletedCount or 0
   else
-    orders = me and LeafVE:GetWorkOrdersForRequesterOrFulfiller(me) or {}
+    orders = me and LeafVE:GetWorkOrdersForRequester(me) or {}
     openCount = 0
     pendingCount = 0
     completedCount = 0
@@ -33190,34 +33202,15 @@ function LeafVE.UI:RefreshWorkOrderOrdersView(playerName, popup)
         "  |  " .. FormatWorkOrderTipText(order.tipCopper)
       )
       SetWorkOrderRowTipDisplay(btn, order.tipCopper)
-      -- Pending rows can now belong to someone ELSE's request that this
-      -- player has reserved/picked up as the crafter (see
-      -- GetWorkOrdersForRequesterOrFulfiller) -- open/completed rows here
-      -- are always this player's own requests, since fulfiller-only
-      -- entries are only ever added while pending, but pending needs to
-      -- tell the two apart: the requester gets Cancel/Reassign (their
-      -- request), the crafter gets Complete/Release (their claim) --
-      -- matching exactly what Live shows for a pending-by-you row.
-      local isMyRequest = me and order.requester and Lower(order.requester) == Lower(me)
-      if status == "pending" and not isMyRequest then
+      -- GetWorkOrdersForRequester already scopes this to only the player's
+      -- own requests -- fulfiller-owned claims live on the separate "My
+      -- Work In Progress" tab (see RefreshWorkOrderProgressView) instead.
+      if status == "pending" then
+        if btn.statusLabelText then btn.statusLabelText:SetText("|cFFFFFF99Pending|r") end
         if IsWorkOrderPartialClaim(order) then
-          btn.statusText:SetText("|cFFFFFF99Reserved by you|r for " .. tostring(order.requester or "Unknown") .. ". " .. tostring(order.quantity or 1) .. " reserved. " .. tostring(timerText) .. " left.")
+          btn.statusText:SetText(tostring(fulfiller or "Unknown") .. " reserved " .. tostring(order.quantity or 1) .. ". " .. tostring(timerText) .. " left. Reassign to return it to the live board.")
         else
-          btn.statusText:SetText("|cFFFFFF99Picked up by you|r for " .. tostring(order.requester or "Unknown") .. ". " .. tostring(timerText) .. " left.")
-        end
-        btn.actionType = "complete"
-        btn.actionBtn:SetText("Complete")
-        btn.actionBtn:Show()
-        btn.actionBtn:Enable()
-        btn.secondaryActionType = "release"
-        btn.secondaryActionBtn:SetText("Release")
-        btn.secondaryActionBtn:Show()
-        btn.secondaryActionBtn:Enable()
-      elseif status == "pending" then
-        if IsWorkOrderPartialClaim(order) then
-          btn.statusText:SetText("|cFFFFFF99Pending partial:|r " .. tostring(fulfiller or "Unknown") .. " reserved " .. tostring(order.quantity or 1) .. ". " .. tostring(timerText) .. " left. Reassign to return it to the live board.")
-        else
-          btn.statusText:SetText("|cFFFFFF99Pending:|r " .. tostring(fulfiller or "Unknown") .. "  |  " .. tostring(timerText) .. " left. Reassign for a different crafter.")
+          btn.statusText:SetText(tostring(fulfiller or "Unknown") .. "  |  " .. tostring(timerText) .. " left. Reassign for a different crafter.")
         end
         btn.actionType = "cancel"
         btn.actionBtn:SetText("Cancel")
@@ -33228,10 +33221,11 @@ function LeafVE.UI:RefreshWorkOrderOrdersView(playerName, popup)
         btn.secondaryActionBtn:Show()
         btn.secondaryActionBtn:Enable()
       elseif status == "completed" then
+        if btn.statusLabelText then btn.statusLabelText:SetText("|cFF88FF88Completed|r") end
         if IsWorkOrderPartialClaim(order) then
-          btn.statusText:SetText("|cFF88FF88Completed:|r " .. tostring(fulfiller or "Unknown") .. " delivered this partial fill. Verify when received, or Revert to return it to the live board.")
+          btn.statusText:SetText(tostring(fulfiller or "Unknown") .. " delivered this partial fill. Verify when received, or Revert to return it to the live board.")
         else
-          btn.statusText:SetText("|cFF88FF88Completed:|r " .. tostring(fulfiller or "Unknown") .. " marked it done. Verify when received, or Revert for more work.")
+          btn.statusText:SetText(tostring(fulfiller or "Unknown") .. " marked it done. Verify when received, or Revert for more work.")
         end
         btn.actionType = "final"
         btn.actionBtn:SetText("Verify")
@@ -33242,10 +33236,11 @@ function LeafVE.UI:RefreshWorkOrderOrdersView(playerName, popup)
         btn.secondaryActionBtn:Show()
         btn.secondaryActionBtn:Enable()
       else
+        if btn.statusLabelText then btn.statusLabelText:SetText("|cFFAAAAAAOpen on the live board|r") end
         if requiresDesignation then
-          btn.statusText:SetText("|cFFAAAAAAOpen on the live board.|r Waiting for a qualified crafter.")
+          btn.statusText:SetText("Waiting for a qualified crafter.")
         else
-          btn.statusText:SetText("|cFFAAAAAAOpen on the live board.|r Waiting for someone to farm it.")
+          btn.statusText:SetText("Waiting for someone to farm it.")
         end
         btn.actionType = "cancel"
         btn.actionBtn:SetText("Cancel")
@@ -33298,6 +33293,9 @@ function LeafVE.UI:RefreshWorkOrderOrdersView(playerName, popup)
       if btn.reagentText then
         btn.reagentText:SetText("")
       end
+      if btn.statusLabelText then
+        btn.statusLabelText:SetText("")
+      end
       btn:Hide()
     end
   end
@@ -33309,14 +33307,229 @@ function LeafVE.UI:RefreshWorkOrderOrdersView(playerName, popup)
   else
     popup.noOrdersText:Show()
     if me then
-      popup.noOrdersText:SetText("|cFF888888You have no active banner duties right now.|r")
+      popup.noOrdersText:SetText("|cFF888888You have no active requests right now.|r")
     else
       popup.noOrdersText:SetText("|cFF888888Your player name could not be determined.|r")
     end
   end
 
   popup.summaryText:SetText(
-    "My orders: " .. tostring(totalOrders) .. "  |  " .. tostring(openCount) .. " open  |  " .. tostring(pendingCount) .. " pending  |  " .. tostring(completedCount) .. " awaiting verify"
+    "My requests: " .. tostring(totalOrders) .. "  |  " .. tostring(openCount) .. " open  |  " .. tostring(pendingCount) .. " pending  |  " .. tostring(completedCount) .. " awaiting verify"
+  )
+end
+
+-- Orders this player is currently fulfilling for someone else -- claimed and
+-- pending (Complete/Release available), or already marked complete and
+-- waiting on the requester to Verify/Revert (read-only from here; only the
+-- requester can act on a completed order, see FinalizeWorkOrder/
+-- RevertCompletedWorkOrder). Mirrors RefreshWorkOrderOrdersView's structure
+-- but scoped to GetWorkOrdersInProgressForFulfiller instead of
+-- GetWorkOrdersForRequester -- these used to be merged into one "My Orders"
+-- tab, split apart into "My Requests" (this player's own requests) and this
+-- "My Work In Progress" tab (what this player is crafting for others).
+function LeafVE.UI:RefreshWorkOrderProgressView(playerName, popup)
+  popup.professionPanel:Hide()
+  popup.recipePanel:Hide()
+  popup.selectionPanel:Hide()
+  if popup.liveSearchBG then popup.liveSearchBG:Hide() end
+  if popup.liveSearchLabel then popup.liveSearchLabel:Hide() end
+  if popup.liveCraftableOnlyCheck then popup.liveCraftableOnlyCheck:Hide() end
+  if popup.liveCraftableOnlyLabel then popup.liveCraftableOnlyLabel:Hide() end
+  if popup.ordersFeedbackText and popup.ordersHint then
+    popup.ordersFeedbackText:ClearAllPoints()
+    popup.ordersFeedbackText:SetPoint("TOPLEFT", popup.ordersHint, "BOTTOMLEFT", 0, -4)
+    popup.ordersFeedbackText:SetWidth(GetWorkOrderHintTextWidth(popup))
+  end
+  if popup.ordersPanel then
+    popup.ordersPanel:Show()
+    popup.ordersPanel:ClearAllPoints()
+    popup.ordersPanel:SetPoint("TOPLEFT", popup.professionPanel:GetParent(), "TOPLEFT", 12, -95)
+    popup.ordersPanel:SetPoint("BOTTOMRIGHT", popup.professionPanel:GetParent(), "BOTTOMRIGHT", -14, 14)
+  end
+  if popup.craftersPanel then
+    popup.craftersPanel:Hide()
+  end
+
+  local fastPath = popup._orderScrollFastPath
+  popup._orderScrollFastPath = nil
+
+  if not fastPath then
+    LeafVE:RequestWorkOrderSync(false)
+  end
+
+  popup.subtitleText:SetText("Track what you've claimed to craft for other guildmates")
+  if popup.ordersTitle then
+    popup.ordersTitle:SetText("|cFFFFD700My Work In Progress|r")
+  end
+  if popup.pageTitleText then
+    popup.pageTitleText:SetText("|cFFFFD700My Work In Progress|r")
+  end
+  if popup.ordersHint then
+    popup.ordersHint:SetText("|cFFAAAAAAComplete an order once you've crafted it, or Release it to send the reservation back to the live board for someone else. Once you've marked it Complete, the requester has to Verify it before it moves to History.|r")
+    popup.ordersHint:SetWidth(GetWorkOrderHintTextWidth(popup))
+  end
+
+  local me = ShortName(UnitName("player"))
+  local now = Now()
+  local orders, pendingCount, completedCount
+  if fastPath and popup.openOrderRows then
+    orders = popup.openOrderRows
+    pendingCount = popup._orderPendingCount or 0
+    completedCount = popup._orderCompletedCount or 0
+  else
+    orders = me and LeafVE:GetWorkOrdersInProgressForFulfiller(me) or {}
+    pendingCount = 0
+    completedCount = 0
+    for i = 1, table.getn(orders) do
+      local status = LeafVE:GetEffectiveWorkOrderStatus(orders[i], now)
+      if status == "pending" then
+        pendingCount = pendingCount + 1
+      elseif status == "completed" then
+        completedCount = completedCount + 1
+      end
+    end
+    popup.openOrderRows = orders
+    popup._orderPendingCount = pendingCount
+    popup._orderCompletedCount = completedCount
+  end
+
+  local rowHeight = popup.orderRowHeight or 56
+  local visibleRows = math.max(1, math.ceil(GetWorkOrderOrderListHeight(popup) / rowHeight))
+  local totalOrders = table.getn(orders)
+  local maxOffset = math.max(0, totalOrders - visibleRows)
+  if (popup.orderOffset or 0) > maxOffset then
+    popup.orderOffset = maxOffset
+  end
+  popup.orderVisibleRows = visibleRows
+
+  while table.getn(popup.orderButtons) < visibleRows do
+    local btn = CreateWorkOrderOrderButton(popup.orderListFrame)
+    btn.popup = popup
+    table.insert(popup.orderButtons, btn)
+  end
+
+  local listWidth = GetWorkOrderOrderListWidth(popup)
+
+  local startIndex = (popup.orderOffset or 0) + 1
+  for row = 1, table.getn(popup.orderButtons) do
+    local btn = popup.orderButtons[row]
+    local dataIndex = startIndex + row - 1
+    if row <= visibleRows and dataIndex <= totalOrders then
+      local order = orders[dataIndex]
+      local status = LeafVE:GetEffectiveWorkOrderStatus(order, now)
+      local timerText = tonumber(order.claimExpiresAt or 0) > now and FormatWorkOrderRemainingTime(order.claimExpiresAt, now) or "Expired"
+
+      btn.order = order
+      btn.popup = popup
+      btn:SetWidth(listWidth - 4)
+      btn:SetHeight(rowHeight - 4)
+      btn:ClearAllPoints()
+      btn:SetPoint("TOPLEFT", popup.orderListFrame, "TOPLEFT", 2, -((row - 1) * rowHeight) - 2)
+      btn.icon:SetTexture(LeafVE:GetWorkOrderResultIcon(order.itemId, order.spellId, order.icon))
+      btn.text:SetText("|cFFFFD700" .. tostring(order.recipeName or "Work Order") .. "|r")
+      local matsLine = GetWorkOrderMatsLine(order.matsMode, order.requester, order.profession)
+      local materialsText = LeafVE:GetWorkOrderListMaterialsText(order, order.quantity or 1, 2)
+      btn.detailText:SetText(
+        "Requester: " .. tostring(order.requester or "Unknown") ..
+        "  |  " .. tostring(order.profession or "Unknown") ..
+        "  |  " .. GetWorkOrderQuantitySummary(order) ..
+        "  |  " .. FormatWorkOrderTipText(order.tipCopper)
+      )
+      SetWorkOrderRowTipDisplay(btn, order.tipCopper)
+      if status == "pending" then
+        if IsWorkOrderPartialClaim(order) then
+          if btn.statusLabelText then btn.statusLabelText:SetText("|cFFFFFF99Reserved by you|r") end
+          btn.statusText:SetText("for " .. tostring(order.requester or "Unknown") .. ". " .. tostring(order.quantity or 1) .. " reserved. " .. tostring(timerText) .. " left.")
+        else
+          if btn.statusLabelText then btn.statusLabelText:SetText("|cFFFFFF99Picked up by you|r") end
+          btn.statusText:SetText("for " .. tostring(order.requester or "Unknown") .. ". " .. tostring(timerText) .. " left.")
+        end
+        btn.actionType = "complete"
+        btn.actionBtn:SetText("Complete")
+        btn.actionBtn:Show()
+        btn.actionBtn:Enable()
+        btn.secondaryActionType = "release"
+        btn.secondaryActionBtn:SetText("Release")
+        btn.secondaryActionBtn:Show()
+        btn.secondaryActionBtn:Enable()
+      else
+        -- completed -- only the requester can Verify/Revert from here
+        -- (FinalizeWorkOrder/RevertCompletedWorkOrder both require
+        -- order.requester == me), so this is read-only for the fulfiller.
+        if btn.statusLabelText then btn.statusLabelText:SetText("|cFF88FF88Completed|r") end
+        btn.statusText:SetText("Waiting for " .. tostring(order.requester or "Unknown") .. " to verify.")
+        btn.actionType = nil
+        btn.actionBtn:SetText("")
+        btn.actionBtn:Hide()
+        btn.secondaryActionType = nil
+        btn.secondaryActionBtn:SetText("")
+        btn.secondaryActionBtn:Hide()
+      end
+      if btn.idText then
+        btn.idText:SetText("")
+        btn.idText:Hide()
+      end
+      if not btn.secondaryActionType and btn.secondaryActionBtn then
+        btn.secondaryActionBtn:SetText("")
+        btn.secondaryActionBtn:Hide()
+      end
+      if btn.reagentText then
+        btn.reagentText:SetText("|cFF88CCFF" .. tostring(matsLine) .. "|r\n" .. tostring(materialsText or ""))
+      end
+      local reservedRight = ClampWorkOrderTipCopper(order.tipCopper) > 0 and 118 or 18
+      if btn.actionType or btn.secondaryActionType then
+        reservedRight = math.max(reservedRight, 96)
+      end
+      local textWidth = math.max(150, listWidth - reservedRight - 42)
+      btn.text:SetWidth(textWidth)
+      btn.detailText:SetWidth(textWidth)
+      btn.statusText:SetWidth(textWidth)
+      if btn.reagentText then
+        btn.reagentText:SetWidth(textWidth)
+      end
+      btn:Show()
+    else
+      btn.order = nil
+      btn.actionType = nil
+      btn.secondaryActionType = nil
+      SetWorkOrderRowTipDisplay(btn, 0)
+      if btn.actionBtn then
+        btn.actionBtn:SetText("")
+        btn.actionBtn:Hide()
+      end
+      if btn.secondaryActionBtn then
+        btn.secondaryActionBtn:SetText("")
+        btn.secondaryActionBtn:Hide()
+      end
+      if btn.idText then
+        btn.idText:SetText("")
+        btn.idText:Hide()
+      end
+      if btn.reagentText then
+        btn.reagentText:SetText("")
+      end
+      if btn.statusLabelText then
+        btn.statusLabelText:SetText("")
+      end
+      btn:Hide()
+    end
+  end
+
+  SyncWorkOrderSlider(popup.orderScrollBar, popup.orderOffset or 0, maxOffset)
+
+  if totalOrders > 0 then
+    popup.noOrdersText:Hide()
+  else
+    popup.noOrdersText:Show()
+    if me then
+      popup.noOrdersText:SetText("|cFF888888You're not currently fulfilling any orders.|r")
+    else
+      popup.noOrdersText:SetText("|cFF888888Your player name could not be determined.|r")
+    end
+  end
+
+  popup.summaryText:SetText(
+    "In progress: " .. tostring(totalOrders) .. "  |  " .. tostring(pendingCount) .. " pending  |  " .. tostring(completedCount) .. " awaiting verify"
   )
 end
 
@@ -33441,8 +33654,17 @@ function LeafVE.UI:RefreshWorkOrderHistoryView(playerName, popup)
 
       btn.actionType = nil
       btn.secondaryActionType = nil
+      -- No action buttons on History rows, so nothing for statusLabelText
+      -- to sit above here -- clear it so a label set by another tab sharing
+      -- this same button pool (Live/My Requests/Work In Progress) doesn't
+      -- linger when switching to History.
+      if btn.statusLabelText then btn.statusLabelText:SetText("") end
       if status == "finalized" then
         btn.statusText:SetText("|cFF88FF88Finalized|r  |  Crafted by " .. tostring(fulfiller or "Unknown") .. "  |  " .. tostring(whenText))
+      elseif status == "cancelled" and order.cancelReason == "released" then
+        btn.statusText:SetText("|cFFFFCC66Released|r  |  " .. tostring(fulfiller or "Unknown") .. " gave it back  |  " .. tostring(whenText))
+      elseif status == "cancelled" and order.cancelReason == "reassigned" then
+        btn.statusText:SetText("|cFFFFCC66Reassigned|r  |  " .. tostring(order.requester or "Unknown") .. " reassigned it  |  " .. tostring(whenText))
       elseif status == "cancelled" then
         local reasonText = (order.cancelReason == "requester_left_guild") and "  |  requester left the guild" or ""
         btn.statusText:SetText("|cFFFF6666Cancelled|r" .. reasonText .. "  |  " .. tostring(whenText))
@@ -33494,6 +33716,9 @@ function LeafVE.UI:RefreshWorkOrderHistoryView(playerName, popup)
       end
       if btn.reagentText then
         btn.reagentText:SetText("")
+      end
+      if btn.statusLabelText then
+        btn.statusLabelText:SetText("")
       end
       btn:Hide()
     end
@@ -33564,6 +33789,8 @@ function LeafVE.UI:RefreshWorkOrderPopup(playerName)
     self:RefreshWorkOrderCraftersView(playerName, popup)
   elseif popup.viewMode == "orders" then
     self:RefreshWorkOrderOrdersView(playerName, popup)
+  elseif popup.viewMode == "progress" then
+    self:RefreshWorkOrderProgressView(playerName, popup)
   elseif popup.viewMode == "history" then
     self:RefreshWorkOrderHistoryView(playerName, popup)
   else
@@ -43491,7 +43718,7 @@ function LeafVE.UI:Refresh()
 
   if self.card then
     if hasAccess and self.activeTab ~= "guildEvents" and self.activeTab ~= "workOrderRep" and self.activeTab ~= "shinobiDuties" and self.activeTab ~= "bannerDutyBoard" and self.activeTab ~= "bannerDutyLive" and self.activeTab ~= "welcome" and self.activeTab ~= "recipes"
-      and self.activeTab ~= "workordersLive" and self.activeTab ~= "workordersMine" and self.activeTab ~= "workordersHistory" then
+      and self.activeTab ~= "workordersLive" and self.activeTab ~= "workordersMine" and self.activeTab ~= "workordersProgress" and self.activeTab ~= "workordersHistory" then
       self.card:Show()
     else
       self.card:Hide()
@@ -43840,13 +44067,15 @@ function LeafVE.UI:Refresh()
       self:RefreshRecipeBrowserPanel()
     end
 
-  elseif (self.activeTab == "workordersLive" or self.activeTab == "workordersMine" or self.activeTab == "workordersHistory")
+  elseif (self.activeTab == "workordersLive" or self.activeTab == "workordersMine" or self.activeTab == "workordersProgress" or self.activeTab == "workordersHistory")
     and self.panels.workOrders then
     ShowPanelWithTransition(self.panels.workOrders)
     local popup = self.EnsureWorkOrderRequestPanel and self:EnsureWorkOrderRequestPanel()
     if popup then
       if self.activeTab == "workordersMine" then
         popup.viewMode = "orders"
+      elseif self.activeTab == "workordersProgress" then
+        popup.viewMode = "progress"
       elseif self.activeTab == "workordersHistory" then
         popup.viewMode = "history"
       else
