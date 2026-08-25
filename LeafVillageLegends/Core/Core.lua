@@ -30638,6 +30638,7 @@ function LeafVE.UI:RefreshBannerDutyCraftableOrders()
   local panel = self.panels and self.panels.bannerDutyBoard
   if not panel or not panel.bannerDutyCraftRows then return end
   local me = ShortName(UnitName("player") or "") or ""
+  local now = Now()
   local orders = LeafVE:GetCraftableWorkOrdersForBulletinBoard(me, true)
   local rows = panel.bannerDutyCraftRows
   for i = 1, table.getn(rows) do
@@ -30646,8 +30647,22 @@ function LeafVE.UI:RefreshBannerDutyCraftableOrders()
     if row and order then
       row.order = order
       row.icon:SetTexture(LeafVE:GetWorkOrderResultIcon(order.itemId, order.spellId, order.icon))
-      local qty = GetWorkOrderRequestedQuantity(order)
-      row.text:SetText("|cFFFFFFFF" .. tostring(order.recipeName or "Work Order") .. "|r  |cFFAAAAAAx" .. tostring(qty) .. "|r  |cFF88CC88" .. FormatWorkOrderTipText(order.tipCopper) .. "|r  |cFF777777for " .. tostring(order.requester or "?") .. "|r")
+      -- order.quantity (not GetWorkOrderRequestedQuantity) -- that helper
+      -- returns the ORIGINAL total requested, which doesn't shrink when
+      -- part of the order gets claimed (a partial claim reduces the root
+      -- order's own .quantity and spins the claimed portion off into a
+      -- separate pending child order, see CreateWorkOrderPartialClaim), so
+      -- the Bulletin Board kept showing the full original amount even after
+      -- some of it was already claimed/pending/fulfilled elsewhere.
+      local qty = ClampWorkOrderQuantity(order.quantity or 1)
+      -- Same 14-day unfilled-order countdown Live Orders shows (see
+      -- SchedulePeriodicWorkOrderExpiryCheck), so it's not surprising to see
+      -- an order here that then auto-cancels before anyone gets to it.
+      local expiryText = "  |  Expires in " .. FormatWorkOrderRemainingTime((tonumber(order.createdAt) or now) + (14 * SECONDS_PER_DAY), now)
+      row.text:SetText("|cFFFFFFFF" .. tostring(order.recipeName or "Work Order") .. "|r  |cFFAAAAAAx" .. tostring(qty) .. "|r  |cFF88CC88" .. FormatWorkOrderTipText(order.tipCopper) .. "|r  |cFF777777for " .. tostring(order.requester or "?") .. expiryText .. "|r")
+      if row.partialBtn then
+        if qty > 1 then row.partialBtn:Show() else row.partialBtn:Hide() end
+      end
       row:Show()
     elseif row then
       row.order = nil
@@ -30796,7 +30811,7 @@ function BuildBannerDutyBoardPanel(panel)
   catBtn:SetPoint("TOPLEFT", catLabel, "BOTTOMLEFT", 0, -6)
   catBtn:SetWidth(150)
   catBtn:SetHeight(22)
-  catBtn.categories = {"LFG", "Dungeon", "Quest", "Crafting", "Materials", "Raid", "Attunement", "Help", "Other"}
+  catBtn.categories = {"LFG", "Dungeon", "Quest", "Raid", "Attunement", "Help", "Other"}
   catBtn.index = 1
   catBtn:SetText(catBtn.categories[catBtn.index])
   SkinButtonAccent(catBtn)
@@ -30878,7 +30893,9 @@ function BuildBannerDutyBoardPanel(panel)
 
     local text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     text:SetPoint("LEFT", icon, "RIGHT", 6, 0)
-    text:SetPoint("RIGHT", row, "RIGHT", -84, 0)
+    -- Reserves room for both Fulfill and Partial (see below), not just
+    -- Fulfill alone.
+    text:SetPoint("RIGHT", row, "RIGHT", -150, 0)
     text:SetJustifyH("LEFT")
     row.text = text
 
@@ -30908,6 +30925,36 @@ function BuildBannerDutyBoardPanel(panel)
       end)
     end)
     row.fulfillBtn = fulfillBtn
+
+    -- Only shown when the order has more than 1 unit left (see
+    -- RefreshBannerDutyCraftableOrders) -- reserving a partial amount from a
+    -- single-unit order is identical to just fulfilling it.
+    local partialBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    partialBtn:SetWidth(60)
+    partialBtn:SetHeight(20)
+    partialBtn:SetPoint("RIGHT", fulfillBtn, "LEFT", -4, 0)
+    partialBtn:SetText("Partial")
+    SkinButtonAccent(partialBtn)
+    partialBtn.row = row
+    partialBtn:SetScript("OnClick", function()
+      local order = this.row and this.row.order
+      if not order then return end
+      LeafVE:ShowWorkOrderQuantityPopup(order, function(selectedQuantity)
+        local claimedOrder, claimErr = LeafVE:ClaimWorkOrder(order.id, selectedQuantity)
+        if not claimedOrder then
+          if panel.bannerDutyCraftEmptyText then
+            panel.bannerDutyCraftEmptyText:SetText("|cFFFF6666" .. tostring(claimErr or "Unable to claim partial fulfillment.") .. "|r")
+            panel.bannerDutyCraftEmptyText:Show()
+          end
+          return
+        end
+        LeafVE.UI:RefreshBannerDutyCraftableOrders()
+        if LeafVE.UI.RefreshWorkOrderPopup and LeafVE.UI.cardCurrentPlayer then
+          LeafVE.UI:RefreshWorkOrderPopup(LeafVE.UI.cardCurrentPlayer)
+        end
+      end, nil, "Reserve", "How many units can you reserve from this request right now? The remaining quantity will stay live for other guildmates.")
+    end)
+    row.partialBtn = partialBtn
 
     row:SetScript("OnEnter", function()
       if not this.order then return end
@@ -33467,6 +33514,15 @@ function LeafVE.UI:RefreshWorkOrderHistoryView(playerName, popup)
 end
 
 function LeafVE.UI:RefreshWorkOrderPopup(playerName)
+  -- Every work order action (fulfill/complete/release/cancel/revert/
+  -- reassign/submit) and incoming sync broadcast funnels through this one
+  -- function, so it's the single choke point to also keep the Bulletin
+  -- Board's "Craftable Work Orders" section in sync -- otherwise a partial
+  -- claim made (or received via sync) elsewhere left that section showing
+  -- stale amounts until something else happened to touch the Bulletin Board
+  -- panel directly. Before the workOrderPopup guard below so this still
+  -- fires from incoming sync even if the player has never opened that popup.
+  self:RefreshBannerDutyCraftableOrders()
   if not self.workOrderPopup then return end
   playerName = ShortName(playerName or UnitName("player"))
   if not playerName then return end
