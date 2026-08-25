@@ -24126,6 +24126,26 @@ function LeafVE:CanPlayerFulfillWorkOrder(playerName, order)
   return knownTokens[token] == true
 end
 
+-- Open orders (excluding the player's own requests) for the Bulletin Board's
+-- "Craftable Work Orders" section -- craftableOnly mirrors Live Orders'
+-- "Only what I can craft" checkbox, filtering down to CanPlayerFulfillWorkOrder.
+function LeafVE:GetCraftableWorkOrdersForBulletinBoard(playerName, craftableOnly)
+  playerName = ShortName(playerName)
+  if not playerName then return {} end
+  local liveOrders = self:GetLiveWorkOrders()
+  local result = {}
+  for i = 1, table.getn(liveOrders) do
+    local order = liveOrders[i]
+    if self:GetEffectiveWorkOrderStatus(order) == "open"
+      and (not order.requester or Lower(order.requester) ~= Lower(playerName)) then
+      if not craftableOnly or self:CanPlayerFulfillWorkOrder(playerName, order) then
+        table.insert(result, order)
+      end
+    end
+  end
+  return result
+end
+
 function LeafVE:GetOpenDesignatedWorkOrdersForPlayer(playerName, sinceAt)
   playerName = ShortName(playerName)
   if not playerName then
@@ -30591,8 +30611,50 @@ function LeafVE:HandleIncomingBannerDuty(payload, sender, fromSync)
   end
 end
 
+function LeafVE.UI:RefreshBannerDutyCraftableOrders()
+  local panel = self.panels and self.panels.bannerDutyBoard
+  if not panel or not panel.bannerDutyCraftRows then return end
+  local me = ShortName(UnitName("player") or "") or ""
+  local craftableOnly = panel.bannerDutyCraftableOnly
+  if craftableOnly == nil then craftableOnly = true end
+  local orders = LeafVE:GetCraftableWorkOrdersForBulletinBoard(me, craftableOnly)
+  local rows = panel.bannerDutyCraftRows
+  for i = 1, table.getn(rows) do
+    local row = rows[i]
+    local order = orders[i]
+    if row and order then
+      row.order = order
+      row.icon:SetTexture(LeafVE:GetWorkOrderResultIcon(order.itemId, order.spellId, order.icon))
+      local qty = GetWorkOrderRequestedQuantity(order)
+      row.text:SetText("|cFFFFFFFF" .. tostring(order.recipeName or "Work Order") .. "|r  |cFFAAAAAAx" .. tostring(qty) .. "|r  |cFF88CC88" .. FormatWorkOrderTipText(order.tipCopper) .. "|r  |cFF777777for " .. tostring(order.requester or "?") .. "|r")
+      row:Show()
+    elseif row then
+      row.order = nil
+      row:Hide()
+    end
+  end
+  if panel.bannerDutyCraftEmptyText then
+    if table.getn(orders) == 0 then
+      panel.bannerDutyCraftEmptyText:SetText("|cFF888888No open work orders you can currently fulfill.|r")
+      panel.bannerDutyCraftEmptyText:Show()
+    else
+      panel.bannerDutyCraftEmptyText:Hide()
+    end
+  end
+  if panel.bannerDutyCraftMoreText then
+    local remaining = table.getn(orders) - table.getn(rows)
+    if remaining > 0 then
+      panel.bannerDutyCraftMoreText:SetText("|cFF888888+" .. tostring(remaining) .. " more -- see Live Orders tab|r")
+      panel.bannerDutyCraftMoreText:Show()
+    else
+      panel.bannerDutyCraftMoreText:Hide()
+    end
+  end
+end
+
 function LeafVE.UI:RefreshBannerDutyBoard()
   LeafVE:PruneExpiredBannerDuties()
+  self:RefreshBannerDutyCraftableOrders()
   local panel = self.panels and self.panels.bannerDutyBoard
   if not panel or not panel.bannerDutyRows then return end
   local board = LeafVE:EnsureBannerDutyDB()
@@ -30756,8 +30818,115 @@ function BuildBannerDutyBoardPanel(panel)
   hint:SetJustifyH("LEFT")
   hint:SetText("|cFF888888New tasks notify addon users. Comments notify the task creator. Toggle Banner Duty Chat Messages in Options.|r")
 
+  local craftCard = CreateInset(panel)
+  craftCard:SetPoint("TOPLEFT", postCard, "BOTTOMLEFT", 0, -12)
+  craftCard:SetPoint("TOPRIGHT", postCard, "BOTTOMRIGHT", 0, -12)
+  craftCard:SetHeight(132)
+  panel.bannerDutyCraftCard = craftCard
+
+  local craftTitle = craftCard:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  craftTitle:SetPoint("TOPLEFT", craftCard, "TOPLEFT", 14, -10)
+  craftTitle:SetText("|cFFD8A24ACraftable Work Orders|r")
+
+  local craftOnlyCheck = CreateFrame("CheckButton", "LeafVE_BannerDutyCraftableOnlyCheck", craftCard, "UICheckButtonTemplate")
+  craftOnlyCheck:SetWidth(20)
+  craftOnlyCheck:SetHeight(20)
+  craftOnlyCheck:SetChecked(true)
+  craftOnlyCheck:SetPoint("TOPRIGHT", craftCard, "TOPRIGHT", -150, -6)
+  craftOnlyCheck:SetScript("OnClick", function()
+    panel.bannerDutyCraftableOnly = (this:GetChecked() and true) or false
+    LeafVE.UI:RefreshBannerDutyCraftableOrders()
+  end)
+  panel.bannerDutyCraftableOnly = true
+  panel.bannerDutyCraftOnlyCheck = craftOnlyCheck
+
+  local craftOnlyLabel = craftCard:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  craftOnlyLabel:SetPoint("LEFT", craftOnlyCheck, "RIGHT", 2, -1)
+  craftOnlyLabel:SetText("Only what I can craft")
+
+  local craftEmpty = craftCard:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  craftEmpty:SetPoint("TOP", craftCard, "TOP", 0, -46)
+  craftEmpty:SetText("|cFF888888No open work orders you can currently fulfill.|r")
+  panel.bannerDutyCraftEmptyText = craftEmpty
+
+  local craftMore = craftCard:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  craftMore:SetPoint("BOTTOMRIGHT", craftCard, "BOTTOMRIGHT", -12, 6)
+  craftMore:Hide()
+  panel.bannerDutyCraftMoreText = craftMore
+
+  panel.bannerDutyCraftRows = {}
+  for i = 1, 3 do
+    local row = CreateFrame("Button", nil, craftCard)
+    row:SetPoint("TOPLEFT", craftCard, "TOPLEFT", 12, -30 - ((i - 1) * 30))
+    row:SetPoint("TOPRIGHT", craftCard, "TOPRIGHT", -12, -30 - ((i - 1) * 30))
+    row:SetHeight(26)
+    row:SetBackdrop({bgFile="Interface\\Tooltips\\UI-Tooltip-Background", edgeFile="Interface\\Tooltips\\UI-Tooltip-Border", tile=true, tileSize=16, edgeSize=8, insets={left=2,right=2,top=2,bottom=2}})
+    row:SetBackdropColor(0.08, 0.08, 0.09, 0.85)
+    row:SetBackdropBorderColor(0.28, 0.24, 0.18, 0.7)
+
+    local icon = row:CreateTexture(nil, "ARTWORK")
+    icon:SetPoint("LEFT", row, "LEFT", 4, 0)
+    icon:SetWidth(18)
+    icon:SetHeight(18)
+    icon:SetTexture(LEAF_FALLBACK)
+    row.icon = icon
+
+    local text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    text:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+    text:SetPoint("RIGHT", row, "RIGHT", -84, 0)
+    text:SetJustifyH("LEFT")
+    row.text = text
+
+    local fulfillBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    fulfillBtn:SetWidth(70)
+    fulfillBtn:SetHeight(20)
+    fulfillBtn:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    fulfillBtn:SetText("Fulfill")
+    SkinButtonAccent(fulfillBtn)
+    fulfillBtn.row = row
+    fulfillBtn:SetScript("OnClick", function()
+      local order = this.row and this.row.order
+      if not order then return end
+      LeafVE:ShowWorkOrderInstructionPopup(GetWorkOrderFulfillerInstructionText(order.matsMode, order.profession), "Fulfill Order", function()
+        local claimedOrder, claimErr = LeafVE:ClaimWorkOrder(order.id)
+        if not claimedOrder then
+          if panel.bannerDutyCraftEmptyText then
+            panel.bannerDutyCraftEmptyText:SetText("|cFFFF6666" .. tostring(claimErr or "Unable to fulfill order.") .. "|r")
+            panel.bannerDutyCraftEmptyText:Show()
+          end
+          return
+        end
+        LeafVE.UI:RefreshBannerDutyCraftableOrders()
+        if LeafVE.UI.RefreshWorkOrderPopup and LeafVE.UI.cardCurrentPlayer then
+          LeafVE.UI:RefreshWorkOrderPopup(LeafVE.UI.cardCurrentPlayer)
+        end
+      end)
+    end)
+    row.fulfillBtn = fulfillBtn
+
+    row:SetScript("OnEnter", function()
+      if not this.order then return end
+      GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+      GameTooltip:ClearLines()
+      if tonumber(this.order.itemId) and tonumber(this.order.itemId) > 0 then
+        GameTooltip:SetHyperlink("item:" .. tostring(this.order.itemId))
+        GameTooltip:AddLine(" ")
+      else
+        GameTooltip:SetText(this.order.recipeName or "Work Order", THEME.gold[1], THEME.gold[2], THEME.gold[3], 1, true)
+      end
+      GameTooltip:AddLine("Requester: " .. tostring(this.order.requester or "Unknown"), 0.75, 0.95, 0.75)
+      GameTooltip:AddLine("Quantity: " .. tostring(this.order.quantity or 1), 0.85, 0.85, 0.85)
+      GameTooltip:AddLine("Tip: " .. FormatWorkOrderTipText(this.order.tipCopper), 0.85, 0.85, 0.85)
+      GameTooltip:Show()
+    end)
+    row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    panel.bannerDutyCraftRows[i] = row
+    row:Hide()
+  end
+
   local listCard = CreateInset(panel)
-  listCard:SetPoint("TOPLEFT", postCard, "BOTTOMLEFT", 0, -12)
+  listCard:SetPoint("TOPLEFT", craftCard, "BOTTOMLEFT", 0, -12)
   listCard:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -18, 18)
   panel.bannerDutyListCard = listCard
 
