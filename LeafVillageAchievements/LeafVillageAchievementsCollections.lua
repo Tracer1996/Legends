@@ -4670,7 +4670,7 @@ local function ABC_StableGetSearchFrame(ui, kind)
 
   local placeholder = holder:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   placeholder:SetPoint("LEFT", box, "LEFT", 12, 0)
-  placeholder:SetText(kind == "mount" and "name, source, item..." or kind == "toy" and "name or source..." or kind == "guild" and "mount, companion, or toy name..." or "name or source...")
+  placeholder:SetText(kind == "mount" and "name, source, item..." or kind == "toy" and "name or source..." or kind == "guild" and "item name or guildie..." or "name or source...")
   placeholder:SetTextColor(0.40, 0.40, 0.40)
   holder.placeholder = placeholder
 
@@ -4743,7 +4743,17 @@ local function ABC_StableShowSearch(ui, kind)
   local companionSearch = ABC_StableGetSearchFrame(ui, "companion")
   local toySearch = ABC_StableGetSearchFrame(ui, "toy")
   local guildSearch = ABC_StableGetSearchFrame(ui, "guild")
-  mountSearch:Hide(); companionSearch:Hide(); toySearch:Hide(); guildSearch:Hide()
+  -- Hide only the ones that AREN'T the target kind -- unconditionally
+  -- hiding (then re-showing) the target too used to steal keyboard focus
+  -- from its own EditBox on every refresh this runs inside of, including
+  -- the debounced refresh each search box's own OnTextChanged triggers --
+  -- so typing a 2nd character into guild search (or any of these) fell
+  -- through to game keybinds instead of the box, since WoW clears an
+  -- EditBox's focus whenever its frame gets hidden.
+  if kind ~= "mount" then mountSearch:Hide() end
+  if kind ~= "companion" then companionSearch:Hide() end
+  if kind ~= "toy" then toySearch:Hide() end
+  if kind ~= "guild" then guildSearch:Hide() end
   if kind == "mount" then mountSearch:Show()
   elseif kind == "toy" then toySearch:Show()
   elseif kind == "guild" then guildSearch:Show()
@@ -5339,7 +5349,22 @@ function ABC:BuildGuildCollectionView()
   local query = Lower(ABC_StableSearchText("guild") or "")
   local rows = {}
   for name, owners in pairs(bucket) do
-    if query == "" or string.find(Lower(name), query, 1, true) then
+    -- Matches either the item name or any owner's name, so typing a
+    -- guildie in this same search box surfaces everything they own instead
+    -- of only ever filtering by mount/companion/toy name.
+    local matches = query == ""
+    if not matches then
+      matches = string.find(Lower(name), query, 1, true) and true or false
+    end
+    if not matches then
+      for playerName in pairs(owners) do
+        if string.find(Lower(playerName), query, 1, true) then
+          matches = true
+          break
+        end
+      end
+    end
+    if matches then
       local ownerNames = {}
       for playerName in pairs(owners) do table.insert(ownerNames, playerName) end
       if table.getn(ownerNames) > 0 then
@@ -5499,7 +5524,87 @@ end
 -- built by inverting the same guildCollections[dbKey][itemName][playerName]
 -- = true tables the item-grid view above reads. Reuses the "guild" search
 -- box as a player-name filter instead of an item-name one.
+-- Per-rank tint used by ABC_BuildLeaderboardRow's badge + row border: gold/
+-- silver/bronze for the top 3, a neutral dark tier for everyone else --
+-- same warm-vs-neutral convention the item cards already use for collected
+-- vs. missing state, just applied to rank instead.
+local ABC_LEADERBOARD_RANK_BG = {
+  [1] = {0.40, 0.31, 0.05, 1},
+  [2] = {0.28, 0.28, 0.30, 1},
+  [3] = {0.30, 0.17, 0.05, 1},
+}
+local ABC_LEADERBOARD_RANK_BORDER = {
+  [1] = {1.0, 0.82, 0.20},
+  [2] = {0.78, 0.78, 0.82},
+  [3] = {0.80, 0.50, 0.20},
+}
+local ABC_LEADERBOARD_RANK_TEXT = {
+  [1] = {1.0, 0.86, 0.30},
+  [2] = {0.88, 0.88, 0.90},
+  [3] = {0.88, 0.60, 0.32},
+}
+local ABC_LEADERBOARD_DEFAULT_BORDER = {0.32, 0.32, 0.35}
+local ABC_LEADERBOARD_DEFAULT_TEXT = {0.75, 0.75, 0.78}
+
+-- One player's row within a leaderboard column: a bordered card (matching
+-- the collection cards' background/border convention) with a rank badge,
+-- the player's name, and their count, instead of a single flat line of
+-- colored text.
+local function ABC_BuildLeaderboardRow(parent, x, y, width, height, rank, name, count)
+  local row = CreateFrame("Frame", nil, parent)
+  row:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+  row:SetWidth(width)
+  row:SetHeight(height)
+
+  local borderColor = ABC_LEADERBOARD_RANK_BORDER[rank] or ABC_LEADERBOARD_DEFAULT_BORDER
+  local isTop3 = rank <= 3
+  ABC_StableBackground(row, 0.07, 0.07, 0.08, 0.92)
+  ABC_StableCreateBorder(row, 1, borderColor[1], borderColor[2], borderColor[3], isTop3 and 0.95 or 0.4)
+
+  local badgeSize = height - 4
+  local badge = CreateFrame("Frame", nil, row)
+  badge:SetPoint("LEFT", row, "LEFT", 2, 0)
+  badge:SetWidth(badgeSize)
+  badge:SetHeight(badgeSize)
+  local badgeBg = ABC_LEADERBOARD_RANK_BG[rank] or {0.10, 0.10, 0.11, 1}
+  ABC_StableBackground(badge, badgeBg[1], badgeBg[2], badgeBg[3], badgeBg[4] or 1)
+  ABC_StableCreateBorder(badge, 1, borderColor[1], borderColor[2], borderColor[3], 0.95)
+
+  local rankText = badge:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  rankText:SetPoint("CENTER", badge, "CENTER", 0, 0)
+  rankText:SetText(tostring(rank))
+  local rankColor = ABC_LEADERBOARD_RANK_TEXT[rank] or ABC_LEADERBOARD_DEFAULT_TEXT
+  rankText:SetTextColor(rankColor[1], rankColor[2], rankColor[3])
+
+  local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  nameText:SetPoint("LEFT", badge, "RIGHT", 6, 0)
+  nameText:SetPoint("RIGHT", row, "RIGHT", -30, 0)
+  nameText:SetJustifyH("LEFT")
+  nameText:SetText(tostring(name))
+  nameText:SetTextColor(0.92, 0.90, 0.85)
+
+  local countText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  countText:SetPoint("RIGHT", row, "RIGHT", -5, 0)
+  countText:SetText(tostring(count))
+  countText:SetTextColor(0.50, 0.82, 1.0)
+
+  return row
+end
+
 function ABC:BuildGuildLeaderboardView(ui)
+  -- BuildGuildCollectionView hides the scroll chrome before dispatching
+  -- here, on the assumption every guild view's content is capped to fit
+  -- the viewport (true for the card grids, which page instead of
+  -- scrolling). 20 rows per column no longer reliably fits, so this view
+  -- re-enables it -- SetScrollHeight below (shared with every other
+  -- scrollable list in this addon) sets the actual min/max once the real
+  -- content height is known.
+  ShowFrame(ui.scrollbar)
+  ShowFrame(ui.scrollTrack)
+  ShowFrame(ui.scrollThumb)
+  ShowFrame(ui.scrollUp)
+  ShowFrame(ui.scrollDown)
+
   local header = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   header:SetPoint("TOPLEFT", ui.scrollChild, "TOPLEFT", 10, -4)
   header:SetText("Guild Collector Leaderboard")
@@ -5507,7 +5612,7 @@ function ABC:BuildGuildLeaderboardView(ui)
 
   local summary = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   summary:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -3)
-  summary:SetText("Top 10 collectors by distinct mounts, companions, and toys owned")
+  summary:SetText("Top 20 collectors by distinct mounts, companions, and toys owned")
   summary:SetTextColor(0.78, 0.78, 0.78)
 
   local query = Lower(ABC_StableSearchText("guild") or "")
@@ -5519,9 +5624,11 @@ function ABC:BuildGuildLeaderboardView(ui)
   }
 
   local columnWidth = 220
+  local rowWidth = columnWidth - 16
   local startX = 10
-  local startY = 60
-  local rowHeight = 16
+  local startY = 62
+  local rowHeight = 24
+  local rowGap = 3
 
   for colIndex = 1, table.getn(columns) do
     local col = columns[colIndex]
@@ -5549,32 +5656,36 @@ function ABC:BuildGuildLeaderboardView(ui)
     local x = startX + (colIndex - 1) * columnWidth
 
     local colTitle = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    colTitle:SetPoint("TOPLEFT", ui.scrollChild, "TOPLEFT", x, -startY)
+    colTitle:SetPoint("TOPLEFT", ui.scrollChild, "TOPLEFT", x + 2, -startY)
     colTitle:SetText(col.title)
     colTitle:SetTextColor(1.0, 0.82, 0.36)
 
+    local colUnderline = ABC_StableMakeSolid(ui.scrollChild, "ARTWORK")
+    colUnderline:SetPoint("TOPLEFT", colTitle, "BOTTOMLEFT", -2, -4)
+    colUnderline:SetWidth(rowWidth)
+    colUnderline:SetHeight(1)
+    ABC_StableSetTextureColor(colUnderline, 1.0, 0.82, 0.36, 0.5)
+
     if table.getn(ranked) == 0 then
       local emptyText = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-      emptyText:SetPoint("TOPLEFT", colTitle, "BOTTOMLEFT", 4, -8)
-      emptyText:SetWidth(columnWidth - 14)
+      emptyText:SetPoint("TOPLEFT", colTitle, "BOTTOMLEFT", 2, -14)
+      emptyText:SetWidth(rowWidth)
       emptyText:SetJustifyH("LEFT")
       emptyText:SetText(query ~= "" and "No matches." or "No guild data yet.")
       emptyText:SetTextColor(0.6, 0.6, 0.6)
     else
-      local limit = math.min(10, table.getn(ranked))
+      local limit = math.min(20, table.getn(ranked))
       for i = 1, limit do
         local entry = ranked[i]
-        local rowText = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        rowText:SetPoint("TOPLEFT", colTitle, "BOTTOMLEFT", 4, -8 - (i - 1) * rowHeight)
-        rowText:SetWidth(columnWidth - 14)
-        rowText:SetJustifyH("LEFT")
-        local rankColor = (i == 1 and "|cFFFFD700") or (i == 2 and "|cFFC0C0C0") or (i == 3 and "|cFFCD7F32") or "|cFFFFFFFF"
-        rowText:SetText(rankColor..tostring(i)..".|r "..tostring(entry.name).." |cFF88CCFF("..tostring(entry.count)..")|r")
+        ABC_BuildLeaderboardRow(
+          ui.scrollChild, x, -startY - 16 - (i - 1) * (rowHeight + rowGap),
+          rowWidth, rowHeight, i, entry.name, entry.count
+        )
       end
     end
   end
 
-  SetScrollHeight(ui, startY + 10 * rowHeight + 40)
+  SetScrollHeight(ui, startY + 16 + 20 * (rowHeight + rowGap) + 30)
   ABC.buildingCollectionView = false
 end
 
