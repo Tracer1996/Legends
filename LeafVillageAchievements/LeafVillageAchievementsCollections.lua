@@ -3068,11 +3068,8 @@ function ABC:InstallTabs()
 
   -- "Who has this mount" -- guild-wide ownership lookup, anchored after
   -- Toys and pushing Admin over to make room, same re-anchor idiom used
-  -- for titlesTab above when Mounts gets inserted late. Restricted to a
-  -- single character while this tab is still being built out -- everyone
-  -- else never gets the button (and thus never the "guildcollection" view)
-  -- at all.
-  if not ui.guildCollectionTab and ui.toyTab and UnitName("player") == "Kamehameheal" then
+  -- for titlesTab above when Mounts gets inserted late.
+  if not ui.guildCollectionTab and ui.toyTab then
     local guildCollectionTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     guildCollectionTab:SetPoint("LEFT", ui.toyTab, "RIGHT", 5, 0)
     guildCollectionTab:SetWidth(60)
@@ -4783,10 +4780,10 @@ ABC.guildCollectionKind = ABC.guildCollectionKind or "mount"
 ABC.guildCollectionExpanded = nil
 
 local ABC_GUILD_COLLECTION_KINDS = {
+  {value="leaderboard", label="Leaderboard"},
   {value="mount", label="Mounts"},
   {value="companion", label="Companions"},
   {value="toy", label="Toys"},
-  {value="leaderboard", label="Leaderboard"},
 }
 
 -- Same visual template as EnsureMountSidebar/EnsureCompanionSidebar above
