@@ -44449,29 +44449,23 @@ function LeafVE.UI:CreateLoginBriefingPopup()
   end)
   popup.scrollBar = scrollBar
 
-  local openOrdersBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
-  openOrdersBtn:SetWidth(116)
-  openOrdersBtn:SetHeight(24)
-  openOrdersBtn:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -218, 20)
-  openOrdersBtn:SetText("View Duties")
-  SkinButtonAccent(openOrdersBtn)
-  openOrdersBtn:SetScript("OnClick", function()
-    popup:Hide()
-    if LeafVE and LeafVE.UI then
-      if not LeafVE.UI.frame or not LeafVE.UI.frame:IsVisible() then
-        LeafVE:ToggleUI()
-      end
-      if LeafVE.UI and LeafVE.UI.OpenWorkOrdersPanel then
-        LeafVE.UI:OpenWorkOrdersPanel("live")
-      end
-    end
-  end)
-  popup.openOrdersBtn = openOrdersBtn
+  -- There used to be two differently-wired "View Duties" buttons here (one
+  -- to Live Orders, one to the Banner Duty Board) with identical labels --
+  -- kept the Banner Duty Board one since it matches this popup's own
+  -- "Banner Briefing" title, and dropped the Live Orders duplicate.
+  local dismissBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
+  dismissBtn:SetWidth(110)
+  dismissBtn:SetHeight(24)
+  dismissBtn:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -24, 20)
+  dismissBtn:SetText("Dismiss")
+  SkinButtonAccent(dismissBtn)
+  dismissBtn:SetScript("OnClick", function() popup:Hide() end)
+  popup.dismissBtn = dismissBtn
 
   local viewDutiesBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
   viewDutiesBtn:SetWidth(110)
   viewDutiesBtn:SetHeight(24)
-  viewDutiesBtn:SetPoint("LEFT", openOrdersBtn, "RIGHT", 10, 0)
+  viewDutiesBtn:SetPoint("RIGHT", dismissBtn, "LEFT", -10, 0)
   viewDutiesBtn:SetText("View Duties")
   SkinButtonAccent(viewDutiesBtn)
   viewDutiesBtn:SetScript("OnClick", function()
@@ -44492,14 +44486,6 @@ function LeafVE.UI:CreateLoginBriefingPopup()
     end
   end)
   popup.viewDutiesBtn = viewDutiesBtn
-
-  local dismissBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
-  dismissBtn:SetWidth(82)
-  dismissBtn:SetHeight(24)
-  dismissBtn:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -24, 20)
-  dismissBtn:SetText("Dismiss")
-  dismissBtn:SetScript("OnClick", function() popup:Hide() end)
-  popup.dismissBtn = dismissBtn
 
   popup.dynamicWidgets = {}
   popup:SetScript("OnShow", function()
