@@ -1449,6 +1449,16 @@ local function ShouldPrintRaidEventChatMessages()
   return not (LeafVE_DB and LeafVE_DB.options and LeafVE_DB.options.enableNotifications == false)
 end
 
+-- Gates only the "<sender> is running an outdated version" warning (see
+-- OnAddonMessage's VERSIONRSP handling) -- the separate "your own addon is
+-- outdated" self-nag is intentionally NOT gated by this, it always shows.
+-- This used to call Print() directly with no options check at all, unlike
+-- every other chat message this addon prints.
+local function ShouldPrintVersionWarnings()
+  return not (LeafVE_DB and LeafVE_DB.options and
+    (LeafVE_DB.options.enableNotifications == false or LeafVE_DB.options.enableVersionWarnings == false))
+end
+
 local function PrintRaidEventMessage(msg)
   if not ShouldPrintRaidEventChatMessages() then
     return
@@ -4010,6 +4020,7 @@ local function EnsureDB()
     LeafVE_DB.options.allianceAutoJoin = nil
   end
   if LeafVE_DB.options.enableWorkOrderLoginAlerts == nil then LeafVE_DB.options.enableWorkOrderLoginAlerts = true end
+  if LeafVE_DB.options.enableVersionWarnings == nil then LeafVE_DB.options.enableVersionWarnings = true end
   if LeafVE.allianceEnabled == true then
     if type(LeafVE_DB.allianceGuilds) ~= "table" then LeafVE_DB.allianceGuilds = {} end
     if type(LeafVE_DB.pendingAllianceRequests) ~= "table" then LeafVE_DB.pendingAllianceRequests = {} end
@@ -14270,7 +14281,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
       Print("|cFFFFAA00ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â  Your Ashen Banner addon is outdated! You have v"..myVer..", latest is v"..ver..". Please update!|r")
     end
     -- Warn once when a guildmate's version is below the minimum compatible version
-    if VersionLessThan(ver, LeafVE.minCompatVersion) then
+    if VersionLessThan(ver, LeafVE.minCompatVersion) and ShouldPrintVersionWarnings() then
       if not LeafVE.warnedOldVersion then LeafVE.warnedOldVersion = {} end
       if not LeafVE.warnedOldVersion[sender] then
         LeafVE.warnedOldVersion[sender] = true
@@ -38745,17 +38756,27 @@ function BuildTitlesPanel(panel)
   panel.titleRows = {}
 end
 
-function MakeToggleButton(parent, label, yPos, getOpt, setOpt)
+-- btnX/btnWidth/lblX default to the original single-column sizing so every
+-- existing call site is unaffected; a section that needs a second column
+-- (see Notifications in BuildOptionsPanel) can pass its own offsets without
+-- touching anyone else's -- and without needing a second frame: lbl/btn
+-- anchor off parent's TOPLEFT (an absolute x,y pair), not parent's LEFT/
+-- CENTER, so they don't depend on parent having any real width/height of
+-- its own the way a second, only-single-point-anchored frame would.
+function MakeToggleButton(parent, label, yPos, getOpt, setOpt, btnX, btnWidth, lblX)
+  btnX = btnX or 170
+  btnWidth = btnWidth or 80
+  lblX = lblX or 12
+
   local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-  btn:SetWidth(80)
+  btn:SetWidth(btnWidth)
   btn:SetHeight(22)
-  btn:SetPoint("TOPLEFT", parent, "TOPLEFT", 170, yPos)
+  btn:SetPoint("TOPLEFT", parent, "TOPLEFT", btnX, yPos)
   SkinButtonAccent(btn)
 
   local lbl = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  lbl:SetPoint("LEFT", parent, "LEFT", 12, 0)
+  lbl:SetPoint("TOPLEFT", parent, "TOPLEFT", lblX, yPos)
   lbl:SetPoint("RIGHT", btn, "LEFT", -8, 0)
-  lbl:SetPoint("TOP", btn, "TOP", 0, 0)
   lbl:SetHeight(22)
   lbl:SetJustifyH("LEFT")
   lbl:SetText(label)
@@ -38826,56 +38847,82 @@ function BuildOptionsPanel(panel)
 
   local subFrame = CreateFrame("Frame", nil, panel)
 
+  -- Two columns instead of one long list, to fit all 9 toggles in less
+  -- vertical space. Both columns live on the SAME subFrame (not a second
+  -- frame positioned to its right) -- a separate subFrame2 anchored via
+  -- SetPoint("TOPLEFT", subFrame, ...) never rendered at all, since
+  -- MakeToggleButton's label anchors off parent's LEFT/CENTER, and a frame
+  -- with only a single TOPLEFT point and no declared width never resolves
+  -- those the way it resolves TOPLEFT itself. Column 2 just uses larger
+  -- absolute btnX/lblX offsets on subFrame instead.
+  local col2LblX, col2BtnX, col2BtnWidth = 280, 430, 80
+  local col1Base, col2Base = yBase, yBase
+
   MakeToggleButton(subFrame, "All Notifications (master switch)",
-    yBase,
+    col1Base,
     function() return LeafVE_DB.options.enableNotifications ~= false end,
     function(v) LeafVE_DB.options.enableNotifications = v end)
-  yBase = yBase - gap
+  col1Base = col1Base - gap
 
   MakeToggleButton(subFrame, "Ashen Ember Pop-ups",
-    yBase,
+    col1Base,
     function() return LeafVE_DB.options.enablePointNotifications ~= false end,
     function(v) LeafVE_DB.options.enablePointNotifications = v end)
-  yBase = yBase - gap
+  col1Base = col1Base - gap
 
   MakeToggleButton(subFrame, "Badge & Achievement Pop-ups",
-    yBase,
+    col1Base,
     function() return LeafVE_DB.options.enableBadgeNotifications ~= false end,
     function(v) LeafVE_DB.options.enableBadgeNotifications = v end)
-  yBase = yBase - gap
+  col1Base = col1Base - gap
 
   MakeToggleButton(subFrame, "Notification Sound",
-    yBase,
+    col1Base,
     function() return LeafVE_DB.options.notificationSound ~= false end,
     function(v) LeafVE_DB.options.notificationSound = v end)
-  yBase = yBase - gap + 8
+  col1Base = col1Base - gap
 
+  MakeToggleButton(subFrame, "Outdated Version Warnings",
+    col1Base,
+    function() return LeafVE_DB.options.enableVersionWarnings ~= false end,
+    function(v) LeafVE_DB.options.enableVersionWarnings = v end)
+  col1Base = col1Base - gap
+
+  -- Column 2 labels run longer, so these keep the extra +8 breathing room
+  -- the single-column layout already used for its longest entries.
   MakeToggleButton(subFrame, "Banner Duty Chat Messages (new tasks/comments)",
-    yBase,
+    col2Base,
     function() return LeafVE_DB.options.enableBannerDutyNotifications ~= false end,
-    function(v) LeafVE_DB.options.enableBannerDutyNotifications = v end)
-  yBase = yBase - gap + 8
+    function(v) LeafVE_DB.options.enableBannerDutyNotifications = v end,
+    col2BtnX, col2BtnWidth, col2LblX)
+  col2Base = col2Base - gap - 8
 
   MakeToggleButton(subFrame, "Ashen Banner Music (.wav)",
-    yBase,
+    col2Base,
     function() return LeafVE_DB.options.addonMusicEnabled ~= false end,
     function(v)
       LeafVE_DB.options.addonMusicEnabled = v
       if not v and LeafVE.StopAddonMusic then LeafVE:StopAddonMusic() end
-    end)
-  yBase = yBase - gap + 8
+    end,
+    col2BtnX, col2BtnWidth, col2LblX)
+  col2Base = col2Base - gap
 
   MakeToggleButton(subFrame, "Work Order Chat Messages",
-    yBase,
+    col2Base,
     function() return LeafVE_DB.options.enableWorkOrderChatMessages ~= false end,
-    function(v) LeafVE_DB.options.enableWorkOrderChatMessages = v end)
-  yBase = yBase - gap + 8
+    function(v) LeafVE_DB.options.enableWorkOrderChatMessages = v end,
+    col2BtnX, col2BtnWidth, col2LblX)
+  col2Base = col2Base - gap
 
   MakeToggleButton(subFrame, "Work Order Login Alerts",
-    yBase,
+    col2Base,
     function() return LeafVE_DB.options.enableWorkOrderLoginAlerts ~= false end,
-    function(v) LeafVE_DB.options.enableWorkOrderLoginAlerts = v end)
-  yBase = yBase - gap + 8
+    function(v) LeafVE_DB.options.enableWorkOrderLoginAlerts = v end,
+    col2BtnX, col2BtnWidth, col2LblX)
+  col2Base = col2Base - gap
+
+  -- Divider sits below whichever column ended up taller.
+  yBase = math.min(col1Base, col2Base)
 
   -- Divider
   local div1 = panel:CreateTexture(nil, "ARTWORK")
