@@ -738,6 +738,14 @@ local function LeafVEGetTextHeight(fontString, minimumHeight)
   return height
 end
 
+-- Jewelcrafting and Survival intentionally excluded here (not from
+-- WORK_ORDER_MAIN_PROFESSION_ORDER/WORK_ORDER_SECONDARY_PROFESSION_ORDER,
+-- which drive the separate saved-profession designation picker on the
+-- character card -- untouched) -- removes them from the Recipe Browser's
+-- and Live Orders' profession sidebars entirely. Also drives
+-- EnsureWorkOrderCatalog's catalog.byProfession population (see there),
+-- so their recipes stop being cataloged at all rather than just being
+-- hidden in the UI.
 WORK_ORDER_PROFESSION_ORDER = {
   "Alchemy",
   "Blacksmithing",
@@ -745,9 +753,9 @@ WORK_ORDER_PROFESSION_ORDER = {
   "Enchanting",
   "Engineering",
   "First Aid",
-  "Jewelcrafting",
   "Leatherworking",
   "Tailoring",
+  "Gathering",
 }
 
 WORK_ORDER_REQUEST_CATEGORY_ORDER = {
@@ -757,7 +765,6 @@ WORK_ORDER_REQUEST_CATEGORY_ORDER = {
   "Enchanting",
   "Engineering",
   "First Aid",
-  "Jewelcrafting",
   "Leatherworking",
   "Tailoring",
   "Gathering",
@@ -797,6 +804,8 @@ WORK_ORDER_PROFESSION_META = {
   ["Mining"] = {icon = "Interface\\Icons\\Trade_Mining"},
   ["Skinning"] = {icon = "Interface\\Icons\\INV_Misc_Pelt_Wolf_01"},
   ["Tailoring"] = {icon = "Interface\\Icons\\Trade_Tailoring"},
+  ["Survival"] = {icon = "Interface\\Icons\\Trade_Survival"},
+  ["Gardening"] = {icon = "Interface\\Icons\\Trade_Survival"},
   ["Gathering"] = {icon = "Interface\\Icons\\INV_Misc_Bag_10_Blue"},
 }
 
@@ -827,11 +836,13 @@ WORK_ORDER_TABLE_PREFIX_MAP = {
   Enchanting = "Enchanting",
   Engineering = "Engineering",
   FirstAid = "First Aid",
+  Gardening = "Gardening",
   Gnomish = "Engineering",
   Goblin = "Engineering",
   Hammersmith = "Blacksmithing",
   Jewelcrafting = "Jewelcrafting",
   Leather = "Leatherworking",
+  Survival = "Survival",
   Smithing = "Blacksmithing",
   Swordsmith = "Blacksmithing",
   Tailoring = "Tailoring",
@@ -4050,6 +4061,7 @@ local function EnsureDB()
   if not LeafVE_GlobalDB.workOrderCrafterSignups then LeafVE_GlobalDB.workOrderCrafterSignups = {} end
   if not LeafVE_GlobalDB.workOrderCrafterSignupMeta then LeafVE_GlobalDB.workOrderCrafterSignupMeta = {} end
   if not LeafVE_GlobalDB.workOrderIdentityLinks then LeafVE_GlobalDB.workOrderIdentityLinks = {} end
+  if not LeafVE_GlobalDB.recipeKnowledge then LeafVE_GlobalDB.recipeKnowledge = {} end
   if LeafVE.allianceEnabled == true then
     if type(LeafVE_GlobalDB.allianceRosters) ~= "table" then LeafVE_GlobalDB.allianceRosters = {} end
     if type(LeafVE_GlobalDB.allianceAccessSnapshot) ~= "table" then LeafVE_GlobalDB.allianceAccessSnapshot = { updatedAt = 0, guilds = {} } end
@@ -14527,6 +14539,20 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
   end
 
+  if message == "RECIPELINKREQ" or message == "RECIPELINKREQ_FORCE" then
+    local forceRespond = (message == "RECIPELINKREQ_FORCE")
+    local me = ShortName(UnitName("player"))
+    if me and sender ~= me then
+      self:BroadcastMyRecipeLinks(forceRespond)
+    end
+    return
+  end
+
+  if string.sub(message, 1, 11) == "RECIPELINK:" then
+    self:HandleIncomingRecipeLink(string.sub(message, 12), sender)
+    return
+  end
+
   if message == "RAIDREQ" or message == "RAIDREQ_FORCE" then
     local forceRespond = (message == "RAIDREQ_FORCE")
     local me = ShortName(UnitName("player"))
@@ -16699,6 +16725,7 @@ local LEAFVE_TEXT_PAGE_HEADERS = {
   admin = {"Admin", "Officer tools and guild settings"},
   liveHistory = {"Live History", "Real-time addon activity feed"},
   guildEvents = {"Calendar", "Guild events and scheduled runs"},
+  recipes = {"Recipe Browser", "Every known craft recipe, and who in the guild can make it"},
   shinobiDuties = {"Weekly Duties", "Weekly Banner Duty quests"},
   bannerDutyBoard = {"Bulletin Board", "Post group, help, crafting, and quest requests"},
   bannerDutyLive = {"Banner Duty Live Updates", "Joins, leaves, completions, and automatic Banner Rep awards appear here instead of chat spam"},
@@ -16757,7 +16784,7 @@ function LeafVE.UI:HideAllMainPanels()
   local panelNames = {
     "me", "shoutouts", "leaderWeek", "leaderLife", "roster", "history", "badges",
     "titles", "achievements", "shinobiReputation", "options", "admin", "liveHistory",
-    "guildEvents", "workOrders", "shinobiDuties", "bannerDutyBoard", "bannerDutyLive", "workOrderRep", "welcome", "join"
+    "guildEvents", "workOrders", "shinobiDuties", "bannerDutyBoard", "bannerDutyLive", "workOrderRep", "welcome", "join", "recipes"
   }
 
   for i = 1, table.getn(panelNames) do
@@ -17172,6 +17199,19 @@ local LEAFVE_GROUPED_NAV = {
     },
   },
   {
+    key = "recipes",
+    label = "Orders",
+    width = 76,
+    defaultTab = "recipes",
+    subtabs = {
+      {tab = "recipes", label = "Request", width = 78},
+      {tab = "workordersLive", label = "Live Orders", width = 92},
+      {tab = "workordersMine", label = "My Requests", width = 96},
+      {tab = "workordersProgress", label = "Work In Progress", width = 128},
+      {tab = "workordersHistory", label = "History", width = 74},
+    },
+  },
+  {
     key = "calendar",
     label = "Calendar",
     width = 82,
@@ -17206,6 +17246,11 @@ local LEAFVE_GROUPED_TAB_TO_CATEGORY = {
   roster = "character",
   shoutouts = "character",
   guildEvents = "calendar",
+  recipes = "recipes",
+  workordersLive = "recipes",
+  workordersMine = "recipes",
+  workordersProgress = "recipes",
+  workordersHistory = "recipes",
   shinobiDuties = "orders",
   bannerDutyBoard = "orders",
   bannerDutyLive = "orders",
@@ -17327,6 +17372,7 @@ function LeafVE.UI:BuildGroupedNavigation(parent)
     character = "me",
     calendar = "guildEvents",
     orders = "workOrders",
+    recipes = "recipes",
     options = "options",
   }
 
@@ -21268,6 +21314,73 @@ StaticPopupDialogs["LEAFVE_WORKORDER_CONFIRM"] = {
   text = "%s",
   button1 = "Continue",
   button2 = CANCEL or "Cancel",
+  -- Stock Blizzard parchment background otherwise -- this and
+  -- LEAFVE_WORKORDER_QUANTITY are the only confirm dialogs in the whole
+  -- addon that come up mid-workflow constantly (fulfilling/partial-filling
+  -- orders), so they're worth tinting to match the addon's dark/gold theme
+  -- instead of clashing with it every time. Recolors the frame's own
+  -- existing backdrop rather than replacing it (StaticPopup1-4 are shared
+  -- with every other addon and Blizzard's own dialogs, so the border/bg
+  -- textures themselves are left alone -- only the tint is touched, and
+  -- OnHide restores it, so nothing else that reuses these frames later
+  -- inherits this addon's colors).
+  OnShow = function()
+    -- StaticPopup1-4 don't all reliably have backdrop capability
+    -- established yet when OnShow fires (whichever numbered instance gets
+    -- reused here may never have had SetBackdrop called on it this
+    -- session) -- SetBackdropColor errors on a frame with no backdrop set
+    -- up, hence setting a backdrop explicitly first. WHITE8x8 is a flat
+    -- single-pixel texture (no grain/pattern baked in at all, unlike even
+    -- the tooltip background), tinted solid black -- not Blizzard's
+    -- ornate parchment dialog art.
+    if this.SetBackdrop then
+      this:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = false, edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+      })
+    end
+    if this.SetBackdropColor then
+      this:SetBackdropColor(0, 0, 0, 1)
+      this:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 1)
+    end
+    -- The background itself WAS already opaque -- what looked like
+    -- transparency was actually the Banner Duties page's own content
+    -- (summary/hint text, checkbox) rendering ON TOP of it. That page's
+    -- widgets are stuck at "DIALOG" strata with frame levels running up to
+    -- ~12 (a leftover from when they were children of a floating popup,
+    -- never fully corrected), and StaticPopup1-4 sit at a much lower level
+    -- within that same "DIALOG" strata by default -- so within one strata,
+    -- the higher-level page content wins and draws over this dialog.
+    -- FULLSCREEN_DIALOG is strictly above DIALOG regardless of level, so
+    -- this always wins instead of needing to out-level a moving target.
+    if this.SetFrameStrata then
+      this:SetFrameStrata("FULLSCREEN_DIALOG")
+    end
+  end,
+  OnHide = function()
+    -- Restores Blizzard's actual dialog art (not just recolors this
+    -- addon's flat black one back to white) -- StaticPopup1-4 are shared
+    -- with every other addon and Blizzard's own popups, so whatever the
+    -- next thing to reuse this frame is shouldn't inherit a stray solid
+    -- black/white backdrop from this one.
+    if this.SetBackdrop then
+      this:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+      })
+    end
+    if this.SetBackdropColor then
+      this:SetBackdropColor(1, 1, 1, 1)
+      this:SetBackdropBorderColor(1, 1, 1, 1)
+    end
+    if this.SetFrameStrata then
+      this:SetFrameStrata("DIALOG")
+    end
+  end,
   OnAccept = function(dialog, data)
     local popup = dialog
     if popup and not popup.leafveData and popup.GetParent then
@@ -21327,6 +21440,33 @@ StaticPopupDialogs["LEAFVE_WORKORDER_QUANTITY"] = {
   hasEditBox = 1,
   maxLetters = 2,
   OnShow = function(dialog, data)
+    -- Same tinting as LEAFVE_WORKORDER_CONFIRM above -- see its comment.
+    -- Uses "this" rather than the "dialog" param: whichever numbered
+    -- StaticPopup instance gets reused for this one doesn't reliably have
+    -- backdrop capability established on it yet, and "dialog" here isn't
+    -- always the same object "this" resolves to -- SetBackdrop must run
+    -- before SetBackdropColor can be called at all.
+    -- Flat solid-black fill, not the ornate parchment dialog art -- see
+    -- LEAFVE_WORKORDER_CONFIRM's OnShow comment above for why.
+    if this.SetBackdrop then
+      this:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = false, edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+      })
+    end
+    if this.SetBackdropColor then
+      this:SetBackdropColor(0, 0, 0, 1)
+      this:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 1)
+    end
+    -- Same strata fix as LEAFVE_WORKORDER_CONFIRM's OnShow -- see its
+    -- comment. The background was already opaque; the Banner Duties page's
+    -- own content was rendering on top of it from a higher frame level
+    -- within the same default "DIALOG" strata.
+    if this.SetFrameStrata then
+      this:SetFrameStrata("FULLSCREEN_DIALOG")
+    end
     data = data or (dialog and dialog.data)
     if dialog and dialog.editBox then
       local maxQuantity = ClampWorkOrderQuantity(type(data) == "table" and data.maxQuantity or 1)
@@ -21345,6 +21485,28 @@ StaticPopupDialogs["LEAFVE_WORKORDER_QUANTITY"] = {
     if dialog and dialog.button1 then
       dialog.button1:SetText(type(data) == "table" and (data.confirmLabel or "Complete") or "Complete")
       dialog.button1:Enable(1)
+    end
+  end,
+  OnHide = function()
+    -- Restores Blizzard's actual dialog art (not just recolors this
+    -- addon's flat black one back to white) -- StaticPopup1-4 are shared
+    -- with every other addon and Blizzard's own popups, so whatever the
+    -- next thing to reuse this frame is shouldn't inherit a stray solid
+    -- black/white backdrop from this one.
+    if this.SetBackdrop then
+      this:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+      })
+    end
+    if this.SetBackdropColor then
+      this:SetBackdropColor(1, 1, 1, 1)
+      this:SetBackdropBorderColor(1, 1, 1, 1)
+    end
+    if this.SetFrameStrata then
+      this:SetFrameStrata("DIALOG")
     end
   end,
   OnAccept = function(dialog, data)
@@ -21788,6 +21950,13 @@ function LeafVE:ApplyWorkOrderSpellInfo(recipe)
   end
 end
 
+-- Also reused per-row when rendering Live/My Orders/History (not just once
+-- when building the recipe catalog): GetItemIcon(itemId) only resolves
+-- correctly on a client that already has that item cached, so whatever
+-- icon got stored on the order at submit time (and broadcast to everyone
+-- else) reflects the REQUESTER's client, not the viewer's. Re-resolving
+-- here on every viewer's own client self-heals a wrong/fallback icon
+-- instead of it staying stuck at whatever the requester saw.
 function LeafVE:GetWorkOrderResultIcon(itemId, spellId, currentIcon)
   local iconPath = NormalizeIconPath((itemId and GetItemIcon and GetItemIcon(itemId)) or nil)
   if not iconPath then
@@ -23029,7 +23198,16 @@ function LeafVE:CreateWorkOrderPartialClaim(rootOrder, claimedQuantity, fulfille
   rootOrder.tipCopper = remainingTipCopper
   rootOrder.updatedAt = updatedAt
   rootOrder.claimExpiresAt = 0
-  rootOrder.status = rootOrder.quantity > 0 and "open" or "cancelled"
+  -- Always "open", even once quantity hits 0 (the whole thing got claimed
+  -- via Partial in one go) -- NOT "cancelled". Nobody cancelled anything
+  -- here; the request was fully picked up, just represented by the new
+  -- child partialOrder below rather than this root record. Every place
+  -- that reads live/requester-queue orders already requires quantity > 0
+  -- for an "open" order to count (GetLiveWorkOrders, GetWorkOrdersForRequester),
+  -- so a 0-quantity root stays correctly invisible there -- marking it
+  -- "cancelled" only had the effect of misfiling it into Order History's
+  -- cancelled bucket even though nothing was actually cancelled.
+  rootOrder.status = "open"
   self:StoreWorkOrderRecord(rootOrder)
   self:BroadcastWorkOrder(rootOrder)
 
@@ -23885,6 +24063,39 @@ function LeafVE:GetLiveWorkOrders()
   return orders
 end
 
+-- Finished/cancelled orders, most recent first. PurgeInvalidWorkOrders only
+-- ever removes structurally-broken records, so finalized/cancelled orders
+-- stay in LeafVE_GlobalDB.workOrders indefinitely -- this just reads that
+-- same table filtered to the closed statuses instead of open/pending.
+function LeafVE:GetWorkOrderHistory()
+  EnsureDB()
+  local now = Now()
+  local orders = {}
+  for _, order in pairs(LeafVE_GlobalDB.workOrders or {}) do
+    if type(order) == "table" and self:IsValidWorkOrderRecord(order) then
+      local status = self:GetEffectiveWorkOrderStatus(order, now)
+      -- "released"/"reassigned" child records are a partial claim that got
+      -- handed back to the open pool rather than a real Cancel -- they still
+      -- show up here (RefreshWorkOrderHistoryView labels them distinctly)
+      -- instead of the generic "Cancelled" a plain status check would give.
+      if status == "finalized" or status == "cancelled" then
+        table.insert(orders, order)
+      end
+    end
+  end
+
+  table.sort(orders, function(a, b)
+    local aUpdated = tonumber(a.updatedAt or a.createdAt or 0) or 0
+    local bUpdated = tonumber(b.updatedAt or b.createdAt or 0) or 0
+    if aUpdated ~= bUpdated then
+      return aUpdated > bUpdated
+    end
+    return Lower(a.recipeName or "") < Lower(b.recipeName or "")
+  end)
+
+  return orders
+end
+
 function LeafVE:CanPlayerFulfillWorkOrder(playerName, order)
   if type(order) ~= "table" then
     return false
@@ -23905,7 +24116,40 @@ function LeafVE:CanPlayerFulfillWorkOrder(playerName, order)
   if not self:DoesWorkOrderRequireDesignation(order) then
     return true
   end
-  return self:HasProfessionDesignation(playerName, order.profession)
+  -- Actual recipe knowledge (auto-detected from the player's ClassicAPI
+  -- trade-skill link, see recipeKnowledge) governs eligibility here, not
+  -- the self-reported "saved professions" designation -- someone who saved
+  -- Alchemy as a profession but doesn't actually have this specific recipe
+  -- shouldn't show as eligible to fulfill it, and vice versa.
+  local token = GetWorkOrderCrafterRecipeToken(order)
+  if not token then
+    -- No recipe backing this order (shouldn't normally happen for a
+    -- designation-requiring profession) -- fall back to the coarser saved
+    -- designation rather than blocking everyone over bad/legacy data.
+    return self:HasProfessionDesignation(playerName, order.profession)
+  end
+  local knownTokens = self:GetKnownRecipeTokenSetForPlayerProfession(playerName, order.profession)
+  return knownTokens[token] == true
+end
+
+-- Open orders (excluding the player's own requests) for the Bulletin Board's
+-- "Craftable Work Orders" section -- craftableOnly mirrors Live Orders'
+-- "Only what I can craft" checkbox, filtering down to CanPlayerFulfillWorkOrder.
+function LeafVE:GetCraftableWorkOrdersForBulletinBoard(playerName, craftableOnly)
+  playerName = ShortName(playerName)
+  if not playerName then return {} end
+  local liveOrders = self:GetLiveWorkOrders()
+  local result = {}
+  for i = 1, table.getn(liveOrders) do
+    local order = liveOrders[i]
+    if self:GetEffectiveWorkOrderStatus(order) == "open"
+      and (not order.requester or Lower(order.requester) ~= Lower(playerName)) then
+      if not craftableOnly or self:CanPlayerFulfillWorkOrder(playerName, order) then
+        table.insert(result, order)
+      end
+    end
+  end
+  return result
 end
 
 function LeafVE:GetOpenDesignatedWorkOrdersForPlayer(playerName, sinceAt)
@@ -24103,6 +24347,12 @@ function LeafVE:ReleaseWorkOrder(orderId)
   if IsWorkOrderPartialClaim(order) then
     self:RestoreWorkOrderPartialQuantity(order, updatedAt)
     order.status = "cancelled"
+    -- This child record only ever existed to track this one fulfiller's
+    -- reservation; its quantity is already folded back into the root order
+    -- above, so nothing was actually cancelled from the requester's point of
+    -- view -- tag it "released" (distinct from a real Cancel) so Order
+    -- History can show it as "Released" instead of a generic "Cancelled".
+    order.cancelReason = "released"
     order.updatedAt = updatedAt + 1
     order.claimExpiresAt = 0
     order.completedAt = 0
@@ -24228,19 +24478,18 @@ function LeafVE:RevertCompletedWorkOrder(orderId)
     updatedAt = priorUpdatedAt + 1
   end
 
-  if IsWorkOrderPartialClaim(order) then
-    self:RestoreWorkOrderPartialQuantity(order, updatedAt)
-    order.status = "cancelled"
-    order.updatedAt = updatedAt + 1
-    order.completedAt = 0
-    order.claimExpiresAt = 0
-    order.completedQuantity = 0
-    self:StoreWorkOrderRecord(order)
-    self:BroadcastWorkOrder(order)
-    PrintWorkOrderMessage("|cFF88CCFFWork Order|r " .. self:BuildWorkOrderRevertLine(order, me))
-    return order
-  end
-
+  -- Reverting just undoes a premature "Complete" click -- the SAME
+  -- fulfiller keeps working the SAME reservation with a fresh 48h window.
+  -- This used to branch on IsWorkOrderPartialClaim and, for partial-claim
+  -- child orders (which is what virtually every claimed order actually is,
+  -- since ClaimWorkOrder always routes through CreateWorkOrderPartialClaim),
+  -- called RestoreWorkOrderPartialQuantity + marked the order "cancelled".
+  -- That folded the quantity back into the root order and threw this
+  -- fulfiller's claim back into the open pool for anyone to grab -- so a
+  -- revert would silently cancel the fulfiller's own claim (or let someone
+  -- else pick it up) instead of just giving them another shot at finishing
+  -- it, which is why some orders appeared to get cancelled or vanish after
+  -- a revert.
   order.status = "pending"
   order.fulfiller = fulfiller
   order.crafter = fulfiller
@@ -24283,6 +24532,9 @@ function LeafVE:ReassignWorkOrder(orderId)
   if IsWorkOrderPartialClaim(order) then
     self:RestoreWorkOrderPartialQuantity(order, updatedAt)
     order.status = "cancelled"
+    -- Distinct from "released" -- this is the requester pulling it back
+    -- from the fulfiller, not the fulfiller giving it up voluntarily.
+    order.cancelReason = "reassigned"
     order.updatedAt = updatedAt + 1
     order.completedAt = 0
     order.claimExpiresAt = 0
@@ -24439,7 +24691,15 @@ function LeafVE:EnsureWorkOrderCatalog()
                 sourceTable = tableKey,
               }
               if recipe.name and recipe.name ~= "" then
-                self:ApplyWorkOrderSpellInfo(recipe)
+                -- Jewelcrafting/Survival/Gardening data has no real spellId (see the
+                -- Atlas-CFM transcription note above) -- letting ApplyWorkOrderSpellInfo's
+                -- itemId-based fallback run for these risks matching an unrelated vanilla
+                -- recipe that happens to reuse the same numeric itemId (its own fallback
+                -- returns candidates[1] even when no name matches), poisoning the recipe
+                -- with a bogus spellId/reagent list. Skip it for these three professions.
+                if profession ~= "Jewelcrafting" and profession ~= "Survival" and profession ~= "Gardening" then
+                  self:ApplyWorkOrderSpellInfo(recipe)
+                end
                 recipe.icon = self:GetWorkOrderResultIcon(recipe.itemId, recipe.spellId, recipe.icon)
                 if not self:IsWorkOrderItemBindOnPickup(recipe.itemId) then
                   recipe.uid = GetWorkOrderRecipeKey(recipe)
@@ -24517,6 +24777,300 @@ function LeafVE:FindWorkOrderCatalogRecipe(profession, recipeName, itemId, spell
     return FindWorkOrderCatalogRecipeInList(catalog.byProfession and catalog.byProfession["Gathering"], expectedName, itemId, spellId)
   end
   return nil
+end
+
+-- ============================================================================
+-- Recipe Browser: a guild-wide "who can make this recipe" index, independent
+-- of Banner Duties / Work Orders (it only shares the static recipe catalog
+-- above as a read-only data source). Knowledge is captured automatically via
+-- ClassicAPI's C_TradeSkillUI trade-skill link backport -- when a player
+-- opens their own profession window, the resulting link (their known-recipe
+-- bitfield for that skill line) is broadcast guild-wide; every other client
+-- decodes it locally. See https://github.com/brues-code/ClassicAPI.
+-- ============================================================================
+
+function LeafVE:HasRecipeLinkAPI()
+  return type(C_TradeSkillUI) == "table"
+    and type(C_TradeSkillUI.GetTradeSkillListLink) == "function"
+    and type(C_TradeSkillUI.GetTradeSkillListRecipes) == "function"
+end
+
+-- Parses a `|Htrade:<skillLineID>:<cur>:<max>:<linkerName>:<bits>|h[<Profession>]|h|r`
+-- link (ClassicAPI's backport of the 2.x+ trade-skill link) into its fields.
+function LeafVE:ParseTradeSkillLink(link)
+  if type(link) ~= "string" then return nil end
+  local skillLineID, cur, max, linkerName, bits, profName =
+    string.match(link, "Htrade:(%d+):(%d+):(%d+):([^:]+):([^|]+)|h%[(.-)%]")
+  skillLineID = tonumber(skillLineID)
+  if not skillLineID or not bits or bits == "" then
+    return nil
+  end
+  return {
+    skillLineID = skillLineID,
+    cur = tonumber(cur) or 0,
+    max = tonumber(max) or 0,
+    linkerName = ShortName(linkerName),
+    bits = bits,
+    profession = CanonicalWorkOrderProfession(profName) or Trim(tostring(profName or "")),
+  }
+end
+
+-- Decodes a stored (skillLineID, bits) pair into the "s<spellId>" tokens the
+-- player is known to have -- same token shape GetWorkOrderCrafterRecipeToken
+-- uses, so decoded results resolve through the shared recipe catalog for free.
+function LeafVE:GetKnownRecipeTokensForLink(skillLineID, bits)
+  local tokens = {}
+  if not self:HasRecipeLinkAPI() or not skillLineID or not bits or bits == "" then
+    return tokens
+  end
+  local decoded = C_TradeSkillUI.GetTradeSkillListRecipes(skillLineID, bits)
+  if type(decoded) ~= "table" then return tokens end
+  for i = 1, table.getn(decoded) do
+    local row = decoded[i]
+    if type(row) == "table" and row.isKnown and tonumber(row.spellID) then
+      table.insert(tokens, "s" .. tostring(row.spellID))
+    end
+  end
+  return tokens
+end
+
+function LeafVE:StoreRecipeKnowledgeLink(playerName, parsed, updatedAt)
+  playerName = ShortName(playerName)
+  if not playerName or type(parsed) ~= "table" or not parsed.profession or parsed.profession == "" then
+    return false
+  end
+  EnsureDB()
+  updatedAt = tonumber(updatedAt) or Now()
+
+  local key = Lower(playerName)
+  local bucket = LeafVE_GlobalDB.recipeKnowledge[key]
+  if type(bucket) ~= "table" then
+    bucket = { player = playerName, professions = {} }
+    LeafVE_GlobalDB.recipeKnowledge[key] = bucket
+  end
+  bucket.player = playerName
+  if type(bucket.professions) ~= "table" then
+    bucket.professions = {}
+  end
+
+  local existing = bucket.professions[parsed.profession]
+  if type(existing) == "table" and (tonumber(existing.updatedAt) or 0) >= updatedAt then
+    return false
+  end
+
+  bucket.professions[parsed.profession] = {
+    profession = parsed.profession,
+    skillLineID = parsed.skillLineID,
+    bits = parsed.bits,
+    cur = parsed.cur,
+    max = parsed.max,
+    updatedAt = updatedAt,
+  }
+  bucket.updatedAt = math.max(tonumber(bucket.updatedAt) or 0, updatedAt)
+  self.recipeKnowledgeVersion = (self.recipeKnowledgeVersion or 0) + 1
+  return true
+end
+
+-- Builds token -> {playerName, ...} for every crafter with known-recipe data
+-- for `profession`, decoding each stored link once. Cheap to rebuild per
+-- profession selection; callers should cache it against recipeKnowledgeVersion.
+function LeafVE:BuildRecipeKnowledgeIndex(profession)
+  EnsureDB()
+  local index = {}
+  for key, bucket in pairs(LeafVE_GlobalDB.recipeKnowledge or {}) do
+    local entry = type(bucket) == "table" and type(bucket.professions) == "table" and bucket.professions[profession]
+    if type(entry) == "table" and entry.bits and entry.skillLineID then
+      local tokens = self:GetKnownRecipeTokensForLink(entry.skillLineID, entry.bits)
+      for i = 1, table.getn(tokens) do
+        local token = tokens[i]
+        index[token] = index[token] or {}
+        table.insert(index[token], bucket.player or key)
+      end
+    end
+  end
+  for _, names in pairs(index) do
+    table.sort(names, function(a, b) return Lower(a) < Lower(b) end)
+  end
+  return index
+end
+
+function LeafVE:GetPlayerRecipeKnowledgeBucket(playerName)
+  EnsureDB()
+  playerName = ShortName(playerName)
+  if not playerName then return nil end
+  return LeafVE_GlobalDB.recipeKnowledge and LeafVE_GlobalDB.recipeKnowledge[Lower(playerName)]
+end
+
+-- Professions `playerName` has any ClassicAPI-detected recipe knowledge in
+-- (see the Recipe Browser auto-detection above) -- used to scope Live
+-- Orders down to what this player can actually make, rather than every
+-- open request in the guild.
+function LeafVE:GetKnownWorkOrderProfessionsForPlayer(playerName)
+  local bucket = self:GetPlayerRecipeKnowledgeBucket(playerName)
+  local professions = {}
+  if not bucket or type(bucket.professions) ~= "table" then
+    return professions
+  end
+  for profession, entry in pairs(bucket.professions) do
+    if type(entry) == "table" and entry.bits and entry.skillLineID then
+      table.insert(professions, profession)
+    end
+  end
+  table.sort(professions)
+  return professions
+end
+
+-- Set (token -> true) of "s<spellId>"/"i<itemId>" tokens `playerName` knows
+-- for `profession`, decoded from their stored trade-link. Same token shape
+-- GetWorkOrderCrafterRecipeToken produces, so it matches work order records
+-- directly (SubmitWorkOrder stores recipe.itemId/spellId on the order).
+function LeafVE:GetKnownRecipeTokenSetForPlayerProfession(playerName, profession)
+  local tokenSet = {}
+  local bucket = self:GetPlayerRecipeKnowledgeBucket(playerName)
+  local entry = bucket and type(bucket.professions) == "table" and bucket.professions[profession]
+  if type(entry) == "table" and entry.bits and entry.skillLineID then
+    local tokens = self:GetKnownRecipeTokensForLink(entry.skillLineID, entry.bits)
+    for i = 1, table.getn(tokens) do
+      tokenSet[tokens[i]] = true
+    end
+  end
+  return tokenSet
+end
+
+function LeafVE:RefreshRecipeBrowserViews()
+  if not LeafVE.UI or not LeafVE.UI.activeTab or LeafVE.UI.activeTab ~= "recipes" then return end
+  if LeafVE.UI.RefreshRecipeBrowserPanel then
+    LeafVE.UI:RefreshRecipeBrowserPanel()
+  end
+end
+
+function LeafVE:BroadcastRecipeLink(parsed, updatedAt)
+  if not InGuild() or type(parsed) ~= "table" or not parsed.skillLineID then return end
+  local payload = table.concat({
+    tostring(tonumber(updatedAt) or Now()),
+    tostring(parsed.skillLineID),
+    tostring(parsed.cur or 0),
+    tostring(parsed.max or 0),
+    EncodeTalentField(parsed.linkerName or ""),
+    EncodeTalentField(parsed.profession or ""),
+    EncodeTalentField(parsed.bits or ""),
+  }, SEP)
+  SendAddonMessage("LeafVE", "RECIPELINK:" .. payload, "GUILD")
+end
+
+function LeafVE:BroadcastMyRecipeLinks(force)
+  EnsureDB()
+  local me = ShortName(UnitName("player"))
+  if not me or not InGuild() then return end
+
+  self.lastRecipeLinkBroadcastAt = self.lastRecipeLinkBroadcastAt or 0
+  local now = Now()
+  if not force and (now - self.lastRecipeLinkBroadcastAt) < 30 then
+    return
+  end
+
+  local bucket = LeafVE_GlobalDB.recipeKnowledge[Lower(me)]
+  if type(bucket) ~= "table" or type(bucket.professions) ~= "table" then
+    return
+  end
+
+  self.lastRecipeLinkBroadcastAt = now
+  for profession, entry in pairs(bucket.professions) do
+    if type(entry) == "table" and entry.bits and entry.skillLineID then
+      self:BroadcastRecipeLink({
+        skillLineID = entry.skillLineID,
+        cur = entry.cur,
+        max = entry.max,
+        linkerName = me,
+        profession = profession,
+        bits = entry.bits,
+      }, entry.updatedAt)
+    end
+  end
+end
+
+function LeafVE:RequestRecipeLinkSync(force)
+  if not InGuild() then return end
+  local now = Now()
+  if not force and (now - (self.lastRecipeLinkSyncRequestAt or 0)) < 20 then
+    return
+  end
+  self.lastRecipeLinkSyncRequestAt = now
+  SendAddonMessage("LeafVE", force and "RECIPELINKREQ_FORCE" or "RECIPELINKREQ", "GUILD")
+end
+
+function LeafVE:HandleIncomingRecipeLink(payload, sender)
+  local fields = SplitByLiteralSep(payload, SEP)
+  if table.getn(fields) < 7 then return end
+
+  local updatedAt = tonumber(fields[1]) or 0
+  local skillLineID = tonumber(fields[2])
+  local cur = tonumber(fields[3]) or 0
+  local max = tonumber(fields[4]) or 0
+  local linkerName = ShortName(DecodeTalentField(fields[5] or ""))
+  local profession = CanonicalWorkOrderProfession(DecodeTalentField(fields[6] or "")) or DecodeTalentField(fields[6] or "")
+  local bits = DecodeTalentField(fields[7] or "")
+
+  local senderName = ShortName(sender)
+  if not linkerName or not skillLineID or bits == "" or updatedAt < 1 then return end
+  if senderName and Lower(senderName) ~= Lower(linkerName) then return end
+  if not profession or profession == "" then return end
+
+  local stored = self:StoreRecipeKnowledgeLink(linkerName, {
+    skillLineID = skillLineID,
+    cur = cur,
+    max = max,
+    linkerName = linkerName,
+    profession = profession,
+    bits = bits,
+  }, updatedAt)
+  if stored then
+    self:RefreshRecipeBrowserViews()
+  end
+end
+
+-- Captures the local player's own known-recipe link the moment their
+-- TradeSkill (isCraft=false) or Craft (isCraft=true) window opens, stores it,
+-- and broadcasts it guild-wide.
+function LeafVE:CaptureOwnRecipeLink(isCraft)
+  if not self:HasRecipeLinkAPI() then return end
+  local link = isCraft and C_TradeSkillUI.GetCraftListLink() or C_TradeSkillUI.GetTradeSkillListLink()
+  if not link or link == "" then return end
+
+  local parsed = self:ParseTradeSkillLink(link)
+  if not parsed or not parsed.profession or parsed.profession == "" then return end
+
+  local me = ShortName(UnitName("player"))
+  if not me or not parsed.linkerName or Lower(parsed.linkerName) ~= Lower(me) then return end
+
+  local updatedAt = Now()
+  local stored = self:StoreRecipeKnowledgeLink(me, parsed, updatedAt)
+  if stored then
+    self:RefreshRecipeBrowserViews()
+  end
+  self:BroadcastRecipeLink(parsed, updatedAt)
+end
+
+-- TradeSkillFrame/CraftFrame are lazy-loaded (Blizzard_TradeSkillUI /
+-- Blizzard_CraftUI aren't in memory at PLAYER_LOGIN on this client -- they
+-- only appear once the player opens that window for the first time this
+-- session), so a single PLAYER_LOGIN hook attempt would silently miss both
+-- frames forever. This is safe to call repeatedly (each frame hooks once);
+-- callers should retry it on ADDON_LOADED so it catches the frames whenever
+-- their owning addon actually loads.
+function LeafVE:HookRecipeScanFrames()
+  if not self.recipeTradeSkillFrameHooked and TradeSkillFrame and TradeSkillFrame.HookScript then
+    self.recipeTradeSkillFrameHooked = true
+    TradeSkillFrame:HookScript("OnShow", function()
+      LeafVE:CaptureOwnRecipeLink(false)
+    end)
+  end
+  if not self.recipeCraftFrameHooked and CraftFrame and CraftFrame.HookScript then
+    self.recipeCraftFrameHooked = true
+    CraftFrame:HookScript("OnShow", function()
+      LeafVE:CaptureOwnRecipeLink(true)
+    end)
+  end
 end
 
 function LeafVE:IsValidWorkOrderRecord(order)
@@ -24602,6 +25156,10 @@ function LeafVE:StoreWorkOrderRecord(order)
     matsMode = NormalizeWorkOrderMatsMode(order.matsMode),
     icon = NormalizeIconPath(order.icon),
     status = status,
+    -- Only meaningful (and only ever set by callers) when status=="cancelled"
+    -- -- cleared otherwise so a stale reason can't outlive the state it
+    -- described if a record's status is ever produced by a different path.
+    cancelReason = status == "cancelled" and order.cancelReason or nil,
   }
   if record.requestedQuantity < record.quantity then
     record.requestedQuantity = record.quantity
@@ -24772,6 +25330,68 @@ function LeafVE:GetWorkOrdersForRequester(requesterName, preferredCrafter)
   return orders
 end
 
+-- Same as GetWorkOrdersForRequester, plus pending orders someone else
+-- posted that THIS player has reserved/picked up as the crafter -- those
+-- previously only showed on the Live tab (as "Pending by you"), so leaving
+-- Live or switching profession filters made it easy to lose track of what
+-- you'd actually claimed. Only pending ones (not completed) -- once an
+-- order is completed, the requester's own copy already reflects that.
+-- Orders the player is currently fulfilling -- claimed and pending, or
+-- already marked complete and waiting on the requester to verify. Data
+-- source for the "My Work In Progress" tab, mirroring GetWorkOrdersForRequester
+-- but scoped to the fulfiller side of a claim instead of the requester side.
+function LeafVE:GetWorkOrdersInProgressForFulfiller(playerName)
+  EnsureDB()
+  playerName = ShortName(playerName)
+  if not playerName then return {} end
+
+  local now = Now()
+  local orders = {}
+  for _, order in pairs(LeafVE_GlobalDB.workOrders or {}) do
+    if type(order) == "table" and self:IsValidWorkOrderRecord(order) then
+      local status = self:GetEffectiveWorkOrderStatus(order, now)
+      if status == "pending" or status == "completed" then
+        local fulfiller = self:GetStoredWorkOrderFulfiller(order)
+        if fulfiller and Lower(fulfiller) == Lower(playerName) then
+          table.insert(orders, order)
+        end
+      end
+    end
+  end
+
+  table.sort(orders, function(a, b)
+    local aStatus = LeafVE:GetEffectiveWorkOrderStatus(a, now)
+    local bStatus = LeafVE:GetEffectiveWorkOrderStatus(b, now)
+    if aStatus ~= bStatus then
+      local priority = { completed = 1, pending = 2 }
+      return (priority[aStatus] or 9) < (priority[bStatus] or 9)
+    end
+
+    if aStatus == "pending" then
+      local aExpires = tonumber(a.claimExpiresAt or 0) or 0
+      local bExpires = tonumber(b.claimExpiresAt or 0) or 0
+      if aExpires ~= bExpires then
+        return aExpires < bExpires
+      end
+    elseif aStatus == "completed" then
+      local aCompleted = tonumber(a.completedAt or a.updatedAt or a.createdAt or 0) or 0
+      local bCompleted = tonumber(b.completedAt or b.updatedAt or b.createdAt or 0) or 0
+      if aCompleted ~= bCompleted then
+        return aCompleted > bCompleted
+      end
+    end
+
+    local aUpdated = tonumber(a.updatedAt or a.createdAt or 0) or 0
+    local bUpdated = tonumber(b.updatedAt or b.createdAt or 0) or 0
+    if aUpdated ~= bUpdated then
+      return aUpdated > bUpdated
+    end
+    return Lower(a.recipeName or "") < Lower(b.recipeName or "")
+  end)
+
+  return orders
+end
+
 function LeafVE:CancelWorkOrder(orderId)
   EnsureDB()
   local me = ShortName(UnitName("player"))
@@ -24814,6 +25434,170 @@ function LeafVE:CancelWorkOrder(orderId)
   return order
 end
 
+-- Same body as CancelWorkOrder minus the "only the requester can cancel
+-- their own order" check -- this is a system-initiated cancel (the
+-- requester left the guild and can't cancel it themselves), not a player
+-- action, so that identity check doesn't apply. Only ever called from
+-- PurgeWorkOrdersForDepartedRequesters below.
+function LeafVE:CancelWorkOrderForDepartedRequester(orderId)
+  EnsureDB()
+  local order = LeafVE_GlobalDB.workOrders and LeafVE_GlobalDB.workOrders[orderId]
+  if type(order) ~= "table" then
+    return nil
+  end
+  local effectiveStatus = self:GetEffectiveWorkOrderStatus(order)
+  if effectiveStatus ~= "open" and effectiveStatus ~= "pending" then
+    return nil
+  end
+
+  local updatedAt = Now()
+  local priorUpdatedAt = tonumber(order.updatedAt or order.createdAt or 0) or 0
+  if updatedAt <= priorUpdatedAt then
+    updatedAt = priorUpdatedAt + 1
+  end
+
+  if IsWorkOrderPartialClaim(order) then
+    self:RestoreWorkOrderPartialQuantity(order, updatedAt)
+    order.updatedAt = updatedAt + 1
+  else
+    order.updatedAt = updatedAt
+  end
+  order.status = "cancelled"
+  order.fulfiller = nil
+  order.crafter = nil
+  order.completedAt = 0
+  order.claimExpiresAt = 0
+  order.completedQuantity = 0
+  order.cancelReason = "requester_left_guild"
+  self:StoreWorkOrderRecord(order)
+  self:BroadcastWorkOrder(order)
+  return order
+end
+
+-- Scans live (open/pending) orders and cancels any whose requester is no
+-- longer in the guild roster -- otherwise those sit "live" forever, since
+-- CancelWorkOrder normally requires the requester to cancel their own
+-- order and a departed member obviously can't. Safe to run redundantly
+-- from every online client: cancelling an already-cancelled order is a
+-- no-op (GetEffectiveWorkOrderStatus guard above), so multiple clients
+-- independently catching the same stale order just re-broadcast the same
+-- result instead of double-cancelling anything.
+function LeafVE:PurgeWorkOrdersForDepartedRequesters()
+  EnsureDB()
+  if not InGuild() then return 0 end
+
+  -- guildRosterCache needs at least one real roster snapshot to be
+  -- trustworthy; an empty cache almost certainly means "not populated yet"
+  -- (e.g. right after login) rather than "empty guild", and trusting it
+  -- would cancel every live order in the guild.
+  local hasRosterData = false
+  for _ in pairs(self.guildRosterCache or {}) do
+    hasRosterData = true
+    break
+  end
+  if not hasRosterData then return 0 end
+
+  local cancelledCount = 0
+  local orders = self:GetLiveWorkOrders()
+  for i = 1, table.getn(orders) do
+    local order = orders[i]
+    local requester = ShortName(order.requester)
+    if requester and not self.guildRosterCache[Lower(requester)] then
+      if self:CancelWorkOrderForDepartedRequester(order.id) then
+        cancelledCount = cancelledCount + 1
+      end
+    end
+  end
+
+  if cancelledCount > 0 then
+    self:RefreshRecipeBrowserViews()
+    if self.UI and self.UI.RefreshWorkOrderPopup and self.UI.cardCurrentPlayer then
+      self.UI:RefreshWorkOrderPopup(self.UI.cardCurrentPlayer)
+    end
+  end
+  return cancelledCount
+end
+
+-- Same shape as CancelWorkOrderForDepartedRequester above, for the other
+-- reason a live order needs auto-cancelling: nobody filled it. Only ever
+-- targets "open" (never claimed, or the still-open remainder of a partial
+-- claim) -- a "pending" order already has its own 48h claim-expiry timer
+-- and someone is actively working on it, so this doesn't touch those.
+function LeafVE:CancelWorkOrderForExpiredUnfilled(orderId)
+  EnsureDB()
+  local order = LeafVE_GlobalDB.workOrders and LeafVE_GlobalDB.workOrders[orderId]
+  if type(order) ~= "table" then
+    return nil
+  end
+  if self:GetEffectiveWorkOrderStatus(order) ~= "open" then
+    return nil
+  end
+
+  local updatedAt = Now()
+  local priorUpdatedAt = tonumber(order.updatedAt or order.createdAt or 0) or 0
+  if updatedAt <= priorUpdatedAt then
+    updatedAt = priorUpdatedAt + 1
+  end
+
+  order.status = "cancelled"
+  order.updatedAt = updatedAt
+  order.fulfiller = nil
+  order.crafter = nil
+  order.completedAt = 0
+  order.claimExpiresAt = 0
+  order.completedQuantity = 0
+  order.cancelReason = "expired_unfilled"
+  self:StoreWorkOrderRecord(order)
+  self:BroadcastWorkOrder(order)
+  return order
+end
+
+-- Scans live orders and cancels any "open" one that's sat unfilled for 14+
+-- days since it was originally posted (order.createdAt survives a partial
+-- claim untouched, so this measures from the real original post date even
+-- for a partially-claimed order's open remainder) -- otherwise a request
+-- nobody wants/can fulfill just sits on the live board forever. Same
+-- redundant-multi-client safety as PurgeWorkOrdersForDepartedRequesters.
+function LeafVE:PurgeExpiredUnfilledWorkOrders()
+  EnsureDB()
+  local now = Now()
+  local cutoff = 14 * SECONDS_PER_DAY
+  local cancelledCount = 0
+  local orders = self:GetLiveWorkOrders()
+  for i = 1, table.getn(orders) do
+    local order = orders[i]
+    if self:GetEffectiveWorkOrderStatus(order, now) == "open" then
+      local createdAt = tonumber(order.createdAt) or now
+      if (now - createdAt) >= cutoff then
+        if self:CancelWorkOrderForExpiredUnfilled(order.id) then
+          cancelledCount = cancelledCount + 1
+        end
+      end
+    end
+  end
+
+  if cancelledCount > 0 then
+    self:RefreshRecipeBrowserViews()
+    if self.UI and self.UI.RefreshWorkOrderPopup and self.UI.cardCurrentPlayer then
+      self.UI:RefreshWorkOrderPopup(self.UI.cardCurrentPlayer)
+    end
+  end
+  return cancelledCount
+end
+
+-- Self-rescheduling check (not event-driven like the departed-requester
+-- sweep, since there's no "roster changed"-style event for "14 days
+-- passed") -- runs once at login via SchedulePeriodicWorkOrderExpiryCheck
+-- below, then reschedules itself every 30 minutes for the rest of the
+-- session so an order doesn't have to wait for someone to reload their UI
+-- to actually expire on time.
+function LeafVE:SchedulePeriodicWorkOrderExpiryCheck()
+  LeafVE:PurgeExpiredUnfilledWorkOrders()
+  LeafVE:ScheduleDeferred("work_order_expiry_check", 1800, function()
+    LeafVE:SchedulePeriodicWorkOrderExpiryCheck()
+  end)
+end
+
 function LeafVE:BroadcastWorkOrder(order, messageType)
   if not order or not order.id or not InGuild() then return end
 
@@ -24839,6 +25623,7 @@ function LeafVE:BroadcastWorkOrder(order, messageType)
     tostring(tonumber(order.completedAt) or 0),
     tostring(GetWorkOrderRequestedQuantity(order)),
     tostring(GetWorkOrderCompletedQuantity(order)),
+    EncodeTalentField(order.status == "cancelled" and order.cancelReason or ""),
   }, SEP)
   SendAddonMessage("LeafVE", messageType .. payload, "GUILD")
 end
@@ -24929,7 +25714,30 @@ function LeafVE:HandleIncomingWorkOrderMessage(payload, sender, isRelay)
   if fieldCount < 10 then return end
 
   local order
-  if fieldCount >= 19 then
+  if fieldCount >= 20 then
+    order = {
+      id = DecodeTalentField(fields[1] or ""),
+      parentOrderId = DecodeTalentField(fields[2] or ""),
+      requester = ShortName(DecodeTalentField(fields[3] or "")),
+      fulfiller = ShortName(DecodeTalentField(fields[4] or "")),
+      createdAt = tonumber(fields[5]) or Now(),
+      updatedAt = tonumber(fields[6]) or tonumber(fields[5]) or Now(),
+      claimExpiresAt = tonumber(fields[7]) or 0,
+      profession = DecodeTalentField(fields[8] or ""),
+      recipeName = DecodeTalentField(fields[9] or ""),
+      itemId = tonumber(fields[10]),
+      spellId = tonumber(fields[11]),
+      quantity = tonumber(fields[12]) or 1,
+      icon = NormalizeIconPath(DecodeTalentField(fields[13] or "")),
+      status = DecodeTalentField(fields[14] or "open"),
+      tipCopper = ClampWorkOrderTipCopper(fields[15]),
+      matsMode = NormalizeWorkOrderMatsMode(DecodeTalentField(fields[16] or "requester")),
+      completedAt = tonumber(fields[17]) or 0,
+      requestedQuantity = tonumber(fields[18]) or tonumber(fields[12]) or 1,
+      completedQuantity = tonumber(fields[19]) or 0,
+      cancelReason = (DecodeTalentField(fields[20] or "") ~= "" and DecodeTalentField(fields[20])) or nil,
+    }
+  elseif fieldCount >= 19 then
     order = {
       id = DecodeTalentField(fields[1] or ""),
       parentOrderId = DecodeTalentField(fields[2] or ""),
@@ -25711,6 +26519,16 @@ function CreateWorkOrderCoinField(parent, width, iconTexture)
   icon:SetPoint("RIGHT", bg, "RIGHT", -4, 0)
   icon:SetTexture(iconTexture or "Interface\\MoneyFrame\\UI-CopperIcon")
 
+  -- input's own clickable rect is inset from bg (room for the coin icon on
+  -- the right, a little padding on the left/top/bottom), so clicking
+  -- anywhere in that visual margin -- which still looks like part of the
+  -- box -- missed the EditBox entirely. Clicking anywhere on bg now focuses
+  -- input directly instead of requiring the exact inset sub-rect.
+  bg:EnableMouse(true)
+  bg:SetScript("OnMouseDown", function()
+    input:SetFocus()
+  end)
+
   bg.input = input
   bg.icon = icon
   return bg
@@ -25918,12 +26736,20 @@ function SyncWorkOrderSlider(scrollBar, offset, maxOffset)
   scrollBar.ignoreUpdate = nil
 end
 
-function GetWorkOrderVisibleRowCount(listFrame, rowHeight, fallbackRows)
+function GetWorkOrderVisibleRowCount(listFrameOrHeight, rowHeight, fallbackRows)
   rowHeight = tonumber(rowHeight) or 1
   fallbackRows = tonumber(fallbackRows) or 1
   if fallbackRows < 1 then fallbackRows = 1 end
 
-  local height = listFrame and listFrame:GetHeight() or 0
+  -- Callers that already know their list's height without asking the
+  -- frame for it (see GetWorkOrderOrderListHeight below) pass the number
+  -- directly instead of a frame.
+  local height
+  if type(listFrameOrHeight) == "number" then
+    height = listFrameOrHeight
+  else
+    height = listFrameOrHeight and listFrameOrHeight:GetHeight() or 0
+  end
   if not height or height < rowHeight then
     return fallbackRows
   end
@@ -25933,6 +26759,97 @@ function GetWorkOrderVisibleRowCount(listFrame, rowHeight, fallbackRows)
     visibleRows = 1
   end
   return visibleRows
+end
+
+-- popup.orderListFrame's actual width right after RefreshWorkOrderLiveView/
+-- OrdersView/HistoryView reparent popup.ordersPanel to a different layout
+-- (narrower, next to the profession sidebar, on Live; full page width on My
+-- Orders/History) can't be trusted -- WoW doesn't resolve SetPoint-driven
+-- geometry synchronously, so a GetWidth() read in that same call returns
+-- whatever was left over from the PREVIOUS view, not the one just applied
+-- (this is what made row widths look "random" switching tabs). popup itself
+-- (self.panels.workOrders) is never re-anchored, so its width is always
+-- current -- compute the list width from that instead, working back through
+-- the same fixed margins each layout actually uses.
+function GetWorkOrderOrderListWidth(popup)
+  local panel = popup and popup.ordersPanel and popup.ordersPanel:GetParent()
+  local panelWidth = (panel and panel:GetWidth()) or 0
+  if panelWidth < 1 then
+    panelWidth = 720
+  end
+
+  local listWidth
+  if popup.professionPanel and popup.professionPanel:IsShown() then
+    -- professionPanel(12, 180 wide) + 10 gap + ordersPanel(-14 right margin)
+    -- + orderListFrame's own 10px left / 30px right inset within it.
+    listWidth = panelWidth - 256
+  else
+    -- ordersPanel(12 left, -14 right margin) + orderListFrame's own 10px
+    -- left / 30px right inset within it.
+    listWidth = panelWidth - 66
+  end
+
+  if listWidth < 260 then
+    listWidth = 260
+  end
+  return listWidth
+end
+
+-- ordersHint/ordersFeedbackText sit directly in ordersPanel with a smaller
+-- right margin (14px) than orderListFrame reserves for its scrollbar
+-- gutter (30px) -- 16px narrower inset than GetWorkOrderOrderListWidth
+-- computes above, so this text can use that reclaimed width instead of
+-- wrapping/truncating at the same narrow column the order cards need.
+function GetWorkOrderHintTextWidth(popup)
+  local width = GetWorkOrderOrderListWidth(popup) + 16
+  if width < 260 then
+    width = 260
+  end
+  return width
+end
+
+-- Same reasoning as GetWorkOrderOrderListWidth above, but for height:
+-- orderListFrame's TOPLEFT chains through ordersTitle/ordersHint (and, on
+-- Live, the Search label + box too) before ever reaching it, and that
+-- whole chain gets ClearAllPoints+SetPoint'd on every refresh -- so reading
+-- orderListFrame:GetHeight() the same frame can't be trusted either.
+-- panel (self.panels.workOrders) is never re-anchored, so work back from
+-- its height through the same fixed margins/label heights every layout
+-- actually uses instead.
+function GetWorkOrderOrderListHeight(popup)
+  local panel = popup and popup.ordersPanel and popup.ordersPanel:GetParent()
+  local panelHeight = (panel and panel:GetHeight()) or 0
+  if panelHeight < 1 then
+    panelHeight = 480
+  end
+
+  -- At the minimum window height (760, see LeafVE.uiMinHeight) this used
+  -- to land almost exactly on the boundary between 2 and 3 126px rows
+  -- fitting (378px needed, ~378px actually available) -- floor() doesn't
+  -- forgive being a few px short. ordersFeedbackText's reserved height and
+  -- a couple of gaps were trimmed (see their SetHeight/SetPoint calls
+  -- above) to genuinely free up space rather than just fudging this
+  -- number, so these constants are smaller than they used to be.
+  local listHeight
+  if popup.liveSearchBG and popup.liveSearchBG:IsShown() then
+    -- panel-top to ordersPanel-top (95) + title(18)+5 + hint(28)+8 +
+    -- search label(14)+4 + search box(20)+4 + feedback(18)+4 +
+    -- orderListFrame's own 4px top inset, then 24 for the bottom margin
+    -- (ordersPanel/orderListFrame insets from panel's bottom edge). The
+    -- craftable-only checkbox sits to the right of the Search label
+    -- instead of its own row, so it doesn't add anything here.
+    listHeight = panelHeight - 252
+  else
+    -- panel-top to ordersPanel-top (95) + title(18)+5 + hint(28)+4 +
+    -- feedback(18)+4 + orderListFrame's own 4px top inset, then the same
+    -- 24px bottom margin.
+    listHeight = panelHeight - 206
+  end
+
+  if listHeight < 60 then
+    listHeight = 60
+  end
+  return listHeight
 end
 
 function UpdateProfessionSelectionButtonVisual(btn, selected, editable)
@@ -26238,6 +27155,11 @@ function CreateWorkOrderOrderButton(parent)
   local tipMoneyDisplay = CreateLeafVEStaticMoneyFrame(btn)
   tipMoneyDisplay:SetPoint("TOPRIGHT", tipLabel, "BOTTOMRIGHT", 0, -3)
   tipMoneyDisplay:SetWidth(96)
+  -- The box itself is already right-anchored under "Tip", but the amount
+  -- text inside defaults to left-justified (CreateLeafVEStaticMoneyFrame's
+  -- shared default) -- right-justify it so "0g 3s 5c" actually lines up
+  -- under the label instead of hugging the box's left edge.
+  tipMoneyDisplay.amountText:SetJustifyH("RIGHT")
   tipMoneyDisplay:Hide()
   btn.tipMoneyDisplay = tipMoneyDisplay
 
@@ -26402,6 +27324,20 @@ function CreateWorkOrderOrderButton(parent)
     end
   end)
   btn.secondaryActionBtn = secondaryActionBtn
+
+  -- Short status label (e.g. "Reserved by you", "Pending partial", "Eligible
+  -- to fulfill") that used to lead statusText's own sentence -- callers now
+  -- split that lead-in out here, right above the action button(s), and
+  -- leave the rest of the sentence in statusText at its original spot.
+  -- Anchored off secondaryActionBtn's fixed TOPRIGHT point (not affected by
+  -- Show/Hide) so this sits just above whichever button ends up on top,
+  -- whether one or both are shown for a given row.
+  local statusLabelText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  statusLabelText:SetPoint("BOTTOMRIGHT", secondaryActionBtn, "TOPRIGHT", 0, 4)
+  statusLabelText:SetWidth(110)
+  statusLabelText:SetJustifyH("RIGHT")
+  statusLabelText:SetText("")
+  btn.statusLabelText = statusLabelText
 
   btn:SetScript("OnEnter", function()
     if not this.order then return end
@@ -27820,7 +28756,13 @@ function LeafVE.UI:CreateWorkOrderPopup()
 
   local liveModeBtn = CreateWorkOrderModeButton(popup, "Live")
   liveModeBtn:SetWidth(82)
-  liveModeBtn:SetPoint("TOPLEFT", popup, "TOPLEFT", 22, -57)
+  -- Was -57, which sat squarely under subtitleText/summaryText (both centered
+  -- at the popup's TOP, spanning roughly -28 to -73) -- these opaque-backdrop
+  -- mode buttons rendered on top of that text instead of below it. -108 is
+  -- where every view's own content panel already starts, so -80 (bottom
+  -- -102, button height 22) clears the header text with room to spare while
+  -- still leaving a visible gap above the content panels below it.
+  liveModeBtn:SetPoint("TOPLEFT", popup, "TOPLEFT", 22, -80)
   liveModeBtn.popup = popup
   liveModeBtn:SetScript("OnClick", function()
     this.popup.viewMode = "live"
@@ -27842,7 +28784,7 @@ function LeafVE.UI:CreateWorkOrderPopup()
   end)
   popup.browseModeBtn = browseModeBtn
 
-  local ordersModeBtn = CreateWorkOrderModeButton(popup, "My Orders")
+  local ordersModeBtn = CreateWorkOrderModeButton(popup, "My Requests")
   ordersModeBtn:SetWidth(98)
   ordersModeBtn:SetPoint("LEFT", browseModeBtn, "RIGHT", 8, 0)
   ordersModeBtn.popup = popup
@@ -28363,12 +29305,20 @@ function LeafVE.UI:CreateWorkOrderPopup()
 
   local ordersTitle = ordersPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   ordersTitle:SetPoint("TOPLEFT", ordersPanel, "TOPLEFT", 10, -10)
+  ordersTitle:SetHeight(18)
   ordersTitle:SetText("|cFFFFD700Live Orders|r")
   popup.ordersTitle = ordersTitle
 
   local ordersHint = ordersPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   ordersHint:SetPoint("TOPLEFT", ordersTitle, "BOTTOMLEFT", 0, -5)
   ordersHint:SetWidth(370)
+  -- Left at 28 (not trimmed like ordersFeedbackText below) -- this text is
+  -- long and varies per view (Live's hint in particular wraps to several
+  -- lines), and SetHeight doesn't actually clip a FontString's rendered
+  -- text -- it only controls how much room the fixed-offset layout below
+  -- reserves for it, so shrinking this without knowing the true wrapped
+  -- line count risks the hint visibly overlapping the search box under it
+  -- instead of just being a row short.
   ordersHint:SetHeight(28)
   ordersHint:SetJustifyH("LEFT")
   ordersHint:SetJustifyV("TOP")
@@ -28378,14 +29328,27 @@ function LeafVE.UI:CreateWorkOrderPopup()
   local ordersFeedbackText = ordersPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   ordersFeedbackText:SetPoint("TOPLEFT", ordersHint, "BOTTOMLEFT", 0, -4)
   ordersFeedbackText:SetWidth(370)
-  ordersFeedbackText:SetHeight(26)
+  -- Trimmed from 26 (this only ever shows one short status line, e.g.
+  -- "Cancelled: X") -- freeing that space, plus the tightened gaps below,
+  -- is what actually gets a 3rd 126px row to fit at the minimum window
+  -- height instead of landing exactly on the floor()'d boundary between
+  -- 2 and 3 rows (see GetWorkOrderOrderListHeight).
+  ordersFeedbackText:SetHeight(18)
   ordersFeedbackText:SetJustifyH("LEFT")
   ordersFeedbackText:SetJustifyV("TOP")
   ordersFeedbackText:SetText("")
   popup.ordersFeedbackText = ordersFeedbackText
 
+  -- Reverted back to a plain Frame -- converting this to a real
+  -- ScrollFrame (with a dedicated scroll child) sent rows rendering far
+  -- outside the pane in testing (content appeared above the page header
+  -- and past the bottom of the window), for a reason that didn't show up
+  -- in any of the geometry read back for debugging, so it wasn't safe to
+  -- ship. Row buttons are parented directly to this frame again, at fixed
+  -- row-index positions; see RefreshWorkOrderLiveView/OrdersView/
+  -- HistoryView for how many rows actually get shown.
   local orderListFrame = CreateFrame("Frame", nil, ordersPanel)
-  orderListFrame:SetPoint("TOPLEFT", ordersFeedbackText, "BOTTOMLEFT", 0, -6)
+  orderListFrame:SetPoint("TOPLEFT", ordersFeedbackText, "BOTTOMLEFT", 0, -4)
   orderListFrame:SetPoint("BOTTOMRIGHT", ordersPanel, "BOTTOMRIGHT", -30, 10)
   orderListFrame:EnableMouse(true)
   orderListFrame:EnableMouseWheel(true)
@@ -28400,6 +29363,11 @@ function LeafVE.UI:CreateWorkOrderPopup()
     if newOffset > maxOffset then newOffset = maxOffset end
     if newOffset == (owner.orderOffset or 0) then return end
     owner.orderOffset = newOffset
+    -- Nothing but the offset changed -- skip the sync request, order
+    -- refetch, filter pass, and eligibility recount on the refresh this
+    -- triggers (see the fastPath check near the top of
+    -- RefreshWorkOrderLiveView/OrdersView/HistoryView).
+    owner._orderScrollFastPath = true
     if LeafVE and LeafVE.UI and LeafVE.UI.cardCurrentPlayer then
       LeafVE.UI:RefreshWorkOrderPopup(LeafVE.UI.cardCurrentPlayer)
     end
@@ -28440,6 +29408,10 @@ function LeafVE.UI:CreateWorkOrderPopup()
     if value < 0 then value = 0 end
     if value == (owner.orderOffset or 0) then return end
     owner.orderOffset = value
+    -- Same fast-path reasoning as the mousewheel handler above -- matters
+    -- even more here, since dragging the thumb can fire this many times
+    -- per second.
+    owner._orderScrollFastPath = true
     if LeafVE and LeafVE.UI and LeafVE.UI.cardCurrentPlayer then
       LeafVE.UI:RefreshWorkOrderPopup(LeafVE.UI.cardCurrentPlayer)
     end
@@ -28717,22 +29689,16 @@ function LeafVE.UI:ApplyEmbeddedWorkOrderLayout(popup, panel)
   popup.summaryText:SetWidth(panelWidth - 36)
   popup.summaryText:SetJustifyH("LEFT")
 
-  popup.liveModeBtn:ClearAllPoints()
-  popup.liveModeBtn:SetPoint("TOPLEFT", popup, "TOPLEFT", 18, -72)
-  popup.liveModeBtn:SetWidth(92)
-
-  popup.browseModeBtn:ClearAllPoints()
-  popup.browseModeBtn:SetPoint("LEFT", popup.liveModeBtn, "RIGHT", 8, 0)
-  popup.browseModeBtn:SetWidth(112)
-
-  popup.ordersModeBtn:ClearAllPoints()
-  popup.ordersModeBtn:SetPoint("LEFT", popup.browseModeBtn, "RIGHT", 8, 0)
-  popup.ordersModeBtn:SetWidth(100)
-
+  -- The Orders nav page's own Browse/Live/My Orders subtabs drive
+  -- popup.viewMode now, so this internal mode-button row would just be a
+  -- second, redundant set of tabs for the same thing -- hide it here and
+  -- reclaim the space instead (title/subtitle/summary already communicate
+  -- which view is active via their own text).
+  popup.liveModeBtn:Hide()
+  popup.browseModeBtn:Hide()
+  popup.ordersModeBtn:Hide()
   if popup.craftersModeBtn then
-    popup.craftersModeBtn:ClearAllPoints()
-    popup.craftersModeBtn:SetPoint("LEFT", popup.ordersModeBtn, "RIGHT", 8, 0)
-    popup.craftersModeBtn:SetWidth(92)
+    popup.craftersModeBtn:Hide()
   end
 
   if popup.workOrderOverviewBar and popup.workOrderOverviewCards then
@@ -28743,8 +29709,11 @@ function LeafVE.UI:ApplyEmbeddedWorkOrderLayout(popup, panel)
       cardWidth = 150
     end
     bar:ClearAllPoints()
-    bar:SetPoint("TOPLEFT", popup.liveModeBtn, "BOTTOMLEFT", 0, -14)
-    bar:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -18, -108)
+    -- Anchored to summaryText's own bottom edge (both points, same offset)
+    -- instead of a hardcoded pixel guess, so this stays correct regardless
+    -- of how tall the title/subtitle/summary stack actually renders.
+    bar:SetPoint("TOPLEFT", popup.summaryText, "BOTTOMLEFT", 0, -14)
+    bar:SetPoint("TOPRIGHT", popup.summaryText, "BOTTOMRIGHT", 0, -14)
     bar:SetHeight(78)
 
     local boardCard = popup.workOrderOverviewCards.board
@@ -28771,14 +29740,17 @@ function LeafVE.UI:ApplyEmbeddedWorkOrderLayout(popup, panel)
     end
   end
 
+  -- Chained off the overview bar's own bottom edge (both points, same
+  -- offset) rather than a hardcoded pixel value, so this tracks correctly
+  -- now that the bar itself sits higher with the mode-button row gone.
   popup.professionPanel:ClearAllPoints()
-  popup.professionPanel:SetPoint("TOPLEFT", popup, "TOPLEFT", 18, -194)
+  popup.professionPanel:SetPoint("TOPLEFT", popup.workOrderOverviewBar, "BOTTOMLEFT", 0, -8)
   popup.professionPanel:SetPoint("BOTTOMLEFT", popup.selectionPanel, "TOPLEFT", 0, 10)
   popup.professionPanel:SetWidth(152)
 
   popup.recipePanel:ClearAllPoints()
   popup.recipePanel:SetPoint("TOPLEFT", popup.professionPanel, "TOPRIGHT", 10, 0)
-  popup.recipePanel:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -18, -194)
+  popup.recipePanel:SetPoint("TOPRIGHT", popup.workOrderOverviewBar, "BOTTOMRIGHT", 0, -8)
   popup.recipePanel:SetPoint("BOTTOMRIGHT", popup.selectionPanel, "TOPRIGHT", 0, 10)
 
   popup.selectionPanel:ClearAllPoints()
@@ -28808,7 +29780,7 @@ function LeafVE.UI:ApplyEmbeddedWorkOrderLayout(popup, panel)
 
   if popup.ordersPanel then
     popup.ordersPanel:ClearAllPoints()
-    popup.ordersPanel:SetPoint("TOPLEFT", popup, "TOPLEFT", 18, -194)
+    popup.ordersPanel:SetPoint("TOPLEFT", popup.workOrderOverviewBar, "BOTTOMLEFT", 0, -8)
     popup.ordersPanel:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -18, 18)
   end
 
@@ -28844,7 +29816,7 @@ function LeafVE.UI:ApplyEmbeddedWorkOrderLayout(popup, panel)
 
   if popup.craftersPanel then
     popup.craftersPanel:ClearAllPoints()
-    popup.craftersPanel:SetPoint("TOPLEFT", popup, "TOPLEFT", 18, -194)
+    popup.craftersPanel:SetPoint("TOPLEFT", popup.workOrderOverviewBar, "BOTTOMLEFT", 0, -8)
     popup.craftersPanel:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -18, 18)
   end
 
@@ -28909,12 +29881,12 @@ function BuildWorkOrdersPanel(panel)
   accentTop:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
   accentTop:SetVertexColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 0)
 
-  local divider = panel:CreateTexture(nil, "ARTWORK")
-  divider:SetPoint("TOPLEFT", panel, "TOPLEFT", 18, -188)
-  divider:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -18, -188)
-  divider:SetHeight(1)
-  divider:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
-  divider:SetVertexColor(0.35, 0.35, 0.38, 0.5)
+  -- No divider line here anymore -- this used to draw a fixed decorative
+  -- divider at a hardcoded Y offset (-188), left over from before Live/My
+  -- Orders/History existed. It sat underneath the current panes' own
+  -- (semi-transparent) backdrops and bled through wherever their opacity
+  -- didn't fully cover it, which happened to land right across the search
+  -- box row.
 end
 
 
@@ -29694,8 +30666,63 @@ function LeafVE:HandleIncomingBannerDuty(payload, sender, fromSync)
   end
 end
 
+function LeafVE.UI:RefreshBannerDutyCraftableOrders()
+  local panel = self.panels and self.panels.bannerDutyBoard
+  if not panel or not panel.bannerDutyCraftRows then return end
+  local me = ShortName(UnitName("player") or "") or ""
+  local now = Now()
+  local orders = LeafVE:GetCraftableWorkOrdersForBulletinBoard(me, true)
+  local rows = panel.bannerDutyCraftRows
+  for i = 1, table.getn(rows) do
+    local row = rows[i]
+    local order = orders[i]
+    if row and order then
+      row.order = order
+      row.icon:SetTexture(LeafVE:GetWorkOrderResultIcon(order.itemId, order.spellId, order.icon))
+      -- order.quantity (not GetWorkOrderRequestedQuantity) -- that helper
+      -- returns the ORIGINAL total requested, which doesn't shrink when
+      -- part of the order gets claimed (a partial claim reduces the root
+      -- order's own .quantity and spins the claimed portion off into a
+      -- separate pending child order, see CreateWorkOrderPartialClaim), so
+      -- the Bulletin Board kept showing the full original amount even after
+      -- some of it was already claimed/pending/fulfilled elsewhere.
+      local qty = ClampWorkOrderQuantity(order.quantity or 1)
+      -- Same 14-day unfilled-order countdown Live Orders shows (see
+      -- SchedulePeriodicWorkOrderExpiryCheck), so it's not surprising to see
+      -- an order here that then auto-cancels before anyone gets to it.
+      local expiryText = "  |  Expires in " .. FormatWorkOrderRemainingTime((tonumber(order.createdAt) or now) + (14 * SECONDS_PER_DAY), now)
+      row.text:SetText("|cFFFFFFFF" .. tostring(order.recipeName or "Work Order") .. "|r  |cFFAAAAAAx" .. tostring(qty) .. "|r  |cFF88CC88" .. FormatWorkOrderTipText(order.tipCopper) .. "|r  |cFF777777for " .. tostring(order.requester or "?") .. expiryText .. "|r")
+      if row.partialBtn then
+        if qty > 1 then row.partialBtn:Show() else row.partialBtn:Hide() end
+      end
+      row:Show()
+    elseif row then
+      row.order = nil
+      row:Hide()
+    end
+  end
+  if panel.bannerDutyCraftEmptyText then
+    if table.getn(orders) == 0 then
+      panel.bannerDutyCraftEmptyText:SetText("|cFF888888No open work orders you can currently fulfill.|r")
+      panel.bannerDutyCraftEmptyText:Show()
+    else
+      panel.bannerDutyCraftEmptyText:Hide()
+    end
+  end
+  if panel.bannerDutyCraftMoreText then
+    local remaining = table.getn(orders) - table.getn(rows)
+    if remaining > 0 then
+      panel.bannerDutyCraftMoreText:SetText("|cFF888888+" .. tostring(remaining) .. " more -- see Live Orders tab|r")
+      panel.bannerDutyCraftMoreText:Show()
+    else
+      panel.bannerDutyCraftMoreText:Hide()
+    end
+  end
+end
+
 function LeafVE.UI:RefreshBannerDutyBoard()
   LeafVE:PruneExpiredBannerDuties()
+  self:RefreshBannerDutyCraftableOrders()
   local panel = self.panels and self.panels.bannerDutyBoard
   if not panel or not panel.bannerDutyRows then return end
   local board = LeafVE:EnsureBannerDutyDB()
@@ -29816,7 +30843,7 @@ function BuildBannerDutyBoardPanel(panel)
   catBtn:SetPoint("TOPLEFT", catLabel, "BOTTOMLEFT", 0, -6)
   catBtn:SetWidth(150)
   catBtn:SetHeight(22)
-  catBtn.categories = {"LFG", "Dungeon", "Quest", "Crafting", "Materials", "Raid", "Attunement", "Help", "Other"}
+  catBtn.categories = {"LFG", "Dungeon", "Quest", "Raid", "Attunement", "Help", "Other"}
   catBtn.index = 1
   catBtn:SetText(catBtn.categories[catBtn.index])
   SkinButtonAccent(catBtn)
@@ -29859,8 +30886,131 @@ function BuildBannerDutyBoardPanel(panel)
   hint:SetJustifyH("LEFT")
   hint:SetText("|cFF888888New tasks notify addon users. Comments notify the task creator. Toggle Banner Duty Chat Messages in Options.|r")
 
+  local craftCard = CreateInset(panel)
+  craftCard:SetPoint("TOPLEFT", postCard, "BOTTOMLEFT", 0, -12)
+  craftCard:SetPoint("TOPRIGHT", postCard, "BOTTOMRIGHT", 0, -12)
+  craftCard:SetHeight(132)
+  panel.bannerDutyCraftCard = craftCard
+
+  local craftTitle = craftCard:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  craftTitle:SetPoint("TOPLEFT", craftCard, "TOPLEFT", 14, -10)
+  craftTitle:SetText("|cFFD8A24ACraftable Work Orders|r")
+
+  local craftEmpty = craftCard:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  craftEmpty:SetPoint("TOP", craftCard, "TOP", 0, -46)
+  craftEmpty:SetText("|cFF888888No open work orders you can currently fulfill.|r")
+  panel.bannerDutyCraftEmptyText = craftEmpty
+
+  local craftMore = craftCard:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  craftMore:SetPoint("BOTTOMRIGHT", craftCard, "BOTTOMRIGHT", -12, 6)
+  craftMore:Hide()
+  panel.bannerDutyCraftMoreText = craftMore
+
+  panel.bannerDutyCraftRows = {}
+  for i = 1, 3 do
+    local row = CreateFrame("Button", nil, craftCard)
+    row:SetPoint("TOPLEFT", craftCard, "TOPLEFT", 12, -30 - ((i - 1) * 30))
+    row:SetPoint("TOPRIGHT", craftCard, "TOPRIGHT", -12, -30 - ((i - 1) * 30))
+    row:SetHeight(26)
+    row:SetBackdrop({bgFile="Interface\\Tooltips\\UI-Tooltip-Background", edgeFile="Interface\\Tooltips\\UI-Tooltip-Border", tile=true, tileSize=16, edgeSize=8, insets={left=2,right=2,top=2,bottom=2}})
+    row:SetBackdropColor(0.08, 0.08, 0.09, 0.85)
+    row:SetBackdropBorderColor(0.28, 0.24, 0.18, 0.7)
+
+    local icon = row:CreateTexture(nil, "ARTWORK")
+    icon:SetPoint("LEFT", row, "LEFT", 4, 0)
+    icon:SetWidth(18)
+    icon:SetHeight(18)
+    icon:SetTexture(LEAF_FALLBACK)
+    row.icon = icon
+
+    local text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    text:SetPoint("LEFT", icon, "RIGHT", 6, 0)
+    -- Reserves room for both Fulfill and Partial (see below), not just
+    -- Fulfill alone.
+    text:SetPoint("RIGHT", row, "RIGHT", -150, 0)
+    text:SetJustifyH("LEFT")
+    row.text = text
+
+    local fulfillBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    fulfillBtn:SetWidth(70)
+    fulfillBtn:SetHeight(20)
+    fulfillBtn:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    fulfillBtn:SetText("Fulfill")
+    SkinButtonAccent(fulfillBtn)
+    fulfillBtn.row = row
+    fulfillBtn:SetScript("OnClick", function()
+      local order = this.row and this.row.order
+      if not order then return end
+      LeafVE:ShowWorkOrderInstructionPopup(GetWorkOrderFulfillerInstructionText(order.matsMode, order.profession), "Fulfill Order", function()
+        local claimedOrder, claimErr = LeafVE:ClaimWorkOrder(order.id)
+        if not claimedOrder then
+          if panel.bannerDutyCraftEmptyText then
+            panel.bannerDutyCraftEmptyText:SetText("|cFFFF6666" .. tostring(claimErr or "Unable to fulfill order.") .. "|r")
+            panel.bannerDutyCraftEmptyText:Show()
+          end
+          return
+        end
+        LeafVE.UI:RefreshBannerDutyCraftableOrders()
+        if LeafVE.UI.RefreshWorkOrderPopup and LeafVE.UI.cardCurrentPlayer then
+          LeafVE.UI:RefreshWorkOrderPopup(LeafVE.UI.cardCurrentPlayer)
+        end
+      end)
+    end)
+    row.fulfillBtn = fulfillBtn
+
+    -- Only shown when the order has more than 1 unit left (see
+    -- RefreshBannerDutyCraftableOrders) -- reserving a partial amount from a
+    -- single-unit order is identical to just fulfilling it.
+    local partialBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    partialBtn:SetWidth(60)
+    partialBtn:SetHeight(20)
+    partialBtn:SetPoint("RIGHT", fulfillBtn, "LEFT", -4, 0)
+    partialBtn:SetText("Partial")
+    SkinButtonAccent(partialBtn)
+    partialBtn.row = row
+    partialBtn:SetScript("OnClick", function()
+      local order = this.row and this.row.order
+      if not order then return end
+      LeafVE:ShowWorkOrderQuantityPopup(order, function(selectedQuantity)
+        local claimedOrder, claimErr = LeafVE:ClaimWorkOrder(order.id, selectedQuantity)
+        if not claimedOrder then
+          if panel.bannerDutyCraftEmptyText then
+            panel.bannerDutyCraftEmptyText:SetText("|cFFFF6666" .. tostring(claimErr or "Unable to claim partial fulfillment.") .. "|r")
+            panel.bannerDutyCraftEmptyText:Show()
+          end
+          return
+        end
+        LeafVE.UI:RefreshBannerDutyCraftableOrders()
+        if LeafVE.UI.RefreshWorkOrderPopup and LeafVE.UI.cardCurrentPlayer then
+          LeafVE.UI:RefreshWorkOrderPopup(LeafVE.UI.cardCurrentPlayer)
+        end
+      end, nil, "Reserve", "How many units can you reserve from this request right now? The remaining quantity will stay live for other guildmates.")
+    end)
+    row.partialBtn = partialBtn
+
+    row:SetScript("OnEnter", function()
+      if not this.order then return end
+      GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+      GameTooltip:ClearLines()
+      if tonumber(this.order.itemId) and tonumber(this.order.itemId) > 0 then
+        GameTooltip:SetHyperlink("item:" .. tostring(this.order.itemId))
+        GameTooltip:AddLine(" ")
+      else
+        GameTooltip:SetText(this.order.recipeName or "Work Order", THEME.gold[1], THEME.gold[2], THEME.gold[3], 1, true)
+      end
+      GameTooltip:AddLine("Requester: " .. tostring(this.order.requester or "Unknown"), 0.75, 0.95, 0.75)
+      GameTooltip:AddLine("Quantity: " .. tostring(this.order.quantity or 1), 0.85, 0.85, 0.85)
+      GameTooltip:AddLine("Tip: " .. FormatWorkOrderTipText(this.order.tipCopper), 0.85, 0.85, 0.85)
+      GameTooltip:Show()
+    end)
+    row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    panel.bannerDutyCraftRows[i] = row
+    row:Hide()
+  end
+
   local listCard = CreateInset(panel)
-  listCard:SetPoint("TOPLEFT", postCard, "BOTTOMLEFT", 0, -12)
+  listCard:SetPoint("TOPLEFT", craftCard, "BOTTOMLEFT", 0, -12)
   listCard:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -18, 18)
   panel.bannerDutyListCard = listCard
 
@@ -30457,6 +31607,768 @@ function LeafVE.UI:EnsureEmbeddedWorkOrderView()
   return popup
 end
 
+-- Builds the "Recipes > Request/Live/My Orders" page by pulling the real
+-- content panels (profession list, recipe list + search, order-creation
+-- strip, live/my-orders list) OUT of the floating workOrderPopup and
+-- reparenting them into this page frame with page-appropriate anchors --
+-- not by stretching the popup's own dialog frame to fill the page (that's
+-- what EnsureEmbeddedWorkOrderView/ApplyEmbeddedWorkOrderLayout above do,
+-- and why it used to look like a scaled-up pop-out instead of a real page).
+-- Same widgets, same refresh functions (RefreshWorkOrderBrowseView/
+-- RefreshWorkOrderLiveView/RefreshWorkOrderOrdersView all just Show()/Hide()
+-- these panels and set text on them -- parent-agnostic), just given a
+-- proper page layout instead of dialog chrome. Runs once; the popup object
+-- itself is never shown here afterward.
+function LeafVE.UI:EnsureWorkOrderRequestPanel()
+  local panel = self.panels and self.panels.workOrders
+  if not panel then
+    return nil
+  end
+
+  if not self.workOrderPopup then
+    self:CreateWorkOrderPopup()
+  end
+  local popup = self.workOrderPopup
+  if not popup then
+    return nil
+  end
+
+  if panel.workOrderContentBuilt then
+    return popup
+  end
+  panel.workOrderContentBuilt = true
+
+  local headerBG = panel:CreateTexture(nil, "BACKGROUND")
+  headerBG:SetPoint("TOP", panel, "TOP", -15, -6)
+  headerBG:SetWidth(512)
+  headerBG:SetHeight(64)
+  headerBG:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+  headerBG:SetTexCoord(0, 1, 0, 1)
+  panel._ashenHeaderBG = headerBG
+  if LeafVE_AshenDossierSkin and LeafVE_AshenDossierSkin.ApplyPageHeaderToPanel then
+    LeafVE_AshenDossierSkin:ApplyPageHeaderToPanel(panel)
+  end
+  headerBG:SetVertexColor(1, 1, 1, 1)
+  if headerBG.SetAlpha then headerBG:SetAlpha(0) end
+  if headerBG.Hide then headerBG:Hide() end
+
+  local accentTop = panel:CreateTexture(nil, "BORDER")
+  accentTop:SetPoint("TOPLEFT", headerBG, "TOPLEFT", 0, 0)
+  accentTop:SetPoint("TOPRIGHT", headerBG, "TOPRIGHT", 0, 0)
+  accentTop:SetHeight(3)
+  accentTop:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
+  accentTop:SetVertexColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 0)
+
+  local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
+  h:SetText("|cFFFFD700Banner Duties|r")
+  panel._ashenHeaderTitle = h
+  h:Show()
+  -- Creation-time fallback only -- each of the Live/My Orders/History
+  -- refreshes below overwrites this to match popup.ordersTitle (the
+  -- smaller in-pane title), so the big page header actually reads "Live
+  -- Orders"/"My Orders"/"Order History" instead of staying "Banner Duties"
+  -- regardless of which subtab is open.
+  popup.pageTitleText = h
+
+  -- Reused as-is (still the same fontstrings RefreshWorkOrderBrowseView/
+  -- RefreshWorkOrderLiveView/RefreshWorkOrderOrdersView already SetText on),
+  -- just reparented under this page's own title instead of the popup's.
+  popup.subtitleText:SetParent(panel)
+  popup.subtitleText:ClearAllPoints()
+  popup.subtitleText:SetPoint("TOP", h, "BOTTOM", 0, -3)
+  panel._ashenHeaderSubtitle = popup.subtitleText
+
+  popup.summaryText:SetParent(panel)
+  popup.summaryText:ClearAllPoints()
+  popup.summaryText:SetPoint("TOP", popup.subtitleText, "BOTTOM", 0, -3)
+
+  -- Only Live/My Orders/History live on this page now (Browse/Request was
+  -- dropped in favor of the Recipe Browser's per-recipe quick-request
+  -- dialog). recipePanel/selectionPanel stay on the never-shown popup,
+  -- unused -- but professionPanel is repurposed as Live's "only professions
+  -- I actually know" filter sidebar (RefreshWorkOrderLiveView repopulates
+  -- its buttons and shows it; RefreshWorkOrderOrdersView/History hide it and
+  -- widen ordersPanel to the full page instead, since those views are
+  -- already player-scoped and don't need a profession filter).
+  popup.professionPanel:SetParent(panel)
+  popup.professionPanel:ClearAllPoints()
+  -- Same top offset as Browse's own professionPanel (-95) -- explicit
+  -- strata/level bump below is what actually fixed the buttons rendering
+  -- under this page's darkened background art; the position itself matches
+  -- Browse.
+  popup.professionPanel:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -95)
+  popup.professionPanel:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, 14)
+  popup.professionPanel:SetWidth(180)
+  popup.professionPanel:SetFrameStrata(panel:GetFrameStrata())
+  popup.professionPanel:SetFrameLevel((panel:GetFrameLevel() or 0) + 5)
+  popup.professionPanel:Hide()
+
+  -- Match the Recipe Browser's profession buttons (built bigger there:
+  -- 160x28, 20px icon, GameFontNormal) -- these were still sized for their
+  -- original cramped floating-popup slot (100x22, 14px icon,
+  -- GameFontNormalSmall) from CreateWorkOrderPopup, which is why Live's
+  -- sidebar looked visibly smaller/different next to Browse's.
+  for i = 1, table.getn(popup.professionButtons) do
+    local btn = popup.professionButtons[i]
+    btn:SetWidth(160)
+    btn:SetHeight(28)
+    -- Same reasoning as professionPanel's own strata/level fix above: this
+    -- button's frame level was fixed relative to professionPanel's level at
+    -- creation time (back when it was a DIALOG-strata popup's child) and
+    -- doesn't retroactively follow the panel's new level after reparenting.
+    btn:SetFrameLevel((popup.professionPanel:GetFrameLevel() or 0) + 2)
+    if btn.icon then
+      btn.icon:SetWidth(20)
+      btn.icon:SetHeight(20)
+    end
+    if btn.text then
+      btn.text:SetFontObject(GameFontNormal)
+    end
+    btn:ClearAllPoints()
+    -- Slot 0 (the top row) is reserved for the "All" button below.
+    btn:SetPoint("TOPLEFT", popup.professionPanel, "TOPLEFT", 10, -30 - (i * 32))
+  end
+
+  -- Pinned above every real profession, in the same fixed order Browse
+  -- uses -- Live no longer scopes the sidebar to only what this player has
+  -- recipe knowledge for, so "All" is how you see everything at once.
+  if not popup.liveAllBtn then
+    local allBtn = CreateWorkOrderProfessionButton(popup.professionPanel, "All")
+    allBtn.popup = popup
+    allBtn:SetScript("OnClick", function()
+      this.popup.selectedProfession = "All"
+      this.popup.orderOffset = 0
+      if LeafVE and LeafVE.UI and LeafVE.UI.cardCurrentPlayer then
+        LeafVE.UI:RefreshWorkOrderPopup(LeafVE.UI.cardCurrentPlayer)
+      end
+    end)
+    popup.liveAllBtn = allBtn
+  end
+  local allBtn = popup.liveAllBtn
+  allBtn:SetWidth(160)
+  allBtn:SetHeight(28)
+  allBtn:SetFrameLevel((popup.professionPanel:GetFrameLevel() or 0) + 2)
+  if allBtn.icon then
+    allBtn.icon:SetWidth(20)
+    allBtn.icon:SetHeight(20)
+  end
+  if allBtn.text then
+    allBtn.text:SetFontObject(GameFontNormal)
+  end
+  allBtn:ClearAllPoints()
+  allBtn:SetPoint("TOPLEFT", popup.professionPanel, "TOPLEFT", 10, -30)
+
+  popup.ordersPanel:SetParent(panel)
+  popup.ordersPanel:ClearAllPoints()
+  popup.ordersPanel:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -95)
+  popup.ordersPanel:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -14, 14)
+  -- Same reparenting fix as professionPanel above. ordersTitle/ordersHint
+  -- are plain FontStrings parented directly to ordersPanel, so they always
+  -- rendered fine -- but orderListFrame (and the order-row buttons created
+  -- lazily inside it on first refresh) kept the frame level it had as a
+  -- child of the floating popup, which put it behind this page's own
+  -- background art. Fixing it here, before any row button gets created,
+  -- means those buttons inherit the corrected level automatically.
+  popup.ordersPanel:SetFrameStrata(panel:GetFrameStrata())
+  popup.ordersPanel:SetFrameLevel((panel:GetFrameLevel() or 0) + 5)
+  if popup.orderListFrame then
+    popup.orderListFrame:SetFrameLevel((popup.ordersPanel:GetFrameLevel() or 0) + 2)
+  end
+  if popup.orderScrollBar then
+    popup.orderScrollBar:SetFrameLevel((popup.ordersPanel:GetFrameLevel() or 0) + 2)
+  end
+
+  -- Live-only search box, sitting on the same row as the "Live Orders"
+  -- title (top-right corner) so it doesn't disturb the hint/feedback/list
+  -- stack below, which My Orders and History also share. Filters across
+  -- every profession, including while "All" is selected.
+  if not popup.liveSearchBG then
+    local liveSearchBG = CreateFrame("Frame", nil, popup.ordersPanel)
+    liveSearchBG:SetWidth(160)
+    liveSearchBG:SetHeight(20)
+    liveSearchBG:SetBackdrop({
+      bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+      edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+      tile = true, tileSize = 16, edgeSize = 12,
+      insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    liveSearchBG:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
+    liveSearchBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
+    popup.liveSearchBG = liveSearchBG
+
+    local liveSearchLabel = popup.ordersPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    liveSearchLabel:SetHeight(14)
+    liveSearchLabel:SetText("|cFFFFD700Search|r")
+    popup.liveSearchLabel = liveSearchLabel
+
+    local liveSearchBox = CreateFrame("EditBox", nil, liveSearchBG)
+    liveSearchBox:SetPoint("TOPLEFT", liveSearchBG, "TOPLEFT", 5, -3)
+    liveSearchBox:SetPoint("BOTTOMRIGHT", liveSearchBG, "BOTTOMRIGHT", -5, 3)
+    liveSearchBox:SetFontObject(GameFontHighlightSmall)
+    liveSearchBox:SetTextInsets(0, 0, 0, 0)
+    liveSearchBox:SetAutoFocus(false)
+    liveSearchBox:SetText("")
+    liveSearchBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+    liveSearchBox:SetScript("OnTextChanged", function()
+      if LeafVE and LeafVE.UI and LeafVE.UI.workOrderPopup
+        and LeafVE.UI.workOrderPopup.viewMode == "live"
+        and LeafVE.UI.cardCurrentPlayer then
+        LeafVE.UI.workOrderPopup.orderOffset = 0
+        LeafVE.UI:RefreshWorkOrderPopup(LeafVE.UI.cardCurrentPlayer)
+      end
+    end)
+    popup.liveSearchBox = liveSearchBox
+  end
+  -- Position is set dynamically in RefreshWorkOrderLiveView (it needs to
+  -- sit right below the hint text, which is only known/stable per-refresh).
+  -- Frame levels: liveSearchBox (the actual EditBox) must end up STRICTLY
+  -- higher than its own liveSearchBG backdrop, set in that order and after
+  -- both are finalized -- otherwise the two land on the same level (each
+  -- inherits its creation-time parent level +1, and liveSearchBG's level
+  -- gets bumped again right here after liveSearchBox already computed
+  -- its own), and on a tie the backdrop frame can win clicks meant for the
+  -- EditBox -- which is exactly why typing into it didn't work at first.
+  popup.liveSearchBG:SetFrameStrata(popup.ordersPanel:GetFrameStrata())
+  popup.liveSearchBG:SetFrameLevel((popup.ordersPanel:GetFrameLevel() or 0) + 2)
+  popup.liveSearchBox:SetFrameStrata(popup.liveSearchBG:GetFrameStrata())
+  popup.liveSearchBox:SetFrameLevel((popup.liveSearchBG:GetFrameLevel() or 0) + 1)
+  popup.liveSearchBG:Hide()
+  popup.liveSearchLabel:Hide()
+
+  -- Live-only toggle: with the sidebar now showing every profession (not
+  -- just ones this player knows), this is how someone gets back to seeing
+  -- only what they can actually fulfill without hiding the rest entirely.
+  if not popup.liveCraftableOnlyCheck then
+    local liveCraftableOnlyCheck = CreateFrame("CheckButton", "LeafVE_WorkOrderLiveCraftableOnlyCheck", popup.ordersPanel, "UICheckButtonTemplate")
+    liveCraftableOnlyCheck:SetWidth(20)
+    liveCraftableOnlyCheck:SetHeight(20)
+    liveCraftableOnlyCheck:SetChecked(false)
+    liveCraftableOnlyCheck:SetScript("OnClick", function()
+      popup.craftableOnly = (this:GetChecked() and true) or false
+      popup.orderOffset = 0
+      if LeafVE and LeafVE.UI and LeafVE.UI.cardCurrentPlayer then
+        LeafVE.UI:RefreshWorkOrderPopup(LeafVE.UI.cardCurrentPlayer)
+      end
+    end)
+    popup.liveCraftableOnlyCheck = liveCraftableOnlyCheck
+
+    local liveCraftableOnlyLabel = popup.ordersPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    liveCraftableOnlyLabel:SetText("Only what I can craft")
+    popup.liveCraftableOnlyLabel = liveCraftableOnlyLabel
+    -- Text never changes, so measure it once here rather than re-measuring
+    -- every refresh -- Refresh uses this to right-align the checkbox+label
+    -- pair against the search box's right edge.
+    popup.liveCraftableOnlyLabelWidth = liveCraftableOnlyLabel:GetStringWidth() or 130
+  end
+  popup.liveCraftableOnlyCheck:SetFrameStrata(popup.ordersPanel:GetFrameStrata())
+  popup.liveCraftableOnlyCheck:SetFrameLevel((popup.ordersPanel:GetFrameLevel() or 0) + 2)
+  popup.liveCraftableOnlyCheck:Hide()
+  popup.liveCraftableOnlyLabel:Hide()
+
+  return popup
+end
+
+-- Small standalone dialog for the Recipe Browser's "Request" button: just
+-- the recipe, its reagents, quantity, tip, and materials mode, then Place
+-- Order -- not the full Browse page (profession list + recipe search), since
+-- the recipe is already chosen by the time this opens. Builds its own
+-- widgets (this is a much narrower, single-column layout than the wide
+-- selectionPanel on the Request page) but calls the same generic helpers
+-- (CreateWorkOrderCoinField, BindWorkOrderCoinInput, SubmitWorkOrder, etc.)
+-- everything else in Banner Duties already uses.
+function LeafVE.UI:CreateWorkOrderQuickRequestPopup()
+  if self.workOrderQuickRequestPopup then return end
+
+  local popup = CreateFrame("Frame", "LeafVE_WorkOrderQuickRequestPopup", UIParent)
+  popup:SetFrameStrata("DIALOG")
+  if popup.SetToplevel then popup:SetToplevel(true) end
+  popup:EnableMouse(true)
+  popup:SetWidth(340)
+  popup:SetHeight(470)
+  popup:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
+  popup:SetBackdrop({
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile = true, tileSize = 32, edgeSize = 32,
+    insets = { left = 11, right = 12, top = 12, bottom = 11 }
+  })
+  popup:SetBackdropColor(0, 0, 0, 0)
+  ApplyAshenScrollPopupSkin(popup)
+  popup:Hide()
+  popup:SetScript("OnHide", function() GameTooltip:Hide() end)
+  popup:SetMovable(true)
+  popup:RegisterForDrag("LeftButton")
+  popup:SetScript("OnDragStart", function() this:StartMoving() end)
+  popup:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
+
+  if UISpecialFrames then
+    table.insert(UISpecialFrames, "LeafVE_WorkOrderQuickRequestPopup")
+  end
+
+  local titleText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  titleText:SetPoint("TOP", popup, "TOP", 0, -18)
+  titleText:SetTextColor(THEME.gold[1], THEME.gold[2], THEME.gold[3])
+  titleText:SetText("Place a Work Order")
+
+  local closeBtn = CreateFrame("Button", nil, popup, "UIPanelCloseButton")
+  closeBtn:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -5, -5)
+  closeBtn:SetScript("OnClick", function() popup:Hide() end)
+
+  local selectedIconBG = CreateFrame("Frame", nil, popup)
+  selectedIconBG:SetPoint("TOP", popup, "TOP", 0, -46)
+  selectedIconBG:SetWidth(40)
+  selectedIconBG:SetHeight(40)
+  selectedIconBG:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 12,
+    insets = {left = 3, right = 3, top = 3, bottom = 3}
+  })
+  selectedIconBG:SetBackdropColor(0.08, 0.08, 0.09, 0.94)
+  selectedIconBG:SetBackdropBorderColor(0.35, 0.35, 0.38, 0.9)
+
+  local selectedIcon = selectedIconBG:CreateTexture(nil, "ARTWORK")
+  selectedIcon:SetPoint("TOPLEFT", selectedIconBG, "TOPLEFT", 4, -4)
+  selectedIcon:SetPoint("BOTTOMRIGHT", selectedIconBG, "BOTTOMRIGHT", -4, 4)
+  selectedIcon:SetTexture(LEAF_FALLBACK)
+  popup.selectedIcon = selectedIcon
+
+  local selectedText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  selectedText:SetPoint("TOP", selectedIconBG, "BOTTOM", 0, -6)
+  selectedText:SetWidth(300)
+  selectedText:SetJustifyH("CENTER")
+  selectedText:SetText("|cFF888888No recipe selected|r")
+  popup.selectedText = selectedText
+
+  local detailText = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  detailText:SetPoint("TOP", selectedText, "BOTTOM", 0, -4)
+  detailText:SetWidth(300)
+  detailText:SetJustifyH("CENTER")
+  detailText:SetJustifyV("TOP")
+  detailText:SetText("")
+  popup.detailText = detailText
+
+  -- Fallback left edge (relative to reagentsLabel's horizontal center, which
+  -- is itself centered on the popup) used only until the first refresh --
+  -- RefreshWorkOrderQuickRequestPopup recomputes this every time based on
+  -- the widest reagent name actually showing, so a request with only short
+  -- names centers tightly and one with a long name centers around that
+  -- wider block, instead of a column fixed to some guessed width.
+  local REAGENT_ROW_LEFT_X = -125
+
+  local reagentsLabel = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  -- Bare "TOP" anchor (no LEFT/RIGHT) centers this on detailText's own
+  -- horizontal center, which is itself centered on popup -- so this reads
+  -- as centered on the whole window without needing to know its own width.
+  reagentsLabel:SetPoint("TOP", detailText, "BOTTOM", 0, -12)
+  reagentsLabel:SetText("Exact Materials")
+  popup.reagentsLabel = reagentsLabel
+
+  local reagentsText = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  reagentsText:SetPoint("TOPLEFT", reagentsLabel, "BOTTOM", REAGENT_ROW_LEFT_X, -4)
+  reagentsText:SetWidth(260)
+  reagentsText:SetHeight(30)
+  reagentsText:SetJustifyH("LEFT")
+  reagentsText:SetJustifyV("TOP")
+  reagentsText:SetText("")
+  popup.reagentsText = reagentsText
+
+  popup.reagentRows = {}
+  for i = 1, 6 do
+    local reagentRow = CreateFrame("Frame", nil, popup)
+    -- TOPLEFT (not TOP) so every row's left edge -- and therefore its
+    -- icon and qty/name text -- sits at the exact same X regardless of how
+    -- wide that row shrinks to fit its own content (see below).
+    reagentRow:SetPoint("TOPLEFT", reagentsLabel, "BOTTOM", REAGENT_ROW_LEFT_X, -4 - ((i - 1) * 20))
+    reagentRow:SetWidth(290)
+    reagentRow:SetHeight(18)
+    reagentRow:EnableMouse(true)
+
+    local reagentIconBG = CreateFrame("Frame", nil, reagentRow)
+    reagentIconBG:SetPoint("LEFT", reagentRow, "LEFT", 0, 0)
+    reagentIconBG:SetWidth(16)
+    reagentIconBG:SetHeight(16)
+    reagentIconBG:SetBackdrop({
+      bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+      edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+      tile = true, tileSize = 16, edgeSize = 10,
+      insets = {left = 2, right = 2, top = 2, bottom = 2}
+    })
+    reagentIconBG:SetBackdropColor(0.08, 0.08, 0.09, 0.95)
+    reagentIconBG:SetBackdropBorderColor(0.3, 0.3, 0.35, 0.85)
+
+    local reagentIcon = reagentIconBG:CreateTexture(nil, "ARTWORK")
+    reagentIcon:SetPoint("TOPLEFT", reagentIconBG, "TOPLEFT", 2, -2)
+    reagentIcon:SetPoint("BOTTOMRIGHT", reagentIconBG, "BOTTOMRIGHT", -2, 2)
+    reagentIcon:SetTexture(LEAF_FALLBACK)
+    reagentRow.icon = reagentIcon
+
+    local reagentQtyText = reagentRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    reagentQtyText:SetPoint("LEFT", reagentIconBG, "RIGHT", 6, 0)
+    reagentQtyText:SetWidth(34)
+    reagentQtyText:SetJustifyH("LEFT")
+    reagentQtyText:SetText("")
+    reagentRow.qtyText = reagentQtyText
+
+    local reagentNameText = reagentRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    reagentNameText:SetPoint("LEFT", reagentQtyText, "RIGHT", 4, 0)
+    reagentNameText:SetPoint("RIGHT", reagentRow, "RIGHT", 0, 0)
+    reagentNameText:SetJustifyH("LEFT")
+    reagentNameText:SetText("")
+    reagentRow.nameText = reagentNameText
+
+    reagentRow:SetScript("OnEnter", function()
+      if not this.entry then return end
+      GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+      GameTooltip:ClearLines()
+      if this.entry.itemId then
+        GameTooltip:SetHyperlink("item:" .. tostring(this.entry.itemId))
+      else
+        GameTooltip:SetText(this.entry.name or "Reagent", THEME.gold[1], THEME.gold[2], THEME.gold[3], 1, true)
+      end
+      GameTooltip:AddLine("Required: " .. tostring(this.entry.totalQuantity or this.entry.quantity or 1) .. "x", 1, 0.82, 0.2)
+      GameTooltip:Show()
+    end)
+    reagentRow:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    reagentRow:Hide()
+    popup.reagentRows[i] = reagentRow
+  end
+
+  -- Quantity and Tip sit in two columns, both centered as a pair: qtyLabel
+  -- and tipLabel each anchor straight off reagentsLabel (which is itself
+  -- centered on popup) with an equal-and-opposite X offset, so the whole
+  -- two-column row is centered as a unit instead of Quantity hugging the
+  -- left edge with Tip trailing off to one side of it.
+  local qtyLabel = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  -- Creation-time fallback only -- RefreshWorkOrderQuickRequestPopup always
+  -- re-anchors this below however many reagent rows actually showed, so a
+  -- 2-reagent recipe doesn't leave the same dead gap a 6-reagent one would.
+  qtyLabel:SetPoint("TOP", reagentsLabel, "BOTTOM", -70, -142)
+  qtyLabel:SetText("Quantity")
+  popup.qtyLabel = qtyLabel
+
+  local qtyBG = CreateFrame("Frame", nil, popup)
+  qtyBG:SetPoint("TOP", qtyLabel, "BOTTOM", 0, -4)
+  qtyBG:SetWidth(50)
+  qtyBG:SetHeight(20)
+  qtyBG:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 12,
+    insets = {left = 3, right = 3, top = 3, bottom = 3}
+  })
+  qtyBG:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
+  qtyBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
+
+  local qtyInput = CreateFrame("EditBox", nil, qtyBG)
+  qtyInput:SetPoint("TOPLEFT", qtyBG, "TOPLEFT", 5, -3)
+  qtyInput:SetPoint("BOTTOMRIGHT", qtyBG, "BOTTOMRIGHT", -5, 3)
+  qtyInput:SetFontObject(GameFontHighlightSmall)
+  qtyInput:SetJustifyH("CENTER")
+  qtyInput:SetAutoFocus(false)
+  qtyInput:SetText("1")
+  qtyInput:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+  qtyInput:SetScript("OnTextChanged", function()
+    if LeafVE and LeafVE.UI and LeafVE.UI.workOrderQuickRequestPopup and LeafVE.UI.workOrderQuickRequestPopup:IsVisible() then
+      LeafVE.UI:RefreshWorkOrderQuickRequestPopup()
+    end
+  end)
+  qtyInput:SetScript("OnEditFocusLost", function()
+    local value = tonumber(Trim(this:GetText() or "")) or 1
+    if value < 1 then value = 1 end
+    if value > 99 then value = 99 end
+    this:SetText(tostring(value))
+  end)
+  popup.qtyInput = qtyInput
+
+  local tipLabel = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  -- Same fallback-Y story as qtyLabel above -- Refresh re-anchors both off
+  -- reagentsLabel every time, keeping them on the same row.
+  tipLabel:SetPoint("TOP", reagentsLabel, "BOTTOM", 70, -142)
+  tipLabel:SetText("Tip")
+  popup.tipLabel = tipLabel
+
+  -- Input boxes sit right under the "Tip" label; the calculated "0g 0s 0c"
+  -- preview moves below THEM, right-aligned to the copper box (the
+  -- rightmost of the three) instead of sitting above them.
+  local tipInputsRow = CreateFrame("Frame", nil, popup)
+  tipInputsRow:SetPoint("TOP", tipLabel, "BOTTOM", 0, -4)
+  tipInputsRow:SetWidth(128)
+  tipInputsRow:SetHeight(20)
+
+  local tipGoldField = CreateWorkOrderCoinField(tipInputsRow, 40, "Interface\\MoneyFrame\\UI-GoldIcon")
+  tipGoldField:SetPoint("LEFT", tipInputsRow, "LEFT", 0, 0)
+  popup.tipGoldInput = tipGoldField.input
+
+  local tipSilverField = CreateWorkOrderCoinField(tipInputsRow, 32, "Interface\\MoneyFrame\\UI-SilverIcon")
+  tipSilverField:SetPoint("LEFT", tipGoldField, "RIGHT", 4, 0)
+  popup.tipSilverInput = tipSilverField.input
+
+  local tipCopperField = CreateWorkOrderCoinField(tipInputsRow, 32, "Interface\\MoneyFrame\\UI-CopperIcon")
+  tipCopperField:SetPoint("LEFT", tipSilverField, "RIGHT", 4, 0)
+  popup.tipCopperInput = tipCopperField.input
+
+  local tipMoneyDisplay = CreateLeafVEStaticMoneyFrame(popup, "LeafVE_WorkOrderQuickTipMoneyFrame")
+  tipMoneyDisplay:SetPoint("TOPRIGHT", tipCopperField, "BOTTOMRIGHT", 0, -6)
+  tipMoneyDisplay.amountText:SetJustifyH("RIGHT")
+  popup.tipMoneyDisplay = tipMoneyDisplay
+
+  BindWorkOrderCoinInput(popup.tipGoldInput, popup)
+  BindWorkOrderCoinInput(popup.tipSilverInput, popup)
+  BindWorkOrderCoinInput(popup.tipCopperInput, popup)
+  SetWorkOrderTipInputsFromCopper(popup, 0)
+
+  popup.matsMode = "requester"
+
+  local matsLabel = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  -- qtyBG sits 70px left of popup's center (see qtyLabel above); offsetting
+  -- back the other way by the same 70px re-centers this on the window as a
+  -- whole rather than under the Quantity column specifically. The Tip
+  -- column (label + input boxes + calculated total) runs taller than the
+  -- Quantity column (label + one box), so anchoring straight off qtyBG's
+  -- bottom with only a small gap let Materials collide with the tip total
+  -- underneath it -- the extra drop here clears that.
+  matsLabel:SetPoint("TOP", qtyBG, "BOTTOM", 70, -40)
+  matsLabel:SetText("Materials")
+
+  local myMatsBtn = CreateWorkOrderModeButton(popup, "My Mats")
+  myMatsBtn:SetWidth(70)
+  -- My Mats + Crafter Mats together are 170px wide (70 + 6 gap + 94); an
+  -- 85px left offset from the (centered) label puts that pair's combined
+  -- left edge exactly at half that width, centering the two-button group.
+  myMatsBtn:SetPoint("TOPLEFT", matsLabel, "BOTTOM", -85, -4)
+  myMatsBtn.popup = popup
+  myMatsBtn:SetScript("OnClick", function()
+    this.popup.matsMode = "requester"
+    UpdateWorkOrderModeButtonVisual(this.popup.myMatsBtn, true)
+    UpdateWorkOrderModeButtonVisual(this.popup.yourMatsBtn, false)
+  end)
+  popup.myMatsBtn = myMatsBtn
+
+  local yourMatsBtn = CreateWorkOrderModeButton(popup, "Crafter Mats")
+  yourMatsBtn:SetWidth(94)
+  yourMatsBtn:SetPoint("LEFT", myMatsBtn, "RIGHT", 6, 0)
+  yourMatsBtn.popup = popup
+  yourMatsBtn:SetScript("OnClick", function()
+    this.popup.matsMode = "crafter"
+    UpdateWorkOrderModeButtonVisual(this.popup.myMatsBtn, false)
+    UpdateWorkOrderModeButtonVisual(this.popup.yourMatsBtn, true)
+  end)
+  popup.yourMatsBtn = yourMatsBtn
+
+  UpdateWorkOrderModeButtonVisual(myMatsBtn, true)
+  UpdateWorkOrderModeButtonVisual(yourMatsBtn, false)
+
+  local submitBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
+  submitBtn:SetWidth(110)
+  submitBtn:SetHeight(24)
+  -- Sits directly under My Mats/Crafter Mats now (feedbackText moved below
+  -- the button instead of between them -- see below) so Place Order reads
+  -- as the immediate next step after picking a materials mode, not
+  -- separated from it by a reserved-but-usually-empty feedback line.
+  -- myMatsBtn's own center is 50px left of popup's center (its 85px-left
+  -- TOPLEFT offset, minus half its own 70px width); the +50 here cancels
+  -- that back out to center this on the window.
+  submitBtn:SetPoint("TOP", myMatsBtn, "BOTTOM", 50, -10)
+  submitBtn:SetText("Place Order")
+  SkinButtonAccent(submitBtn)
+  submitBtn:Disable()
+
+  local feedbackText = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  -- Chained off submitBtn (which chains off myMatsBtn, matsLabel, qtyBG,
+  -- qtyLabel, all the way up to the reagent list) instead of pinned to the
+  -- popup's own bottom edge -- so the whole form rides up together for a
+  -- short reagent list and any leftover space collects as one clean margin
+  -- below the feedback text instead of splitting into dead gaps mid-form.
+  feedbackText:SetPoint("TOP", submitBtn, "BOTTOM", 0, -10)
+  feedbackText:SetWidth(300)
+  feedbackText:SetJustifyH("CENTER")
+  feedbackText:SetJustifyV("TOP")
+  feedbackText:SetHeight(28)
+  feedbackText:SetText("")
+  popup.feedbackText = feedbackText
+  submitBtn:SetScript("OnClick", function()
+    local popupRef = LeafVE.UI.workOrderQuickRequestPopup
+    if not popupRef then return end
+    local selectedRecipe = popupRef.selectedRecipe
+    if not selectedRecipe then return end
+    local quantity = tonumber(Trim(popupRef.qtyInput:GetText() or "")) or 1
+    local tipCopper = GetWorkOrderTipCopperFromPopup(popupRef)
+    local matsMode = NormalizeWorkOrderMatsMode(popupRef.matsMode)
+    if tipCopper == nil then
+      popupRef.feedbackText:SetText("|cFFFF6666Enter a valid tip using the gold, silver, and copper fields, or leave them blank.|r")
+      return
+    end
+    local order, err = LeafVE:SubmitWorkOrder(nil, selectedRecipe, quantity, tipCopper, matsMode)
+    if not order then
+      popupRef.feedbackText:SetText("|cFFFF6666" .. tostring(err or "Unable to place banner duty.") .. "|r")
+      return
+    end
+    local successMessage
+    if InGuild() then
+      successMessage = "|cFF88FF88Saved and broadcast to the guild.|r"
+    else
+      successMessage = "|cFF88FF88Saved locally. Join guild chat to sync it.|r"
+    end
+    popupRef.feedbackText:SetText(successMessage)
+    PlaySound("igQuestListOpen")
+    if LeafVE.UI.RefreshWorkOrderPopup and LeafVE.UI.cardCurrentPlayer then
+      LeafVE.UI:RefreshWorkOrderPopup(LeafVE.UI.cardCurrentPlayer)
+    end
+    popupRef:Hide()
+  end)
+  popup.submitBtn = submitBtn
+
+  self.workOrderQuickRequestPopup = popup
+end
+
+function LeafVE.UI:RefreshWorkOrderQuickRequestPopup()
+  local popup = self.workOrderQuickRequestPopup
+  if not popup then return end
+
+  local selectedRecipe = popup.selectedRecipe
+  if not selectedRecipe then
+    popup.selectedText:SetText("|cFF888888No recipe selected|r")
+    popup.detailText:SetText("")
+    if popup.selectedIcon then popup.selectedIcon:SetTexture(LEAF_FALLBACK) end
+    for i = 1, table.getn(popup.reagentRows) do
+      popup.reagentRows[i].entry = nil
+      popup.reagentRows[i]:Hide()
+    end
+    popup.reagentsText:SetText("")
+    popup.reagentsText:Hide()
+    popup.submitBtn:Disable()
+    return
+  end
+
+  local quantity = tonumber(Trim(popup.qtyInput and popup.qtyInput:GetText() or "")) or 1
+  if quantity < 1 then quantity = 1 end
+  if quantity > 99 then quantity = 99 end
+
+  local metaText = LeafVE:GetWorkOrderRecipeMetaText(selectedRecipe)
+  if metaText == "" then
+    metaText = tostring(selectedRecipe.profession or "")
+  end
+  popup.selectedIcon:SetTexture(selectedRecipe.icon or LEAF_FALLBACK)
+  popup.selectedText:SetText("|cFFFFD700" .. tostring(selectedRecipe.name or "Selected Craft") .. "|r")
+  popup.detailText:SetText(tostring(metaText) .. "  |  " .. GetWorkOrderMatsTag(popup.matsMode, selectedRecipe.profession))
+
+  local reagentEntries = LeafVE:GetWorkOrderReagentEntries(selectedRecipe, quantity)
+  -- Bottom edge of whatever reagent content actually showed, in the same
+  -- coordinate space as the rows' own creation-time anchor (each row is
+  -- "-4 - (i-1)*20" below reagentsLabel's BOTTOMLEFT, 18px tall).
+  local reagentAreaBottom
+  if type(reagentEntries) == "table" and table.getn(reagentEntries) > 0 then
+    popup.reagentsLabel:SetText(quantity > 1 and ("Exact Materials (x" .. tostring(quantity) .. ")") or "Exact Materials")
+    local visibleReagentRows = 0
+    local rowContentWidths = {}
+    local maxContentWidth = 0
+    for i = 1, table.getn(popup.reagentRows) do
+      local row = popup.reagentRows[i]
+      local entry = reagentEntries[i]
+      if row and entry then
+        row.entry = entry
+        row.icon:SetTexture(entry.icon or LEAF_FALLBACK)
+        row.qtyText:SetText("|cFFFFD700" .. tostring(entry.totalQuantity or entry.quantity or 1) .. "x|r")
+        row.nameText:SetText(tostring(entry.name or "Unknown Reagent"))
+        local nameWidth = row.nameText:GetStringWidth() or 0
+        local contentWidth = 60 + nameWidth -- 16 icon + 6 gap + 34 qty + 4 gap
+        if contentWidth < 90 then contentWidth = 90 end
+        -- Capped so a long reagent name can't push nameText's right edge
+        -- past the popup's right border once the column below centers on it.
+        if contentWidth > 250 then contentWidth = 250 end
+        rowContentWidths[i] = contentWidth
+        if contentWidth > maxContentWidth then maxContentWidth = contentWidth end
+        visibleReagentRows = i
+      elseif row then
+        row.entry = nil
+        row:Hide()
+      end
+    end
+
+    -- Column left edge is recomputed every refresh from the widest reagent
+    -- name actually showing this time, not a fixed guess -- a request for
+    -- only short-named reagents centers tightly, one with a long name (e.g.
+    -- "Heavy Silken Bandage") centers around that wider block instead.
+    -- Every row still shares this same left edge (a real column), so icons
+    -- and text all start at the same X; only the shared X itself moves.
+    local columnLeftX = -math.floor(maxContentWidth / 2)
+    for i = 1, visibleReagentRows do
+      local row = popup.reagentRows[i]
+      if row and row.entry then
+        row:SetWidth(rowContentWidths[i])
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", popup.reagentsLabel, "BOTTOM", columnLeftX, -4 - ((i - 1) * 20))
+        row:Show()
+      end
+    end
+    reagentAreaBottom = -4 - ((visibleReagentRows - 1) * 20) - 18
+
+    local remainingCount = table.getn(reagentEntries) - table.getn(popup.reagentRows)
+    if remainingCount > 0 then
+      popup.reagentsText:SetText("|cFF888888+" .. tostring(remainingCount) .. " more material" .. (remainingCount ~= 1 and "s" or "") .. " for this craft.|r")
+      popup.reagentsText:Show()
+      popup.reagentsText:ClearAllPoints()
+      local textWidth = popup.reagentsText:GetStringWidth() or 0
+      popup.reagentsText:SetPoint("TOPLEFT", popup.reagentsLabel, "BOTTOM", -math.floor(math.min(textWidth, 260) / 2), reagentAreaBottom - 4)
+      popup.reagentsText:SetWidth(260)
+      popup.reagentsText:SetHeight(14)
+      reagentAreaBottom = reagentAreaBottom - 4 - 14
+    else
+      popup.reagentsText:SetText("")
+      popup.reagentsText:Hide()
+    end
+  else
+    for i = 1, table.getn(popup.reagentRows) do
+      popup.reagentRows[i].entry = nil
+      popup.reagentRows[i]:Hide()
+    end
+    popup.reagentsLabel:SetText("Exact Materials")
+    popup.reagentsText:SetText("|cFF888888No reagent data is cached for this recipe yet.|r")
+    popup.reagentsText:Show()
+    popup.reagentsText:ClearAllPoints()
+    local textWidth = popup.reagentsText:GetStringWidth() or 0
+    popup.reagentsText:SetPoint("TOPLEFT", popup.reagentsLabel, "BOTTOM", -math.floor(math.min(textWidth, 260) / 2), -4)
+    popup.reagentsText:SetWidth(260)
+    popup.reagentsText:SetHeight(28)
+    reagentAreaBottom = -4 - 28
+  end
+
+  -- The Quantity/Tip/Materials/feedback/Place-Order block cascades entirely
+  -- off these two anchors (see submitBtn's creation), so it always sits
+  -- right under however much reagent content actually showed instead of
+  -- leaving a gap sized for the worst-case 6-row list. qtyLabel/tipLabel
+  -- keep their equal-and-opposite X offsets from reagentsLabel (see their
+  -- creation above) so the two-column row stays centered as a pair.
+  popup.qtyLabel:ClearAllPoints()
+  popup.qtyLabel:SetPoint("TOP", popup.reagentsLabel, "BOTTOM", -70, reagentAreaBottom - 26)
+  popup.tipLabel:ClearAllPoints()
+  popup.tipLabel:SetPoint("TOP", popup.reagentsLabel, "BOTTOM", 70, reagentAreaBottom - 26)
+
+  UpdateWorkOrderTipPreviewFromPopup(popup)
+  popup.submitBtn:Enable()
+end
+
+function LeafVE.UI:ShowWorkOrderQuickRequestPopup(recipe)
+  if not recipe then return end
+  self:CreateWorkOrderQuickRequestPopup()
+  local popup = self.workOrderQuickRequestPopup
+  if not popup then return end
+
+  popup.selectedRecipe = recipe
+  popup.matsMode = "requester"
+  UpdateWorkOrderModeButtonVisual(popup.myMatsBtn, true)
+  UpdateWorkOrderModeButtonVisual(popup.yourMatsBtn, false)
+  popup.qtyInput:SetText("1")
+  SetWorkOrderTipInputsFromCopper(popup, 0)
+  popup.feedbackText:SetText("")
+
+  self:RefreshWorkOrderQuickRequestPopup()
+  popup:Show()
+end
+
 function LeafVE.UI:RefreshWorkOrdersPanel()
   local popup = self:EnsureEmbeddedWorkOrderView()
   if not popup then
@@ -30826,47 +32738,191 @@ function LeafVE.UI:RefreshWorkOrderBrowseView(playerName, popup, catalog)
 end
 
 function LeafVE.UI:RefreshWorkOrderLiveView(playerName, popup)
-  popup.professionPanel:Hide()
-  popup.recipePanel:Hide()
-  popup.selectionPanel:Hide()
+  if popup.recipePanel then popup.recipePanel:Hide() end
+  if popup.selectionPanel then popup.selectionPanel:Hide() end
+  if popup.craftersPanel then popup.craftersPanel:Hide() end
+
+  -- Browse-style layout: profession sidebar on the left, order list on the
+  -- right. The sidebar shows every profession, in the same fixed order
+  -- Browse uses, plus an "All" entry pinned above them all and a search box
+  -- up top -- no longer scoped to only what this player has recipe
+  -- knowledge for. Per-order eligibility (whether *you* can actually
+  -- fulfill a given row) still shows via the status text below.
+  popup.professionPanel:Show()
   if popup.ordersPanel then
     popup.ordersPanel:Show()
+    popup.ordersPanel:ClearAllPoints()
+    popup.ordersPanel:SetPoint("TOPLEFT", popup.professionPanel, "TOPRIGHT", 10, 0)
+    popup.ordersPanel:SetPoint("BOTTOMRIGHT", popup.professionPanel:GetParent(), "BOTTOMRIGHT", -14, 14)
   end
-  if popup.craftersPanel then
-    popup.craftersPanel:Hide()
+  -- Set (and immediately consumed) only by the shared mousewheel/scrollbar
+  -- handlers right before they call this -- lets a pure scroll (nothing but
+  -- orderOffset changed) skip the sync request, the guild-wide order
+  -- refetch, the profession/search/craftable-only filter pass, and the
+  -- eligibility recount below, all of which redid the exact same
+  -- (relatively expensive, bitfield-decoding) work on every single wheel
+  -- notch or scrollbar-drag pixel and were what actually made scrolling
+  -- feel laggy. Any other trigger (profession click, search typing, tab
+  -- switch, fulfilling an order) leaves this unset and gets the full,
+  -- correct recompute as before.
+  local fastPath = popup._orderScrollFastPath
+  popup._orderScrollFastPath = nil
+
+  if not fastPath then
+    LeafVE:RequestWorkOrderSync(false)
   end
 
-  LeafVE:RequestWorkOrderSync(false)
-
-  popup.subtitleText:SetText("Watch open and pending requests across the guild")
+  popup.subtitleText:SetText("Every open request across the guild, by profession")
   if popup.ordersTitle then
     popup.ordersTitle:SetText("|cFFFFD700Live Orders|r")
   end
+  if popup.pageTitleText then
+    popup.pageTitleText:SetText("|cFFFFD700Live Orders|r")
+  end
   if popup.ordersHint then
-    popup.ordersHint:SetText("|cFFAAAAAACrafted and profession-based requests are fulfilled by matching saved professions.\nFarming requests can be picked up by anyone, and you can use |cFFFFD700Partial|r to reserve only part of a request while the rest stays live.|r")
+    popup.ordersHint:SetText("|cFFAAAAAAPick All or a profession, or search by name. Matching saved professions can fulfill crafted requests, while gathering requests stay open to everyone. Use |cFFFFD700Partial|r to reserve only part of a request while the rest stays live.|r")
+    popup.ordersHint:SetWidth(GetWorkOrderHintTextWidth(popup))
+  end
+
+  -- Sits just below the title/description, above the feedback line (which
+  -- gets pushed down to make room -- reset back to its default spot in
+  -- My Orders/History, since the search box only shows here).
+  if popup.liveSearchLabel and popup.ordersHint then
+    popup.liveSearchLabel:Show()
+    popup.liveSearchLabel:ClearAllPoints()
+    popup.liveSearchLabel:SetPoint("TOPLEFT", popup.ordersHint, "BOTTOMLEFT", 0, -8)
+  end
+  if popup.liveSearchBG and popup.liveSearchLabel then
+    popup.liveSearchBG:Show()
+    popup.liveSearchBG:ClearAllPoints()
+    popup.liveSearchBG:SetPoint("TOPLEFT", popup.liveSearchLabel, "BOTTOMLEFT", 0, -4)
+    popup.liveSearchBG:SetWidth(220)
+  end
+  if popup.liveCraftableOnlyCheck and popup.liveSearchLabel then
+    popup.liveCraftableOnlyCheck:Show()
+    popup.liveCraftableOnlyCheck:SetChecked(popup.craftableOnly and true or false)
+    popup.liveCraftableOnlyCheck:ClearAllPoints()
+    -- Far right of the search bar, on the same row as the "Search" label
+    -- above the search box itself: right edge of the label lines up with
+    -- liveSearchBG's own right edge (220px from liveSearchLabel's left,
+    -- matching liveSearchBG:SetWidth(220) above), checkbox sits just left
+    -- of its label. Measured label width (cached at creation) avoids
+    -- guessing how wide "Only what I can craft" actually renders.
+    local labelWidth = popup.liveCraftableOnlyLabelWidth or 130
+    local labelLeft = 220 - labelWidth
+    local checkLeft = labelLeft - 20 - 4
+    popup.liveCraftableOnlyCheck:SetPoint("TOPLEFT", popup.liveSearchLabel, "TOPLEFT", checkLeft, 3)
+  end
+  if popup.liveCraftableOnlyLabel and popup.liveCraftableOnlyCheck then
+    popup.liveCraftableOnlyLabel:Show()
+    popup.liveCraftableOnlyLabel:ClearAllPoints()
+    popup.liveCraftableOnlyLabel:SetPoint("LEFT", popup.liveCraftableOnlyCheck, "RIGHT", 2, -1)
+  end
+  if popup.ordersFeedbackText and popup.liveSearchBG then
+    popup.ordersFeedbackText:ClearAllPoints()
+    popup.ordersFeedbackText:SetPoint("TOPLEFT", popup.liveSearchBG, "BOTTOMLEFT", 0, -4)
+    popup.ordersFeedbackText:SetWidth(GetWorkOrderHintTextWidth(popup))
   end
 
   local me = ShortName(UnitName("player"))
   local now = Now()
-  local orders = LeafVE:GetLiveWorkOrders()
-  local openCount = 0
-  local pendingCount = 0
-  local eligibleCount = 0
-  for i = 1, table.getn(orders) do
-    local status = LeafVE:GetEffectiveWorkOrderStatus(orders[i], now)
-    if status == "pending" then
-      pendingCount = pendingCount + 1
-    else
-      openCount = openCount + 1
-      if me and LeafVE:CanPlayerFulfillWorkOrder(me, orders[i]) then
-        eligibleCount = eligibleCount + 1
+
+  local selectedProfession = popup.selectedProfession or "All"
+  popup.selectedProfession = selectedProfession
+
+  if popup.liveAllBtn then
+    popup.liveAllBtn:Show()
+    popup.liveAllBtn:Enable()
+    UpdateWorkOrderProfessionButtonVisual(popup.liveAllBtn, selectedProfession == "All")
+  end
+  for i = 1, table.getn(popup.professionButtons) do
+    local btn = popup.professionButtons[i]
+    btn:Show()
+    btn:Enable()
+    btn.icon:SetVertexColor(1, 1, 1, 1)
+    if btn.countText then btn.countText:Hide() end
+    UpdateWorkOrderProfessionButtonVisual(btn, btn.profession == selectedProfession)
+  end
+
+  local filterText = Lower(Trim(popup.liveSearchBox and popup.liveSearchBox:GetText() or ""))
+
+  local orders, openCount, pendingCount, eligibleCount
+  if fastPath and popup.openOrderRows then
+    orders = popup.openOrderRows
+    openCount = popup._orderOpenCount or 0
+    pendingCount = popup._orderPendingCount or 0
+    eligibleCount = popup._orderEligibleCount or 0
+  else
+    local allOrders = LeafVE:GetLiveWorkOrders()
+    orders = {}
+    for i = 1, table.getn(allOrders) do
+      local order = allOrders[i]
+      local matchesProfession
+      if selectedProfession == "All" then
+        matchesProfession = true
+      elseif selectedProfession == "Gathering" then
+        -- Real gathering orders carry the sub-skill as their profession
+        -- (Herbalism/Mining/Skinning/Fishing/Farming), never the literal
+        -- string "Gathering" -- that's only the catalog bucket/category name.
+        matchesProfession = LeafVE:IsGatheringWorkOrderProfession(order.profession)
+      else
+        matchesProfession = (order.profession == selectedProfession)
+      end
+      if matchesProfession and filterText ~= "" then
+        local haystack = Lower(
+          tostring(order.recipeName or "") .. " " ..
+          tostring(order.profession or "") .. " " ..
+          tostring(order.requester or "")
+        )
+        matchesProfession = string.find(haystack, filterText, 1, true) ~= nil
+      end
+      if matchesProfession and popup.craftableOnly then
+        matchesProfession = me and LeafVE:CanPlayerFulfillWorkOrder(me, order)
+      end
+      -- Orders this player has already claimed themselves live on the "My
+      -- Work In Progress" tab instead (Complete/Release actions there), so
+      -- they no longer need to also clutter the live board they're not
+      -- actually "live" for anymore.
+      if matchesProfession and me
+        and LeafVE:GetEffectiveWorkOrderStatus(order, now) == "pending" then
+        local fulfiller = LeafVE:GetStoredWorkOrderFulfiller(order)
+        if fulfiller and Lower(fulfiller) == Lower(me) then
+          matchesProfession = false
+        end
+      end
+      if matchesProfession then
+        table.insert(orders, order)
       end
     end
+
+    openCount = 0
+    pendingCount = 0
+    eligibleCount = 0
+    for i = 1, table.getn(orders) do
+      local status = LeafVE:GetEffectiveWorkOrderStatus(orders[i], now)
+      if status == "pending" then
+        pendingCount = pendingCount + 1
+      else
+        openCount = openCount + 1
+        if me and LeafVE:CanPlayerFulfillWorkOrder(me, orders[i]) then
+          eligibleCount = eligibleCount + 1
+        end
+      end
+    end
+    popup.openOrderRows = orders
+    popup._orderOpenCount = openCount
+    popup._orderPendingCount = pendingCount
+    popup._orderEligibleCount = eligibleCount
   end
-  popup.openOrderRows = orders
 
   local rowHeight = popup.orderRowHeight or 56
-  local visibleRows = GetWorkOrderVisibleRowCount(popup.orderListFrame, rowHeight, 6)
+  -- Rounded up, not down: shows one extra, partially-fitting row rather
+  -- than hiding a whole row over a few leftover px of the computed
+  -- viewport height (see GetWorkOrderOrderListHeight's own comments on how
+  -- tight this gets at the addon's minimum window height). The last row
+  -- can end up slightly overlapping the bottom margin as a result -- that
+  -- trade was requested over hiding it entirely.
+  local visibleRows = math.max(1, math.ceil(GetWorkOrderOrderListHeight(popup) / rowHeight))
   local totalOrders = table.getn(orders)
   local maxOffset = math.max(0, totalOrders - visibleRows)
   if (popup.orderOffset or 0) > maxOffset then
@@ -30880,10 +32936,7 @@ function LeafVE.UI:RefreshWorkOrderLiveView(playerName, popup)
     table.insert(popup.orderButtons, btn)
   end
 
-  local listWidth = popup.orderListFrame:GetWidth() or 0
-  if not listWidth or listWidth < 260 then
-    listWidth = 340
-  end
+  local listWidth = GetWorkOrderOrderListWidth(popup)
 
   local startIndex = (popup.orderOffset or 0) + 1
   for row = 1, table.getn(popup.orderButtons) do
@@ -30895,6 +32948,10 @@ function LeafVE.UI:RefreshWorkOrderLiveView(playerName, popup)
       local fulfiller = LeafVE:GetEffectiveWorkOrderFulfiller(order, now)
       local timerText = tonumber(order.claimExpiresAt or 0) > now and FormatWorkOrderRemainingTime(order.claimExpiresAt, now) or "Expired"
       local requiresDesignation = LeafVE:DoesWorkOrderRequireDesignation(order)
+      -- 14-day countdown until an unfilled (never claimed) request gets
+      -- auto-cancelled -- see PurgeExpiredUnfilledWorkOrders. Only shown
+      -- for open rows; pending already has its own 48h claim timer.
+      local openExpiryText = "  |  Expires in " .. FormatWorkOrderRemainingTime((tonumber(order.createdAt) or now) + (14 * SECONDS_PER_DAY), now)
 
       btn.order = order
       btn.popup = popup
@@ -30902,54 +32959,61 @@ function LeafVE.UI:RefreshWorkOrderLiveView(playerName, popup)
       btn:SetHeight(rowHeight - 4)
       btn:ClearAllPoints()
       btn:SetPoint("TOPLEFT", popup.orderListFrame, "TOPLEFT", 2, -((row - 1) * rowHeight) - 2)
-      btn.icon:SetTexture(order.icon or LEAF_FALLBACK)
+      btn.icon:SetTexture(LeafVE:GetWorkOrderResultIcon(order.itemId, order.spellId, order.icon))
       btn.text:SetText("|cFFFFD700" .. tostring(order.recipeName or "Work Order") .. "|r")
       local matsLine = GetWorkOrderMatsLine(order.matsMode, order.requester, order.profession)
       local materialsText = LeafVE:GetWorkOrderListMaterialsText(order, order.quantity or 1, 2)
+      local postedText = date and date("%m/%d %H:%M", tonumber(order.createdAt) or now) or ""
       btn.detailText:SetText(
         "Requester: " .. tostring(order.requester or "Unknown") ..
         "  |  " .. tostring(order.profession or "Unknown") ..
         "  |  " .. GetWorkOrderQuantitySummary(order) ..
-        "  |  " .. FormatWorkOrderTipText(order.tipCopper)
+        "  |  " .. FormatWorkOrderTipText(order.tipCopper) ..
+        "  |  Posted " .. postedText
       )
       SetWorkOrderRowTipDisplay(btn, order.tipCopper)
 
       btn.actionType = nil
       btn.secondaryActionType = nil
       btn.statusText:SetText("")
+      if btn.statusLabelText then btn.statusLabelText:SetText("") end
       if status == "pending" then
         if me and fulfiller and Lower(fulfiller) == Lower(me) then
           btn.actionType = "complete"
           btn.secondaryActionType = "release"
+          if btn.statusLabelText then btn.statusLabelText:SetText("|cFFFFFF99Pending by you|r") end
           if IsWorkOrderPartialClaim(order) then
-            btn.statusText:SetText("|cFFFFFF99Pending by you.|r Reserved " .. tostring(order.quantity or 1) .. " for this request. " .. tostring(timerText) .. " left.")
+            btn.statusText:SetText("Reserved " .. tostring(order.quantity or 1) .. " for this request. " .. tostring(timerText) .. " left.")
           else
-            btn.statusText:SetText("|cFFFFFF99Pending by you.|r " .. tostring(timerText) .. " left.")
+            btn.statusText:SetText(tostring(timerText) .. " left.")
           end
         else
-          btn.statusText:SetText("|cFFFFFF99Pending:|r " .. tostring(fulfiller or "Unknown") .. "  |  " .. tostring(timerText) .. " left")
+          if btn.statusLabelText then btn.statusLabelText:SetText("|cFFFFFF99Pending|r") end
+          btn.statusText:SetText(tostring(fulfiller or "Unknown") .. "  |  " .. tostring(timerText) .. " left")
         end
       elseif me and not IsWorkOrderPartialClaim(order) and LeafVE:CanPlayerFulfillWorkOrder(me, order) then
         btn.actionType = "fulfill"
         if (tonumber(order.quantity) or 0) > 1 then
           btn.secondaryActionType = "partial_fulfill"
         end
+        if btn.statusLabelText then btn.statusLabelText:SetText("|cFF88FF88Eligible to fulfill|r") end
         if requiresDesignation then
-          btn.statusText:SetText("|cFF88FF88Eligible to fulfill.|r Your saved professions match this order.")
+          btn.statusText:SetText("You know this recipe." .. openExpiryText)
         else
-          btn.statusText:SetText("|cFF88FF88Eligible to fulfill.|r This farming request can be claimed by anyone.")
+          btn.statusText:SetText("This farming request can be claimed by anyone." .. openExpiryText)
         end
       elseif me and order.requester and Lower(order.requester) == Lower(me) then
         if requiresDesignation then
-          btn.statusText:SetText("|cFFAAAAAAYour request is live for qualified crafters.|r")
+          btn.statusText:SetText("|cFFAAAAAAYour request is live for qualified crafters." .. openExpiryText)
         else
-          btn.statusText:SetText("|cFFAAAAAAYour farming request is live for anyone to claim.|r")
+          btn.statusText:SetText("|cFFAAAAAAYour farming request is live for anyone to claim." .. openExpiryText)
         end
       else
         if requiresDesignation then
-          btn.statusText:SetText("|cFFAAAAAARequires a saved " .. tostring(order.profession or "profession") .. " profession to fulfill.|r")
+          btn.statusText:SetText("|cFFAAAAAARequires knowing this " .. tostring(order.profession or "profession") .. " recipe to fulfill." .. openExpiryText)
         else
-          btn.statusText:SetText("|cFFAAAAAAOpen farming request.|r Anyone can pick this up.")
+          if btn.statusLabelText then btn.statusLabelText:SetText("|cFFAAAAAAOpen farming request|r") end
+          btn.statusText:SetText("Anyone can pick this up." .. openExpiryText)
         end
       end
       if btn.reagentText then
@@ -31017,6 +33081,9 @@ function LeafVE.UI:RefreshWorkOrderLiveView(playerName, popup)
       if btn.reagentText then
         btn.reagentText:SetText("")
       end
+      if btn.statusLabelText then
+        btn.statusLabelText:SetText("")
+      end
       btn:Hide()
     end
   end
@@ -31027,11 +33094,17 @@ function LeafVE.UI:RefreshWorkOrderLiveView(playerName, popup)
     popup.noOrdersText:Hide()
   else
     popup.noOrdersText:Show()
-    popup.noOrdersText:SetText("|cFF888888There are no active banner duties right now.|r")
+    if filterText ~= "" then
+      popup.noOrdersText:SetText("|cFF888888No live orders match \"" .. tostring(filterText) .. "\".|r")
+    elseif selectedProfession == "All" then
+      popup.noOrdersText:SetText("|cFF888888There are no live orders right now.|r")
+    else
+      popup.noOrdersText:SetText("|cFF888888No live " .. tostring(selectedProfession or "") .. " requests right now.|r")
+    end
   end
 
   popup.summaryText:SetText(
-    "Live: " .. tostring(openCount) .. " open  |  " .. tostring(pendingCount) .. " pending  |  Eligible: " .. tostring(eligibleCount)
+    tostring(selectedProfession or "") .. ": " .. tostring(openCount) .. " open  |  " .. tostring(pendingCount) .. " pending  |  Eligible: " .. tostring(eligibleCount)
   )
 end
 
@@ -31039,43 +33112,81 @@ function LeafVE.UI:RefreshWorkOrderOrdersView(playerName, popup)
   popup.professionPanel:Hide()
   popup.recipePanel:Hide()
   popup.selectionPanel:Hide()
+  if popup.liveSearchBG then popup.liveSearchBG:Hide() end
+  if popup.liveSearchLabel then popup.liveSearchLabel:Hide() end
+  if popup.liveCraftableOnlyCheck then popup.liveCraftableOnlyCheck:Hide() end
+  if popup.liveCraftableOnlyLabel then popup.liveCraftableOnlyLabel:Hide() end
+  if popup.ordersFeedbackText and popup.ordersHint then
+    popup.ordersFeedbackText:ClearAllPoints()
+    popup.ordersFeedbackText:SetPoint("TOPLEFT", popup.ordersHint, "BOTTOMLEFT", 0, -4)
+    popup.ordersFeedbackText:SetWidth(GetWorkOrderHintTextWidth(popup))
+  end
   if popup.ordersPanel then
     popup.ordersPanel:Show()
+    -- Full width -- no profession sidebar here (this view is already
+    -- scoped to the player's own orders, unlike Live). Reset in case Live's
+    -- refresh last anchored ordersPanel next to the sidebar instead.
+    popup.ordersPanel:ClearAllPoints()
+    popup.ordersPanel:SetPoint("TOPLEFT", popup.professionPanel:GetParent(), "TOPLEFT", 12, -95)
+    popup.ordersPanel:SetPoint("BOTTOMRIGHT", popup.professionPanel:GetParent(), "BOTTOMRIGHT", -14, 14)
   end
   if popup.craftersPanel then
     popup.craftersPanel:Hide()
   end
 
-  LeafVE:RequestWorkOrderSync(false)
+  -- See RefreshWorkOrderLiveView's fastPath comment -- same idea, skips
+  -- the sync request and refetch/recount when nothing but orderOffset
+  -- changed.
+  local fastPath = popup._orderScrollFastPath
+  popup._orderScrollFastPath = nil
+
+  if not fastPath then
+    LeafVE:RequestWorkOrderSync(false)
+  end
 
   popup.subtitleText:SetText("Track your requests from posting to verification")
   if popup.ordersTitle then
-    popup.ordersTitle:SetText("|cFFFFD700My Orders|r")
+    popup.ordersTitle:SetText("|cFFFFD700My Requests|r")
+  end
+  if popup.pageTitleText then
+    popup.pageTitleText:SetText("|cFFFFD700My Requests|r")
   end
   if popup.ordersHint then
     popup.ordersHint:SetText("|cFFAAAAAACancel open requests here, reassign pending ones if needed, and use |cFFFFD700Verify|r or |cFFFFD700Revert|r once a crafter marks an order complete. Partial fills stay separate so the remaining quantity can keep moving on the live board.|r")
+    popup.ordersHint:SetWidth(GetWorkOrderHintTextWidth(popup))
   end
 
   local me = ShortName(UnitName("player"))
   local now = Now()
-  local orders = me and LeafVE:GetWorkOrdersForRequester(me, playerName) or {}
-  local openCount = 0
-  local pendingCount = 0
-  local completedCount = 0
-  for i = 1, table.getn(orders) do
-    local status = LeafVE:GetEffectiveWorkOrderStatus(orders[i], now)
-    if status == "pending" then
-      pendingCount = pendingCount + 1
-    elseif status == "completed" then
-      completedCount = completedCount + 1
-    else
-      openCount = openCount + 1
+  local orders, openCount, pendingCount, completedCount
+  if fastPath and popup.openOrderRows then
+    orders = popup.openOrderRows
+    openCount = popup._orderOpenCount or 0
+    pendingCount = popup._orderPendingCount or 0
+    completedCount = popup._orderCompletedCount or 0
+  else
+    orders = me and LeafVE:GetWorkOrdersForRequester(me) or {}
+    openCount = 0
+    pendingCount = 0
+    completedCount = 0
+    for i = 1, table.getn(orders) do
+      local status = LeafVE:GetEffectiveWorkOrderStatus(orders[i], now)
+      if status == "pending" then
+        pendingCount = pendingCount + 1
+      elseif status == "completed" then
+        completedCount = completedCount + 1
+      else
+        openCount = openCount + 1
+      end
     end
+    popup.openOrderRows = orders
+    popup._orderOpenCount = openCount
+    popup._orderPendingCount = pendingCount
+    popup._orderCompletedCount = completedCount
   end
-  popup.openOrderRows = orders
 
   local rowHeight = popup.orderRowHeight or 56
-  local visibleRows = GetWorkOrderVisibleRowCount(popup.orderListFrame, rowHeight, 6)
+  local visibleRows = math.max(1, math.ceil(GetWorkOrderOrderListHeight(popup) / rowHeight))
   local totalOrders = table.getn(orders)
   local maxOffset = math.max(0, totalOrders - visibleRows)
   if (popup.orderOffset or 0) > maxOffset then
@@ -31089,10 +33200,7 @@ function LeafVE.UI:RefreshWorkOrderOrdersView(playerName, popup)
     table.insert(popup.orderButtons, btn)
   end
 
-  local listWidth = popup.orderListFrame:GetWidth() or 0
-  if not listWidth or listWidth < 260 then
-    listWidth = 340
-  end
+  local listWidth = GetWorkOrderOrderListWidth(popup)
 
   local startIndex = (popup.orderOffset or 0) + 1
   for row = 1, table.getn(popup.orderButtons) do
@@ -31111,7 +33219,7 @@ function LeafVE.UI:RefreshWorkOrderOrdersView(playerName, popup)
       btn:SetHeight(rowHeight - 4)
       btn:ClearAllPoints()
       btn:SetPoint("TOPLEFT", popup.orderListFrame, "TOPLEFT", 2, -((row - 1) * rowHeight) - 2)
-      btn.icon:SetTexture(order.icon or LEAF_FALLBACK)
+      btn.icon:SetTexture(LeafVE:GetWorkOrderResultIcon(order.itemId, order.spellId, order.icon))
       btn.text:SetText("|cFFFFD700" .. tostring(order.recipeName or "Work Order") .. "|r")
       local matsLine = GetWorkOrderMatsLine(order.matsMode, order.requester, order.profession)
       local materialsText = LeafVE:GetWorkOrderListMaterialsText(order, order.quantity or 1, 2)
@@ -31122,11 +33230,15 @@ function LeafVE.UI:RefreshWorkOrderOrdersView(playerName, popup)
         "  |  " .. FormatWorkOrderTipText(order.tipCopper)
       )
       SetWorkOrderRowTipDisplay(btn, order.tipCopper)
+      -- GetWorkOrdersForRequester already scopes this to only the player's
+      -- own requests -- fulfiller-owned claims live on the separate "My
+      -- Work In Progress" tab (see RefreshWorkOrderProgressView) instead.
       if status == "pending" then
+        if btn.statusLabelText then btn.statusLabelText:SetText("|cFFFFFF99Pending|r") end
         if IsWorkOrderPartialClaim(order) then
-          btn.statusText:SetText("|cFFFFFF99Pending partial:|r " .. tostring(fulfiller or "Unknown") .. " reserved " .. tostring(order.quantity or 1) .. ". " .. tostring(timerText) .. " left. Reassign to return it to the live board.")
+          btn.statusText:SetText(tostring(fulfiller or "Unknown") .. " reserved " .. tostring(order.quantity or 1) .. ". " .. tostring(timerText) .. " left. Reassign to return it to the live board.")
         else
-          btn.statusText:SetText("|cFFFFFF99Pending:|r " .. tostring(fulfiller or "Unknown") .. "  |  " .. tostring(timerText) .. " left. Reassign for a different crafter.")
+          btn.statusText:SetText(tostring(fulfiller or "Unknown") .. "  |  " .. tostring(timerText) .. " left. Reassign for a different crafter.")
         end
         btn.actionType = "cancel"
         btn.actionBtn:SetText("Cancel")
@@ -31137,10 +33249,11 @@ function LeafVE.UI:RefreshWorkOrderOrdersView(playerName, popup)
         btn.secondaryActionBtn:Show()
         btn.secondaryActionBtn:Enable()
       elseif status == "completed" then
+        if btn.statusLabelText then btn.statusLabelText:SetText("|cFF88FF88Completed|r") end
         if IsWorkOrderPartialClaim(order) then
-          btn.statusText:SetText("|cFF88FF88Completed:|r " .. tostring(fulfiller or "Unknown") .. " delivered this partial fill. Verify when received, or Revert to return it to the live board.")
+          btn.statusText:SetText(tostring(fulfiller or "Unknown") .. " delivered this partial fill. Verify when received, or Revert to return it to the live board.")
         else
-          btn.statusText:SetText("|cFF88FF88Completed:|r " .. tostring(fulfiller or "Unknown") .. " marked it done. Verify when received, or Revert for more work.")
+          btn.statusText:SetText(tostring(fulfiller or "Unknown") .. " marked it done. Verify when received, or Revert for more work.")
         end
         btn.actionType = "final"
         btn.actionBtn:SetText("Verify")
@@ -31151,10 +33264,11 @@ function LeafVE.UI:RefreshWorkOrderOrdersView(playerName, popup)
         btn.secondaryActionBtn:Show()
         btn.secondaryActionBtn:Enable()
       else
+        if btn.statusLabelText then btn.statusLabelText:SetText("|cFFAAAAAAOpen on the live board|r") end
         if requiresDesignation then
-          btn.statusText:SetText("|cFFAAAAAAOpen on the live board.|r Waiting for a qualified crafter.")
+          btn.statusText:SetText("Waiting for a qualified crafter.")
         else
-          btn.statusText:SetText("|cFFAAAAAAOpen on the live board.|r Waiting for someone to farm it.")
+          btn.statusText:SetText("Waiting for someone to farm it.")
         end
         btn.actionType = "cancel"
         btn.actionBtn:SetText("Cancel")
@@ -31207,6 +33321,9 @@ function LeafVE.UI:RefreshWorkOrderOrdersView(playerName, popup)
       if btn.reagentText then
         btn.reagentText:SetText("")
       end
+      if btn.statusLabelText then
+        btn.statusLabelText:SetText("")
+      end
       btn:Hide()
     end
   end
@@ -31218,18 +33335,466 @@ function LeafVE.UI:RefreshWorkOrderOrdersView(playerName, popup)
   else
     popup.noOrdersText:Show()
     if me then
-      popup.noOrdersText:SetText("|cFF888888You have no active banner duties right now.|r")
+      popup.noOrdersText:SetText("|cFF888888You have no active requests right now.|r")
     else
       popup.noOrdersText:SetText("|cFF888888Your player name could not be determined.|r")
     end
   end
 
   popup.summaryText:SetText(
-    "My orders: " .. tostring(totalOrders) .. "  |  " .. tostring(openCount) .. " open  |  " .. tostring(pendingCount) .. " pending  |  " .. tostring(completedCount) .. " awaiting verify"
+    "My requests: " .. tostring(totalOrders) .. "  |  " .. tostring(openCount) .. " open  |  " .. tostring(pendingCount) .. " pending  |  " .. tostring(completedCount) .. " awaiting verify"
+  )
+end
+
+-- Orders this player is currently fulfilling for someone else -- claimed and
+-- pending (Complete/Release available), or already marked complete and
+-- waiting on the requester to Verify/Revert (read-only from here; only the
+-- requester can act on a completed order, see FinalizeWorkOrder/
+-- RevertCompletedWorkOrder). Mirrors RefreshWorkOrderOrdersView's structure
+-- but scoped to GetWorkOrdersInProgressForFulfiller instead of
+-- GetWorkOrdersForRequester -- these used to be merged into one "My Orders"
+-- tab, split apart into "My Requests" (this player's own requests) and this
+-- "My Work In Progress" tab (what this player is crafting for others).
+function LeafVE.UI:RefreshWorkOrderProgressView(playerName, popup)
+  popup.professionPanel:Hide()
+  popup.recipePanel:Hide()
+  popup.selectionPanel:Hide()
+  if popup.liveSearchBG then popup.liveSearchBG:Hide() end
+  if popup.liveSearchLabel then popup.liveSearchLabel:Hide() end
+  if popup.liveCraftableOnlyCheck then popup.liveCraftableOnlyCheck:Hide() end
+  if popup.liveCraftableOnlyLabel then popup.liveCraftableOnlyLabel:Hide() end
+  if popup.ordersFeedbackText and popup.ordersHint then
+    popup.ordersFeedbackText:ClearAllPoints()
+    popup.ordersFeedbackText:SetPoint("TOPLEFT", popup.ordersHint, "BOTTOMLEFT", 0, -4)
+    popup.ordersFeedbackText:SetWidth(GetWorkOrderHintTextWidth(popup))
+  end
+  if popup.ordersPanel then
+    popup.ordersPanel:Show()
+    popup.ordersPanel:ClearAllPoints()
+    popup.ordersPanel:SetPoint("TOPLEFT", popup.professionPanel:GetParent(), "TOPLEFT", 12, -95)
+    popup.ordersPanel:SetPoint("BOTTOMRIGHT", popup.professionPanel:GetParent(), "BOTTOMRIGHT", -14, 14)
+  end
+  if popup.craftersPanel then
+    popup.craftersPanel:Hide()
+  end
+
+  local fastPath = popup._orderScrollFastPath
+  popup._orderScrollFastPath = nil
+
+  if not fastPath then
+    LeafVE:RequestWorkOrderSync(false)
+  end
+
+  popup.subtitleText:SetText("Track what you've claimed to craft for other guildmates")
+  if popup.ordersTitle then
+    popup.ordersTitle:SetText("|cFFFFD700My Work In Progress|r")
+  end
+  if popup.pageTitleText then
+    popup.pageTitleText:SetText("|cFFFFD700My Work In Progress|r")
+  end
+  if popup.ordersHint then
+    popup.ordersHint:SetText("|cFFAAAAAAComplete an order once you've crafted it, or Release it to send the reservation back to the live board for someone else. Once you've marked it Complete, the requester has to Verify it before it moves to History.|r")
+    popup.ordersHint:SetWidth(GetWorkOrderHintTextWidth(popup))
+  end
+
+  local me = ShortName(UnitName("player"))
+  local now = Now()
+  local orders, pendingCount, completedCount
+  if fastPath and popup.openOrderRows then
+    orders = popup.openOrderRows
+    pendingCount = popup._orderPendingCount or 0
+    completedCount = popup._orderCompletedCount or 0
+  else
+    orders = me and LeafVE:GetWorkOrdersInProgressForFulfiller(me) or {}
+    pendingCount = 0
+    completedCount = 0
+    for i = 1, table.getn(orders) do
+      local status = LeafVE:GetEffectiveWorkOrderStatus(orders[i], now)
+      if status == "pending" then
+        pendingCount = pendingCount + 1
+      elseif status == "completed" then
+        completedCount = completedCount + 1
+      end
+    end
+    popup.openOrderRows = orders
+    popup._orderPendingCount = pendingCount
+    popup._orderCompletedCount = completedCount
+  end
+
+  local rowHeight = popup.orderRowHeight or 56
+  local visibleRows = math.max(1, math.ceil(GetWorkOrderOrderListHeight(popup) / rowHeight))
+  local totalOrders = table.getn(orders)
+  local maxOffset = math.max(0, totalOrders - visibleRows)
+  if (popup.orderOffset or 0) > maxOffset then
+    popup.orderOffset = maxOffset
+  end
+  popup.orderVisibleRows = visibleRows
+
+  while table.getn(popup.orderButtons) < visibleRows do
+    local btn = CreateWorkOrderOrderButton(popup.orderListFrame)
+    btn.popup = popup
+    table.insert(popup.orderButtons, btn)
+  end
+
+  local listWidth = GetWorkOrderOrderListWidth(popup)
+
+  local startIndex = (popup.orderOffset or 0) + 1
+  for row = 1, table.getn(popup.orderButtons) do
+    local btn = popup.orderButtons[row]
+    local dataIndex = startIndex + row - 1
+    if row <= visibleRows and dataIndex <= totalOrders then
+      local order = orders[dataIndex]
+      local status = LeafVE:GetEffectiveWorkOrderStatus(order, now)
+      local timerText = tonumber(order.claimExpiresAt or 0) > now and FormatWorkOrderRemainingTime(order.claimExpiresAt, now) or "Expired"
+
+      btn.order = order
+      btn.popup = popup
+      btn:SetWidth(listWidth - 4)
+      btn:SetHeight(rowHeight - 4)
+      btn:ClearAllPoints()
+      btn:SetPoint("TOPLEFT", popup.orderListFrame, "TOPLEFT", 2, -((row - 1) * rowHeight) - 2)
+      btn.icon:SetTexture(LeafVE:GetWorkOrderResultIcon(order.itemId, order.spellId, order.icon))
+      btn.text:SetText("|cFFFFD700" .. tostring(order.recipeName or "Work Order") .. "|r")
+      local matsLine = GetWorkOrderMatsLine(order.matsMode, order.requester, order.profession)
+      local materialsText = LeafVE:GetWorkOrderListMaterialsText(order, order.quantity or 1, 2)
+      btn.detailText:SetText(
+        "Requester: " .. tostring(order.requester or "Unknown") ..
+        "  |  " .. tostring(order.profession or "Unknown") ..
+        "  |  " .. GetWorkOrderQuantitySummary(order) ..
+        "  |  " .. FormatWorkOrderTipText(order.tipCopper)
+      )
+      SetWorkOrderRowTipDisplay(btn, order.tipCopper)
+      if status == "pending" then
+        if IsWorkOrderPartialClaim(order) then
+          if btn.statusLabelText then btn.statusLabelText:SetText("|cFFFFFF99Reserved by you|r") end
+          btn.statusText:SetText("for " .. tostring(order.requester or "Unknown") .. ". " .. tostring(order.quantity or 1) .. " reserved. " .. tostring(timerText) .. " left.")
+        else
+          if btn.statusLabelText then btn.statusLabelText:SetText("|cFFFFFF99Picked up by you|r") end
+          btn.statusText:SetText("for " .. tostring(order.requester or "Unknown") .. ". " .. tostring(timerText) .. " left.")
+        end
+        btn.actionType = "complete"
+        btn.actionBtn:SetText("Complete")
+        btn.actionBtn:Show()
+        btn.actionBtn:Enable()
+        btn.secondaryActionType = "release"
+        btn.secondaryActionBtn:SetText("Release")
+        btn.secondaryActionBtn:Show()
+        btn.secondaryActionBtn:Enable()
+      else
+        -- completed -- only the requester can Verify/Revert from here
+        -- (FinalizeWorkOrder/RevertCompletedWorkOrder both require
+        -- order.requester == me), so this is read-only for the fulfiller.
+        if btn.statusLabelText then btn.statusLabelText:SetText("|cFF88FF88Completed|r") end
+        btn.statusText:SetText("Waiting for " .. tostring(order.requester or "Unknown") .. " to verify.")
+        btn.actionType = nil
+        btn.actionBtn:SetText("")
+        btn.actionBtn:Hide()
+        btn.secondaryActionType = nil
+        btn.secondaryActionBtn:SetText("")
+        btn.secondaryActionBtn:Hide()
+      end
+      if btn.idText then
+        btn.idText:SetText("")
+        btn.idText:Hide()
+      end
+      if not btn.secondaryActionType and btn.secondaryActionBtn then
+        btn.secondaryActionBtn:SetText("")
+        btn.secondaryActionBtn:Hide()
+      end
+      if btn.reagentText then
+        btn.reagentText:SetText("|cFF88CCFF" .. tostring(matsLine) .. "|r\n" .. tostring(materialsText or ""))
+      end
+      local reservedRight = ClampWorkOrderTipCopper(order.tipCopper) > 0 and 118 or 18
+      if btn.actionType or btn.secondaryActionType then
+        reservedRight = math.max(reservedRight, 96)
+      end
+      local textWidth = math.max(150, listWidth - reservedRight - 42)
+      btn.text:SetWidth(textWidth)
+      btn.detailText:SetWidth(textWidth)
+      btn.statusText:SetWidth(textWidth)
+      if btn.reagentText then
+        btn.reagentText:SetWidth(textWidth)
+      end
+      btn:Show()
+    else
+      btn.order = nil
+      btn.actionType = nil
+      btn.secondaryActionType = nil
+      SetWorkOrderRowTipDisplay(btn, 0)
+      if btn.actionBtn then
+        btn.actionBtn:SetText("")
+        btn.actionBtn:Hide()
+      end
+      if btn.secondaryActionBtn then
+        btn.secondaryActionBtn:SetText("")
+        btn.secondaryActionBtn:Hide()
+      end
+      if btn.idText then
+        btn.idText:SetText("")
+        btn.idText:Hide()
+      end
+      if btn.reagentText then
+        btn.reagentText:SetText("")
+      end
+      if btn.statusLabelText then
+        btn.statusLabelText:SetText("")
+      end
+      btn:Hide()
+    end
+  end
+
+  SyncWorkOrderSlider(popup.orderScrollBar, popup.orderOffset or 0, maxOffset)
+
+  if totalOrders > 0 then
+    popup.noOrdersText:Hide()
+  else
+    popup.noOrdersText:Show()
+    if me then
+      popup.noOrdersText:SetText("|cFF888888You're not currently fulfilling any orders.|r")
+    else
+      popup.noOrdersText:SetText("|cFF888888Your player name could not be determined.|r")
+    end
+  end
+
+  popup.summaryText:SetText(
+    "In progress: " .. tostring(totalOrders) .. "  |  " .. tostring(pendingCount) .. " pending  |  " .. tostring(completedCount) .. " awaiting verify"
+  )
+end
+
+-- Read-only record of finished/cancelled orders (any requester, not just
+-- this player -- there's no profession/player scoping here, just a log).
+-- Reuses the same order-card widgets and orderListFrame/orderButtons pool
+-- as Live/My Orders, just with actionBtn/secondaryActionBtn hidden on every
+-- row and a separate scroll offset so switching tabs doesn't leave the list
+-- scrolled to wherever Live or My Orders happened to be.
+function LeafVE.UI:RefreshWorkOrderHistoryView(playerName, popup)
+  popup.professionPanel:Hide()
+  if popup.recipePanel then popup.recipePanel:Hide() end
+  if popup.selectionPanel then popup.selectionPanel:Hide() end
+  if popup.craftersPanel then popup.craftersPanel:Hide() end
+  if popup.liveSearchBG then popup.liveSearchBG:Hide() end
+  if popup.liveSearchLabel then popup.liveSearchLabel:Hide() end
+  if popup.liveCraftableOnlyCheck then popup.liveCraftableOnlyCheck:Hide() end
+  if popup.liveCraftableOnlyLabel then popup.liveCraftableOnlyLabel:Hide() end
+  if popup.ordersFeedbackText and popup.ordersHint then
+    popup.ordersFeedbackText:ClearAllPoints()
+    popup.ordersFeedbackText:SetPoint("TOPLEFT", popup.ordersHint, "BOTTOMLEFT", 0, -4)
+    popup.ordersFeedbackText:SetWidth(GetWorkOrderHintTextWidth(popup))
+  end
+  if popup.ordersPanel then
+    popup.ordersPanel:Show()
+    popup.ordersPanel:ClearAllPoints()
+    popup.ordersPanel:SetPoint("TOPLEFT", popup.professionPanel:GetParent(), "TOPLEFT", 12, -95)
+    popup.ordersPanel:SetPoint("BOTTOMRIGHT", popup.professionPanel:GetParent(), "BOTTOMRIGHT", -14, 14)
+  end
+
+  popup.subtitleText:SetText("Finished and cancelled requests")
+  if popup.ordersTitle then
+    popup.ordersTitle:SetText("|cFFFFD700Order History|r")
+  end
+  if popup.pageTitleText then
+    popup.pageTitleText:SetText("|cFFFFD700Order History|r")
+  end
+  if popup.ordersHint then
+    popup.ordersHint:SetText("|cFFAAAAAAA read-only log of banner duties that finished or were cancelled -- nothing here can be claimed or edited.|r")
+    popup.ordersHint:SetWidth(GetWorkOrderHintTextWidth(popup))
+  end
+
+  -- See RefreshWorkOrderLiveView's fastPath comment -- same idea, skips
+  -- the history refetch/recount when nothing but orderOffset changed.
+  local fastPath = popup._orderScrollFastPath
+  popup._orderScrollFastPath = nil
+
+  local now = Now()
+  local orders, finalizedCount, cancelledCount
+  if fastPath and popup.openOrderRows then
+    orders = popup.openOrderRows
+    finalizedCount = popup._orderFinalizedCount or 0
+    cancelledCount = popup._orderCancelledCount or 0
+  else
+    orders = LeafVE:GetWorkOrderHistory()
+    finalizedCount = 0
+    cancelledCount = 0
+    for i = 1, table.getn(orders) do
+      if LeafVE:GetEffectiveWorkOrderStatus(orders[i], now) == "finalized" then
+        finalizedCount = finalizedCount + 1
+      else
+        cancelledCount = cancelledCount + 1
+      end
+    end
+    popup._orderFinalizedCount = finalizedCount
+    popup._orderCancelledCount = cancelledCount
+  end
+
+  -- Shorter than Live/My Orders' 126px cards (popup.orderRowHeight) --
+  -- History rows never show reagents or action/secondary-action buttons
+  -- (nothing here is claimable), so the card only ever needs to fit
+  -- icon/name/detail/status, not the extra space those rows reserve for.
+  -- Only affects this view: Live/My Orders each set their own local
+  -- rowHeight from popup.orderRowHeight when they refresh.
+  local rowHeight = 90
+  local visibleRows = math.max(1, math.ceil(GetWorkOrderOrderListHeight(popup) / rowHeight))
+  local totalOrders = table.getn(orders)
+  local maxOffset = math.max(0, totalOrders - visibleRows)
+  -- Shares orderOffset/openOrderRows/orderVisibleRows with Live/My Orders
+  -- rather than a separate historyOffset -- the scrollbar's OnValueChanged
+  -- and orderListFrame's OnMouseWheel handlers are built once (in
+  -- CreateWorkOrderPopup) and hardcoded to those exact field names, so a
+  -- separate field never actually got scrolled by either one.
+  if (popup.orderOffset or 0) > maxOffset then
+    popup.orderOffset = maxOffset
+  end
+  popup.openOrderRows = orders
+  popup.orderVisibleRows = visibleRows
+
+  while table.getn(popup.orderButtons) < visibleRows do
+    local btn = CreateWorkOrderOrderButton(popup.orderListFrame)
+    btn.popup = popup
+    table.insert(popup.orderButtons, btn)
+  end
+
+  local listWidth = GetWorkOrderOrderListWidth(popup)
+
+  local startIndex = (popup.orderOffset or 0) + 1
+  for row = 1, table.getn(popup.orderButtons) do
+    local btn = popup.orderButtons[row]
+    local dataIndex = startIndex + row - 1
+    if row <= visibleRows and dataIndex <= totalOrders then
+      local order = orders[dataIndex]
+      local status = LeafVE:GetEffectiveWorkOrderStatus(order, now)
+      local fulfiller = LeafVE:GetStoredWorkOrderFulfiller(order)
+      local whenText = date and date("%m/%d %H:%M", tonumber(order.updatedAt or order.createdAt) or now) or ""
+
+      btn.order = order
+      btn.popup = popup
+      btn:SetWidth(listWidth - 4)
+      btn:SetHeight(rowHeight - 4)
+      btn:ClearAllPoints()
+      btn:SetPoint("TOPLEFT", popup.orderListFrame, "TOPLEFT", 2, -((row - 1) * rowHeight) - 2)
+      btn.icon:SetTexture(LeafVE:GetWorkOrderResultIcon(order.itemId, order.spellId, order.icon))
+      btn.text:SetText("|cFFFFD700" .. tostring(order.recipeName or "Work Order") .. "|r")
+      btn.detailText:SetText(
+        "Requester: " .. tostring(order.requester or "Unknown") ..
+        "  |  " .. tostring(order.profession or "Unknown") ..
+        "  |  " .. GetWorkOrderQuantitySummary(order)
+      )
+      SetWorkOrderRowTipDisplay(btn, order.tipCopper)
+
+      btn.actionType = nil
+      btn.secondaryActionType = nil
+      -- No action buttons on History rows, so nothing for statusLabelText
+      -- to sit above here -- clear it so a label set by another tab sharing
+      -- this same button pool (Live/My Requests/Work In Progress) doesn't
+      -- linger when switching to History.
+      if btn.statusLabelText then btn.statusLabelText:SetText("") end
+      -- status is the single source of truth for which family a row falls
+      -- into (GetWorkOrderHistory only ever returns "finalized" or
+      -- "cancelled" -- the trailing else below is unreachable defensive
+      -- code, not a real third case); cancelReason only ever refines the
+      -- label WITHIN the "cancelled" family, and only using values a cancel
+      -- path actually writes (see the cancelReason assignments in
+      -- ReleaseWorkOrder/ReassignWorkOrder/CancelWorkOrderForDepartedRequester/
+      -- CancelWorkOrderForExpiredUnfilled, plus "requeued" as those first
+      -- two's pre-rename legacy tag) -- so "Finalized" can never appear on a
+      -- non-finalized row and "Cancelled" (or one of its sub-labels) can
+      -- never appear on a non-cancelled row.
+      if status == "finalized" then
+        btn.statusText:SetText("|cFF88FF88Finalized|r  |  Crafted by " .. tostring(fulfiller or "Unknown") .. "  |  " .. tostring(whenText))
+      elseif status == "cancelled" then
+        local reason = order.cancelReason
+        if reason == "released" or reason == "requeued" then
+          btn.statusText:SetText("|cFFFFCC66Released|r  |  " .. tostring(fulfiller or "Unknown") .. " gave it back  |  " .. tostring(whenText))
+        elseif reason == "reassigned" then
+          btn.statusText:SetText("|cFFFFCC66Reassigned|r  |  " .. tostring(order.requester or "Unknown") .. " reassigned it  |  " .. tostring(whenText))
+        elseif reason == "requester_left_guild" then
+          btn.statusText:SetText("|cFFFF6666Cancelled|r  |  requester left the guild  |  " .. tostring(whenText))
+        elseif reason == "expired_unfilled" then
+          btn.statusText:SetText("|cFFFF6666Expired|r  |  never claimed within 14 days  |  " .. tostring(whenText))
+        else
+          -- No reason on file -- a real, explicit Cancel via CancelWorkOrder
+          -- never sets one, so this is the correct default for that case.
+          btn.statusText:SetText("|cFFFF6666Cancelled|r  |  " .. tostring(whenText))
+        end
+      else
+        -- GetWorkOrderHistory only ever returns finalized/cancelled records,
+        -- so this shouldn't be reachable -- but shows the real status
+        -- instead of defaulting to "Cancelled" for anything it doesn't
+        -- recognize, the way an unconditional else branch used to.
+        btn.statusText:SetText("|cFFAAAAAA" .. tostring(status or "Unknown") .. "|r  |  " .. tostring(whenText))
+      end
+      if btn.reagentText then
+        btn.reagentText:SetText("")
+      end
+      if btn.idText then
+        btn.idText:SetText("")
+        btn.idText:Hide()
+      end
+      if btn.actionBtn then
+        btn.actionBtn:SetText("")
+        btn.actionBtn:Hide()
+      end
+      if btn.secondaryActionBtn then
+        btn.secondaryActionBtn:SetText("")
+        btn.secondaryActionBtn:Hide()
+      end
+
+      local reservedRight = ClampWorkOrderTipCopper(order.tipCopper) > 0 and 118 or 18
+      local textWidth = math.max(150, listWidth - reservedRight - 42)
+      btn.text:SetWidth(textWidth)
+      btn.detailText:SetWidth(textWidth)
+      btn.statusText:SetWidth(textWidth)
+      btn:Show()
+    else
+      btn.order = nil
+      btn.actionType = nil
+      btn.secondaryActionType = nil
+      SetWorkOrderRowTipDisplay(btn, 0)
+      if btn.actionBtn then
+        btn.actionBtn:SetText("")
+        btn.actionBtn:Hide()
+      end
+      if btn.secondaryActionBtn then
+        btn.secondaryActionBtn:SetText("")
+        btn.secondaryActionBtn:Hide()
+      end
+      if btn.idText then
+        btn.idText:SetText("")
+        btn.idText:Hide()
+      end
+      if btn.reagentText then
+        btn.reagentText:SetText("")
+      end
+      if btn.statusLabelText then
+        btn.statusLabelText:SetText("")
+      end
+      btn:Hide()
+    end
+  end
+
+  SyncWorkOrderSlider(popup.orderScrollBar, popup.orderOffset or 0, maxOffset)
+
+  if totalOrders > 0 then
+    popup.noOrdersText:Hide()
+  else
+    popup.noOrdersText:Show()
+    popup.noOrdersText:SetText("|cFF888888No finished or cancelled requests yet.|r")
+  end
+
+  popup.summaryText:SetText(
+    "History: " .. tostring(totalOrders) .. "  |  " .. tostring(finalizedCount) .. " finalized  |  " .. tostring(cancelledCount) .. " cancelled"
   )
 end
 
 function LeafVE.UI:RefreshWorkOrderPopup(playerName)
+  -- Every work order action (fulfill/complete/release/cancel/revert/
+  -- reassign/submit) and incoming sync broadcast funnels through this one
+  -- function, so it's the single choke point to also keep the Bulletin
+  -- Board's "Craftable Work Orders" section in sync -- otherwise a partial
+  -- claim made (or received via sync) elsewhere left that section showing
+  -- stale amounts until something else happened to touch the Bulletin Board
+  -- panel directly. Before the workOrderPopup guard below so this still
+  -- fires from incoming sync even if the player has never opened that popup.
+  self:RefreshBannerDutyCraftableOrders()
   if not self.workOrderPopup then return end
   playerName = ShortName(playerName or UnitName("player"))
   if not playerName then return end
@@ -31271,6 +33836,10 @@ function LeafVE.UI:RefreshWorkOrderPopup(playerName)
     self:RefreshWorkOrderCraftersView(playerName, popup)
   elseif popup.viewMode == "orders" then
     self:RefreshWorkOrderOrdersView(playerName, popup)
+  elseif popup.viewMode == "progress" then
+    self:RefreshWorkOrderProgressView(playerName, popup)
+  elseif popup.viewMode == "history" then
+    self:RefreshWorkOrderHistoryView(playerName, popup)
   else
     self:RefreshWorkOrderBrowseView(playerName, popup, LeafVE:EnsureWorkOrderCatalog())
   end
@@ -38046,6 +40615,398 @@ function LeafVE.UI:RefreshAllianceWelcomePanel()
   end
 end
 
+function BuildRecipeBrowserPanel(panel)
+  if not panel or panel.isRecipeBrowserBuilt then return end
+  panel.isRecipeBrowserBuilt = true
+
+  local headerBG = panel:CreateTexture(nil, "BACKGROUND")
+  headerBG:SetPoint("TOP", panel, "TOP", -15, -6)
+  headerBG:SetWidth(512)
+  headerBG:SetHeight(64)
+  headerBG:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+  headerBG:SetTexCoord(0, 1, 0, 1)
+  panel._ashenHeaderBG = headerBG
+  if LeafVE_AshenDossierSkin and LeafVE_AshenDossierSkin.ApplyPageHeaderToPanel then
+    LeafVE_AshenDossierSkin:ApplyPageHeaderToPanel(panel)
+  end
+  headerBG:SetVertexColor(1, 1, 1, 1)
+  if headerBG.SetAlpha then headerBG:SetAlpha(0) end
+  if headerBG.Hide then headerBG:Hide() end
+
+  local accentTop = panel:CreateTexture(nil, "BORDER")
+  accentTop:SetPoint("TOPLEFT", headerBG, "TOPLEFT", 0, 0)
+  accentTop:SetPoint("TOPRIGHT", headerBG, "TOPRIGHT", 0, 0)
+  accentTop:SetHeight(3)
+  accentTop:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
+  accentTop:SetVertexColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 0)
+
+  local h = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  h:SetPoint("TOP", headerBG, "TOP", 0, -13)
+  h:SetText("|cFFFFD700Recipe Browser|r")
+
+  local subtitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  subtitle:SetPoint("TOP", h, "BOTTOM", 0, -3)
+  subtitle:SetText("|cFF888888Every known craft recipe, and who in the guild can make it|r")
+  panel._ashenHeaderTitle = h
+  panel._ashenHeaderSubtitle = subtitle
+  if h.Show then h:Show() end
+  if subtitle.Show then subtitle:Show() end
+
+  local professionPanel = CreateInset(panel)
+  professionPanel:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -95)
+  professionPanel:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, 14)
+  professionPanel:SetWidth(180)
+  panel.professionPanel = professionPanel
+
+  local professionTitle = professionPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  professionTitle:SetPoint("TOPLEFT", professionPanel, "TOPLEFT", 10, -10)
+  professionTitle:SetText("|cFFFFD700Professions|r")
+
+  -- Pinned above every real profession (same fixed order Live's sidebar
+  -- uses this same "All" pattern for) so browsing/searching isn't scoped
+  -- to one profession at a time.
+  local allBtn = CreateWorkOrderProfessionButton(professionPanel, "All")
+  allBtn.recipePanelOwner = panel
+  allBtn:SetWidth(160)
+  allBtn:SetHeight(28)
+  if allBtn.icon then
+    allBtn.icon:SetWidth(20)
+    allBtn.icon:SetHeight(20)
+  end
+  if allBtn.text then
+    allBtn.text:SetFontObject(GameFontNormal)
+  end
+  allBtn:SetPoint("TOPLEFT", professionPanel, "TOPLEFT", 10, -30)
+  allBtn:SetScript("OnClick", function()
+    local owner = this.recipePanelOwner
+    owner.selectedProfession = "All"
+    owner.lastListKey = nil
+    if LeafVE and LeafVE.UI and LeafVE.UI.RefreshRecipeBrowserPanel then
+      LeafVE.UI:RefreshRecipeBrowserPanel()
+    end
+  end)
+  panel.allProfessionButton = allBtn
+
+  panel.professionButtons = {}
+  for i = 1, table.getn(WORK_ORDER_PROFESSION_ORDER) do
+    local profession = WORK_ORDER_PROFESSION_ORDER[i]
+    local btn = CreateWorkOrderProfessionButton(professionPanel, profession)
+    btn.recipePanelOwner = panel
+    btn:SetWidth(160)
+    btn:SetHeight(28)
+    if btn.icon then
+      btn.icon:SetWidth(20)
+      btn.icon:SetHeight(20)
+    end
+    if btn.text then
+      btn.text:SetFontObject(GameFontNormal)
+    end
+    -- Slot 0 (the top row) is reserved for the "All" button above.
+    btn:SetPoint("TOPLEFT", professionPanel, "TOPLEFT", 10, -30 - (i * 32))
+    btn:SetScript("OnClick", function()
+      if not this:IsEnabled() then return end
+      local owner = this.recipePanelOwner
+      owner.selectedProfession = this.profession
+      owner.lastListKey = nil
+      if LeafVE and LeafVE.UI and LeafVE.UI.RefreshRecipeBrowserPanel then
+        LeafVE.UI:RefreshRecipeBrowserPanel()
+      end
+    end)
+    panel.professionButtons[i] = btn
+  end
+
+  local recipePanel = CreateInset(panel)
+  recipePanel:SetPoint("TOPLEFT", professionPanel, "TOPRIGHT", 10, 0)
+  recipePanel:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -14, 14)
+  panel.recipePanel = recipePanel
+
+  local searchLabel = recipePanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  searchLabel:SetPoint("TOPLEFT", recipePanel, "TOPLEFT", 10, -12)
+  searchLabel:SetText("|cFFFFD700Recipe Search|r")
+
+  local searchBG = CreateFrame("Frame", nil, recipePanel)
+  searchBG:SetPoint("TOPLEFT", searchLabel, "BOTTOMLEFT", 0, -6)
+  searchBG:SetWidth(190)
+  searchBG:SetHeight(22)
+  searchBG:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 12,
+    insets = {left = 3, right = 3, top = 3, bottom = 3}
+  })
+  searchBG:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
+  searchBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
+
+  local searchBox = CreateFrame("EditBox", nil, searchBG)
+  searchBox:SetPoint("TOPLEFT", searchBG, "TOPLEFT", 5, -4)
+  searchBox:SetPoint("BOTTOMRIGHT", searchBG, "BOTTOMRIGHT", -5, 4)
+  searchBox:SetFontObject(GameFontHighlightSmall)
+  searchBox:SetTextInsets(0, 0, 0, 0)
+  searchBox:SetAutoFocus(false)
+  searchBox:SetText("")
+  searchBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+  searchBox:SetScript("OnTextChanged", function()
+    if LeafVE and LeafVE.UI and LeafVE.UI.activeTab == "recipes" and LeafVE.UI.RefreshRecipeBrowserPanel then
+      LeafVE.UI:RefreshRecipeBrowserPanel()
+    end
+  end)
+  panel.searchBox = searchBox
+
+  local summaryText = recipePanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  summaryText:SetPoint("TOPLEFT", searchBG, "TOPRIGHT", 12, -4)
+  summaryText:SetPoint("RIGHT", recipePanel, "RIGHT", -14, 0)
+  summaryText:SetJustifyH("LEFT")
+  summaryText:SetText("")
+  panel.summaryText = summaryText
+
+  local recipeListFrame = CreateFrame("Frame", nil, recipePanel)
+  recipeListFrame:SetPoint("TOPLEFT", recipePanel, "TOPLEFT", 8, -58)
+  recipeListFrame:SetPoint("BOTTOMRIGHT", recipePanel, "BOTTOMRIGHT", -30, 10)
+  recipeListFrame:EnableMouse(true)
+  recipeListFrame:EnableMouseWheel(true)
+  recipeListFrame.recipePanelOwner = panel
+  recipeListFrame:SetScript("OnMouseWheel", function()
+    local owner = this.recipePanelOwner
+    local totalRows = table.getn(owner.filteredRecipes or {})
+    local visibleRows = owner.recipeVisibleRows or 1
+    local maxOffset = math.max(0, totalRows - visibleRows)
+    local newOffset = (owner.recipeOffset or 0) - (arg1 or 0)
+    if newOffset < 0 then newOffset = 0 end
+    if newOffset > maxOffset then newOffset = maxOffset end
+    if newOffset == (owner.recipeOffset or 0) then return end
+    owner.recipeOffset = newOffset
+    if LeafVE and LeafVE.UI and LeafVE.UI.RefreshRecipeBrowserPanel then
+      LeafVE.UI:RefreshRecipeBrowserPanel()
+    end
+  end)
+  panel.recipeListFrame = recipeListFrame
+  panel.recipeButtons = {}
+  panel.recipeRowHeight = 66
+  panel.recipeVisibleRows = 7
+  panel.recipeOffset = 0
+  panel.filteredRecipes = {}
+  panel.recipeKnowledgeIndex = {}
+
+  local recipeScrollBar = CreateFrame("Slider", nil, recipePanel)
+  -- The up/down arrow buttons AddScrollBarArrows adds sit OUTSIDE the
+  -- scrollbar's own track (~20px above/below it), so the track itself is
+  -- inset that far from recipeListFrame's top and recipePanel's bottom --
+  -- otherwise the arrows poke out past the search box above and the
+  -- panel's own border below instead of landing inside recipePanel.
+  recipeScrollBar:SetPoint("TOPRIGHT", recipeListFrame, "TOPRIGHT", 22, -22)
+  recipeScrollBar:SetPoint("BOTTOMRIGHT", recipePanel, "BOTTOMRIGHT", -8, 32)
+  AddScrollBarArrows(recipeScrollBar, recipePanel)
+  recipeScrollBar:SetWidth(20)
+  recipeScrollBar:SetOrientation("VERTICAL")
+  recipeScrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+  recipeScrollBar:SetMinMaxValues(0, 0)
+  recipeScrollBar:SetValue(0)
+  recipeScrollBar:SetValueStep(1)
+  recipeScrollBar.recipePanelOwner = panel
+  local recipeThumb = recipeScrollBar:GetThumbTexture()
+  recipeThumb:SetWidth(20)
+  recipeThumb:SetHeight(28)
+  recipeScrollBar:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 8, edgeSize = 8,
+    insets = {left = 2, right = 2, top = 2, bottom = 2}
+  })
+  recipeScrollBar:SetBackdropColor(0, 0, 0, 0.3)
+  recipeScrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
+  recipeScrollBar:SetScript("OnValueChanged", function()
+    if this.ignoreUpdate then return end
+    local owner = this.recipePanelOwner
+    local value = math.floor((this:GetValue() or 0) + 0.5)
+    if value < 0 then value = 0 end
+    if value == (owner.recipeOffset or 0) then return end
+    owner.recipeOffset = value
+    if LeafVE and LeafVE.UI and LeafVE.UI.RefreshRecipeBrowserPanel then
+      LeafVE.UI:RefreshRecipeBrowserPanel()
+    end
+  end)
+  panel.recipeScrollBar = recipeScrollBar
+
+  local emptyText = recipeListFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  emptyText:SetPoint("TOPLEFT", recipeListFrame, "TOPLEFT", 8, -8)
+  emptyText:SetWidth(260)
+  emptyText:SetJustifyH("LEFT")
+  emptyText:SetJustifyV("TOP")
+  emptyText:SetText("|cFF888888Select a profession to browse recipes.|r")
+  panel.emptyText = emptyText
+end
+
+function LeafVE.UI:RefreshRecipeBrowserPanel()
+  local panel = self.panels and self.panels.recipes
+  if not panel or not panel.professionPanel then return end
+
+  local catalog = LeafVE:EnsureWorkOrderCatalog()
+
+  local selectedProfession = panel.selectedProfession
+  if not selectedProfession or (selectedProfession ~= "All" and not catalog.byProfession[selectedProfession]) then
+    selectedProfession = "All"
+    panel.selectedProfession = selectedProfession
+  end
+
+  if panel.allProfessionButton then
+    UpdateWorkOrderProfessionButtonVisual(panel.allProfessionButton, selectedProfession == "All")
+  end
+  for i = 1, table.getn(panel.professionButtons) do
+    local btn = panel.professionButtons[i]
+    local recipes = catalog.byProfession[btn.profession] or {}
+    UpdateWorkOrderProfessionButtonVisual(btn, btn.profession == selectedProfession)
+    if btn.countText then
+      btn.countText:SetText(tostring(table.getn(recipes)))
+      btn.countText:Show()
+    end
+  end
+
+  local recipes
+  if selectedProfession == "All" then
+    recipes = {}
+    for i = 1, table.getn(WORK_ORDER_PROFESSION_ORDER) do
+      local profRecipes = catalog.byProfession[WORK_ORDER_PROFESSION_ORDER[i]] or {}
+      for j = 1, table.getn(profRecipes) do
+        table.insert(recipes, profRecipes[j])
+      end
+    end
+  else
+    recipes = selectedProfession and catalog.byProfession[selectedProfession] or {}
+  end
+  local filterText = Lower(Trim(panel.searchBox and panel.searchBox:GetText() or ""))
+  local listKey = tostring(selectedProfession or "") .. "|" .. filterText .. "|" .. tostring(LeafVE.recipeKnowledgeVersion or 0)
+  if panel.lastListKey ~= listKey then
+    local filtered = {}
+    for i = 1, table.getn(recipes) do
+      local recipe = recipes[i]
+      if filterText == "" or string.find(recipe.searchKey or "", filterText, 1, true) then
+        table.insert(filtered, recipe)
+      end
+    end
+    panel.filteredRecipes = filtered
+    panel.lastListKey = listKey
+    panel.recipeOffset = 0
+    if selectedProfession == "All" then
+      -- Merge each profession's own index rather than a single lookup --
+      -- BuildRecipeKnowledgeIndex is scoped to one profession's stored
+      -- trade-skill link per player, so "All" needs all of them combined.
+      local merged = {}
+      for i = 1, table.getn(WORK_ORDER_PROFESSION_ORDER) do
+        local idx = LeafVE:BuildRecipeKnowledgeIndex(WORK_ORDER_PROFESSION_ORDER[i])
+        for token, names in pairs(idx) do
+          merged[token] = merged[token] or {}
+          for j = 1, table.getn(names) do
+            table.insert(merged[token], names[j])
+          end
+        end
+      end
+      panel.recipeKnowledgeIndex = merged
+    else
+      panel.recipeKnowledgeIndex = selectedProfession and LeafVE:BuildRecipeKnowledgeIndex(selectedProfession) or {}
+    end
+  end
+
+  local filtered = panel.filteredRecipes or {}
+  local rowHeight = panel.recipeRowHeight or 66
+  local visibleRows = math.max(7, GetWorkOrderVisibleRowCount(panel.recipeListFrame, rowHeight, 7))
+  local totalRows = table.getn(filtered)
+  local maxOffset = math.max(0, totalRows - visibleRows)
+  if (panel.recipeOffset or 0) > maxOffset then
+    panel.recipeOffset = maxOffset
+  end
+  panel.recipeVisibleRows = visibleRows
+
+  while table.getn(panel.recipeButtons) < visibleRows do
+    local btn = CreateWorkOrderRecipeButton(panel.recipeListFrame)
+    if btn.idText then
+      btn.idText:Hide()
+    end
+
+    -- Opens a small, single-recipe order dialog (icon/reagents/qty/tip/mats/
+    -- submit) instead of sending the requester over to the full Request page
+    -- to re-find a recipe they already picked. Reads btn.recipe (not a
+    -- closure) since this button is pooled and reused for a different
+    -- recipe every refresh.
+    local requestBtn = CreateFrame("Button", nil, btn, "UIPanelButtonTemplate")
+    requestBtn:SetWidth(70)
+    requestBtn:SetHeight(20)
+    requestBtn:SetPoint("TOPRIGHT", btn, "TOPRIGHT", -8, -10)
+    requestBtn:SetText("Request")
+    SkinButtonAccent(requestBtn)
+    requestBtn:SetScript("OnClick", function()
+      local rowBtn = this:GetParent()
+      local recipe = rowBtn and rowBtn.recipe
+      if not recipe or not LeafVE or not LeafVE.UI then return end
+      LeafVE.UI:ShowWorkOrderQuickRequestPopup(recipe)
+      PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
+    btn.requestBtn = requestBtn
+
+    table.insert(panel.recipeButtons, btn)
+  end
+
+  local listWidth = panel.recipeListFrame:GetWidth() or 0
+  if not listWidth or listWidth < 240 then
+    listWidth = 260
+  end
+
+  local startIndex = (panel.recipeOffset or 0) + 1
+  for row = 1, table.getn(panel.recipeButtons) do
+    local btn = panel.recipeButtons[row]
+    local dataIndex = startIndex + row - 1
+    if row <= visibleRows and dataIndex <= totalRows then
+      local recipe = filtered[dataIndex]
+      btn.recipe = recipe
+      btn:SetWidth(listWidth - 4)
+      if btn.text then btn.text:SetWidth(math.max(140, listWidth - 96)) end
+      if btn.metaText then btn.metaText:SetWidth(math.max(140, listWidth - 96)) end
+      if btn.reagentText then btn.reagentText:SetWidth(math.max(150, listWidth - 96)) end
+      btn:ClearAllPoints()
+      btn:SetPoint("TOPLEFT", panel.recipeListFrame, "TOPLEFT", 2, -((row - 1) * rowHeight) - 2)
+      btn.icon:SetTexture(recipe.icon or LEAF_FALLBACK)
+      btn.text:SetText((WORK_ORDER_QUALITY_COLORS[recipe.quality or 1] or "|cFFFFFFFF") .. tostring(recipe.name or "Recipe") .. "|r")
+      if btn.metaText then
+        btn.metaText:SetText("|cFF88CCFF" .. tostring(LeafVE:GetWorkOrderRecipeMetaText(recipe)) .. "|r")
+      end
+      if btn.reagentText then
+        local token = GetWorkOrderCrafterRecipeToken(recipe)
+        local knownBy = token and panel.recipeKnowledgeIndex and panel.recipeKnowledgeIndex[token]
+        if type(knownBy) == "table" and table.getn(knownBy) > 0 then
+          btn.reagentText:SetText("|cFF66FF66Known by:|r " .. LeafVEEllipsizeText(table.concat(knownBy, ", "), 46))
+        else
+          btn.reagentText:SetText("|cFF888888No known crafters yet|r")
+        end
+      end
+      if btn.idText then
+        btn.idText:SetText("")
+        btn.idText:Hide()
+      end
+      if btn.accent then
+        btn.accent:SetVertexColor(THEME.leaf[1], THEME.leaf[2], THEME.leaf[3], 0.55)
+      end
+      UpdateWorkOrderRecipeButtonVisual(btn, false)
+      btn:Show()
+    else
+      btn.recipe = nil
+      btn:Hide()
+    end
+  end
+
+  SyncWorkOrderSlider(panel.recipeScrollBar, panel.recipeOffset or 0, maxOffset)
+
+  if totalRows > 0 then
+    panel.emptyText:Hide()
+  else
+    panel.emptyText:Show()
+    panel.emptyText:SetText(filterText ~= "" and "|cFF888888No recipes match that search.|r" or "|cFF888888No recipes found for this profession.|r")
+  end
+
+  if panel.summaryText then
+    local apiNote = LeafVE:HasRecipeLinkAPI() and "" or "  |cFFFF6666(ClassicAPI not detected -- auto-detection disabled)|r"
+    panel.summaryText:SetText("|cFFAAAAAA" .. tostring(selectedProfession or "") .. ": " .. tostring(totalRows) .. " recipe(s)|r" .. apiNote)
+  end
+end
+
 function BuildWelcomePanel(panel)
   -- Header
   local headerBG = panel:CreateTexture(nil, "BACKGROUND")
@@ -40541,8 +43502,13 @@ function LeafVE.UI:Build()
     guildEventLoadErrorText:SetText("|cFFFF6666Guild Events failed to load.|r")
     self.panels.guildEvents.loadErrorText = guildEventLoadErrorText
   end
-  -- Banner Duties panel removed by request.
-  self.panels.workOrders = nil
+  -- Revived as the new "Orders" nav page (Browse/Live/My Orders subtabs) --
+  -- hosts the same workOrderPopup embedded via EnsureEmbeddedWorkOrderView
+  -- instead of duplicating its Live/Browse/Orders logic.
+  self.panels.workOrders = CreateFrame("Frame", nil, self.inset)
+  self.panels.workOrders:SetAllPoints(self.inset)
+  SkinPrimaryPanel(self.panels.workOrders)
+  BuildWorkOrdersPanel(self.panels.workOrders)
 
   self.panels.shinobiDuties = CreateFrame("Frame", nil, self.inset)
   self.panels.shinobiDuties:SetAllPoints(self.inset)
@@ -40573,6 +43539,12 @@ function LeafVE.UI:Build()
   self.panels.welcome._ashenHeaderKey = "welcome"
   SkinPrimaryPanel(self.panels.welcome)
   BuildWelcomePanel(self.panels.welcome)
+
+  self.panels.recipes = CreateFrame("Frame", nil, self.inset)
+  self.panels.recipes:SetAllPoints(self.inset)
+  self.panels.recipes._ashenHeaderKey = "recipes"
+  SkinPrimaryPanel(self.panels.recipes)
+  BuildRecipeBrowserPanel(self.panels.recipes)
 
   self.panels.join = CreateFrame("Frame", nil, self.left)
   self.panels.join:SetAllPoints(self.left)
@@ -40792,7 +43764,8 @@ function LeafVE.UI:Refresh()
   self:RefreshGroupedNavigation(hasAccess)
 
   if self.card then
-    if hasAccess and self.activeTab ~= "guildEvents" and self.activeTab ~= "workOrderRep" and self.activeTab ~= "shinobiDuties" and self.activeTab ~= "bannerDutyBoard" and self.activeTab ~= "bannerDutyLive" and self.activeTab ~= "welcome" then
+    if hasAccess and self.activeTab ~= "guildEvents" and self.activeTab ~= "workOrderRep" and self.activeTab ~= "shinobiDuties" and self.activeTab ~= "bannerDutyBoard" and self.activeTab ~= "bannerDutyLive" and self.activeTab ~= "welcome" and self.activeTab ~= "recipes"
+      and self.activeTab ~= "workordersLive" and self.activeTab ~= "workordersMine" and self.activeTab ~= "workordersProgress" and self.activeTab ~= "workordersHistory" then
       self.card:Show()
     else
       self.card:Hide()
@@ -41134,6 +44107,33 @@ function LeafVE.UI:Refresh()
   elseif self.activeTab == "welcome" and self.panels.welcome then
     ShowPanelWithTransition(self.panels.welcome)
     self:RefreshWelcome()
+
+  elseif self.activeTab == "recipes" and self.panels.recipes then
+    ShowPanelWithTransition(self.panels.recipes)
+    if self.RefreshRecipeBrowserPanel then
+      self:RefreshRecipeBrowserPanel()
+    end
+
+  elseif (self.activeTab == "workordersLive" or self.activeTab == "workordersMine" or self.activeTab == "workordersProgress" or self.activeTab == "workordersHistory")
+    and self.panels.workOrders then
+    ShowPanelWithTransition(self.panels.workOrders)
+    local popup = self.EnsureWorkOrderRequestPanel and self:EnsureWorkOrderRequestPanel()
+    if popup then
+      if self.activeTab == "workordersMine" then
+        popup.viewMode = "orders"
+      elseif self.activeTab == "workordersProgress" then
+        popup.viewMode = "progress"
+      elseif self.activeTab == "workordersHistory" then
+        popup.viewMode = "history"
+      else
+        popup.viewMode = "live"
+      end
+      local me = ShortName(UnitName("player"))
+      self.cardCurrentPlayer = me
+      if self.RefreshWorkOrderPopup then
+        self:RefreshWorkOrderPopup(me)
+      end
+    end
   end
 end
 
@@ -41449,29 +44449,23 @@ function LeafVE.UI:CreateLoginBriefingPopup()
   end)
   popup.scrollBar = scrollBar
 
-  local openOrdersBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
-  openOrdersBtn:SetWidth(116)
-  openOrdersBtn:SetHeight(24)
-  openOrdersBtn:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -218, 20)
-  openOrdersBtn:SetText("View Duties")
-  SkinButtonAccent(openOrdersBtn)
-  openOrdersBtn:SetScript("OnClick", function()
-    popup:Hide()
-    if LeafVE and LeafVE.UI then
-      if not LeafVE.UI.frame or not LeafVE.UI.frame:IsVisible() then
-        LeafVE:ToggleUI()
-      end
-      if LeafVE.UI and LeafVE.UI.OpenWorkOrdersPanel then
-        LeafVE.UI:OpenWorkOrdersPanel("live")
-      end
-    end
-  end)
-  popup.openOrdersBtn = openOrdersBtn
+  -- There used to be two differently-wired "View Duties" buttons here (one
+  -- to Live Orders, one to the Banner Duty Board) with identical labels --
+  -- kept the Banner Duty Board one since it matches this popup's own
+  -- "Banner Briefing" title, and dropped the Live Orders duplicate.
+  local dismissBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
+  dismissBtn:SetWidth(110)
+  dismissBtn:SetHeight(24)
+  dismissBtn:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -24, 20)
+  dismissBtn:SetText("Dismiss")
+  SkinButtonAccent(dismissBtn)
+  dismissBtn:SetScript("OnClick", function() popup:Hide() end)
+  popup.dismissBtn = dismissBtn
 
   local viewDutiesBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
   viewDutiesBtn:SetWidth(110)
   viewDutiesBtn:SetHeight(24)
-  viewDutiesBtn:SetPoint("LEFT", openOrdersBtn, "RIGHT", 10, 0)
+  viewDutiesBtn:SetPoint("RIGHT", dismissBtn, "LEFT", -10, 0)
   viewDutiesBtn:SetText("View Duties")
   SkinButtonAccent(viewDutiesBtn)
   viewDutiesBtn:SetScript("OnClick", function()
@@ -41492,14 +44486,6 @@ function LeafVE.UI:CreateLoginBriefingPopup()
     end
   end)
   popup.viewDutiesBtn = viewDutiesBtn
-
-  local dismissBtn = CreateFrame("Button", nil, popup, "UIPanelButtonTemplate")
-  dismissBtn:SetWidth(82)
-  dismissBtn:SetHeight(24)
-  dismissBtn:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -24, 20)
-  dismissBtn:SetText("Dismiss")
-  dismissBtn:SetScript("OnClick", function() popup:Hide() end)
-  popup.dismissBtn = dismissBtn
 
   popup.dynamicWidgets = {}
   popup:SetScript("OnShow", function()
@@ -42122,6 +45108,9 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
     if LeafVE and LeafVE.PatchAchievementsChatAnnouncements then
       pcall(LeafVE.PatchAchievementsChatAnnouncements, LeafVE)
     end
+    if LeafVE and LeafVE.HookRecipeScanFrames then
+      pcall(LeafVE.HookRecipeScanFrames, LeafVE)
+    end
   end
   
   if event == "PLAYER_LOGIN" then
@@ -42170,6 +45159,9 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
     LeafVE:CheckDailyLogin()
     LeafVE:PurgeStaleWeeklyData()
     LeafVE:PurgeInvalidWorkOrders()
+    LeafVE:SchedulePeriodicWorkOrderExpiryCheck()
+    LeafVE:HookRecipeScanFrames()
+    LeafVE:RequestRecipeLinkSync(false)
     LeafVE:PrimeHonorableKillTracker()
     LeafVE:EnsureChatLoggingEnabled()
     if LeafVE.allianceEnabled == true then
@@ -42344,6 +45336,16 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
       -- from the fresh server data (without triggering another GuildRoster() request).
       LeafVE.guildRosterCacheTime = 0
       LeafVE:RefreshMinimapButtonAccess()
+      -- Direct call (not relying on RefreshMinimapButtonAccess's chain,
+      -- which no-ops entirely if the minimap button doesn't exist) so the
+      -- departed-requester sweep below always sees a freshly rebuilt roster.
+      LeafVE:UpdateGuildRosterCache()
+      LeafVE:PurgeWorkOrdersForDepartedRequesters()
+      -- Piggybacks on this same debounce as extra coverage between the
+      -- 30-minute periodic check (SchedulePeriodicWorkOrderExpiryCheck) --
+      -- roster updates tend to fire often enough in an active guild
+      -- session to catch expiries sooner than waiting for the next tick.
+      LeafVE:PurgeExpiredUnfilledWorkOrders()
       if LeafVE.allianceEnabled == true then
         LeafVE:CacheLocalAllianceRoster()
         LeafVE:ScheduleDeferred("alliance_roster_presence_sync", 1.5, function()

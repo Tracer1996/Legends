@@ -194,6 +194,14 @@ local function EnsureDB()
   if not LeafVE_AchTest_DB.peakGold then LeafVE_AchTest_DB.peakGold = {} end
   if not LeafVE_AchTest_DB.goldEarnedTotal then LeafVE_AchTest_DB.goldEarnedTotal = {} end
   if not LeafVE_AchTest_DB.goldLastSeen then LeafVE_AchTest_DB.goldLastSeen = {} end
+  -- Guild-wide mount/companion/toy ownership, built from COLSYNC broadcasts
+  -- (see BroadcastMyCollections/OnAddonMessage below) -- unlike achievements,
+  -- collection ownership has no per-item achievement to piggyback on, so it
+  -- needs its own synced table: [name] = { [playerName] = true }.
+  if type(LeafVE_AchTest_DB.guildCollections) ~= "table" then LeafVE_AchTest_DB.guildCollections = {} end
+  if type(LeafVE_AchTest_DB.guildCollections.mounts) ~= "table" then LeafVE_AchTest_DB.guildCollections.mounts = {} end
+  if type(LeafVE_AchTest_DB.guildCollections.companions) ~= "table" then LeafVE_AchTest_DB.guildCollections.companions = {} end
+  if type(LeafVE_AchTest_DB.guildCollections.toys) ~= "table" then LeafVE_AchTest_DB.guildCollections.toys = {} end
   if type(LeafVE_AchTest_DB.reputationStats) ~= "table" then LeafVE_AchTest_DB.reputationStats = {} end
   if type(LeafVE_AchTest_DB.reputationSnapshot) ~= "table" then LeafVE_AchTest_DB.reputationSnapshot = {} end
   if type(LeafVE_AchTest_DB.guildRankState) ~= "table" then LeafVE_AchTest_DB.guildRankState = {} end
@@ -300,24 +308,40 @@ end
 local ZONE_GROUP_ZONES = {
   kalimdor = {"Durotar","Mulgore","The Barrens","Teldrassil","Darkshore","Ashenvale","Stonetalon Mountains","Desolace","Feralas","Thousand Needles","Tanaris","Dustwallow Marsh","Azshara","Felwood","Un'Goro Crater","Moonglade","Winterspring","Silithus"},
   eastern_kingdoms = {"Dun Morogh","Elwynn Forest","Tirisfal Glades","Silverpine Forest","Westfall","Redridge Mountains","Duskwood","Wetlands","Loch Modan","Hillsbrad Foothills","Alterac Mountains","Arathi Highlands","Badlands","Searing Gorge","Burning Steppes","The Hinterlands","Western Plaguelands","Eastern Plaguelands","Stranglethorn Vale","Swamp of Sorrows","Blasted Lands","Deadwind Pass"},
-  elwynn = {"Northshire Valley","Northshire Abbey","Crystal Lake","Eastvale Logging Camp","Goldshire","Mirror Lake","Westbrook Garrison","Tower of Azora","Brackwell Pumpkin Patch","The Fargodeep Mine","Jasperlode Mine"},
-  barrens = {"The Crossroads","Ratchet","Grol'dom Farm","Lushwater Oasis","Stagnant Oasis","Camp Taurajo","Mor'shan Base Camp","Blackthorn Ridge","The Wailing Caverns","Darsok's Rest","Far Watch Post"},
+  elwynn = {
+    "Brackwell Pumpkin Patch","Crystal Lake","Eastvale Logging Camp","Fargodeep Mine",
+    "Forest's Edge","Goldshire","Jasperlode Mine","Jerod's Landing","Northshire Valley",
+    "Ridgepoint Tower","Stone Cairn Lake","Stormwind City","The Maclure Vineyards",
+    "The Stonefield Farm","Tower of Azora","Westbrook Garrison",
+  },
+  barrens = {
+    "Agama'gor","Anchor's Edge","Bael Modan","Blackthorn Ridge","Boulder Lode Mine",
+    "Bramblescar","Camp Taurajo","Dreadmist Peak","Far Watch Post","Field of Giants",
+    "Grol'dom Farm","Honor's Stand","Lushwater Oasis","Northwatch Hold","Raptor Grounds",
+    "Ratchet","Razorfen Downs","Razorfen Kraul","The Crossroads","The Dry Hills",
+    "The Forgotten Pools","The Merchant Coast","The Mor'shan Rampart","The Sludge Fen",
+    "The Stagnant Oasis","Thorn Hill",
+  },
   balor = {
-    "Bilgerat Compound","Ruins of Breezehaven","SI:7 Outpost",
-    "Sorrowmore Lake","Stormbreaker Point","Stormwrought Castle",
+    "Bilgerat Compound","Croaking Plateau","Grahan Estate","Gullwing Wreckage",
+    "Langston Orchard","Ruins of Breezehaven","SI:7 Outpost","Scurrying Thicket",
+    "Sorrowmore Lake","Stormbreaker Point","Stormwrought Castle","Treacherous Crags",
+    "Vander Farmstead","Windrock Cliffs",
   },
   gilneas = {
-    "Blackthorn's Camp","Brol'ok Mound","Dawnstone Mine","The Dryrock Mine",
-    "Dryrock Valley (The Dryrock Pit)","Ebonmere Farm","Freyshear Keep",
-    "Gilneas City","Glaymore Stead","The Greymane Wall","Greymane's Watch",
-    "Hollow Web Cemetary","Hollow Web Woods","Mossgrove Farm","Northgate Tower",
-    "Oldrock Pass","The Overgrown Acre","Ravenshire","Ravenwood Keep",
-    "Rosewick Plantation","Ruins of Greyshire","Shademore Tavern",
-    "Southmire Orchard","Stillward Church","Vagrant Encampment","Westgate Tower",
+    "Blackthorn's Camp","Brol'ok Mound","Dawnstone Mine","Freyshear Keep",
+    "Gilneas City","Glaymore Stead","Greymane's Watch","Hollow Web Cemetery",
+    "Hollow Web Woods","Northgate Tower","Oldrock Pass","Ravenshire","Ravenwood Keep",
+    "Rosewick Plantation","Ruins of Greyshire","Shademore Tavern","Southmire Orchard",
+    "Stillward Church","The Dryrock Mine","The Dryrock Pit","The Greymane Wall",
+    "The Overgrown Acre",
   },
   northwind = {
-    "Abbey Gardens","Ambershire","Crystal Falls",
-    "Northwind Logging Camp","Ruins of Birkhaven","Sherwood Quarry","Stillheart Port",
+    "Abbey Gardens","Ambershire","Amberwood Keep","Blackrock Breach",
+    "Bristlewhisker Cavern","Cinderfall Pass","Crawford Winery","Crystal Falls",
+    "Grimmen Lake","Merchant's Highroad","Northridge Point","Northwind Logging Camp",
+    "Ruins of Birkhaven","Sherwood Quarry","Stillheart Port","Tower of Magilou",
+    "Witch Coven",
   },
   lapidis = {
     "Bright Coast","Caelan's Rest","Crown Island","Gor'dosh Heights",
@@ -325,10 +349,10 @@ local ZONE_GROUP_ZONES = {
     "The Wallowing Coast","Zul'Hazu",
   },
   gillijim = {
-    "The Broken Reef","Deeptide Sanctum","Distillery Island","Faelon's Folly",
-    "Gillijim Canyon","Gillijim Strand","Kalkor Point","Kazon Island",
-    "Maul'ogg Post","Maul'ogg Refuge","Ruins of Zul'Razar","The Silver Coast",
-    "The Silver Sandbar","Southsea Sandbar","The Tangled Wood","Zul'Razar",
+    "Deeptide Sanctum","Distillery Island","Faelon's Folly","Gillijim Strand",
+    "Kalkor Point","Kazon Island","Maul'ogg Post","Maul'ogg Refuge",
+    "Ruins of Zul'Razar","The Jade Mine","The Silver Coast","The Silver Sandbar",
+    "The Southsea Sandbar","The Tangled Wood","Zul'Razar",
   },
   scarlet_enclave = {
     "The Forbidding Sea","Gloom Hill","Havenshire","King's Harbor",
@@ -339,13 +363,13 @@ local ZONE_GROUP_ZONES = {
     "Shatterblade Post","Zarm'Geth Stronghold",
   },
   telabim = {
-    "Bixxle's Storehouse","The Derelict Camp","Highvale Rise","The Jagged Isles",
-    "The Shallow Strand","Tazzo's Shack","Tel Co. Basecamp","The Washing Shore",
+    "Bixxle's Storehouse","Highvale Rise","Tazzo's Shack","Tel Co. Basecamp",
+    "The Derelict Camp","The Jagged Isles",
   },
   hyjal = {
     "Barkskin Plateau","Barkskin Village","Bleakhollow Crater","Circle of Power",
-    "Darkhollow Pass","The Emerald Gateway","Nordanaar","Nordrassil Glade",
-    "The Ruins of Telennas","Zul'Hathar",
+    "Darkhollow Pass","Nordanaar","Nordrassil Glade","The Emerald Gateway",
+    "The Ruins of Telennas","Zul'Hatha",
   },
   tirisfal_uplands = {
     "The Blacktower Inn","The Corinth Farmstead","Crumblepoint Tower",
@@ -354,20 +378,18 @@ local ZONE_GROUP_ZONES = {
     "Shalla'Aran","Steepcliff Port","Shatteridge Tower","The Whispering Forest",
   },
   stonetalon_tw = {
-    "Boulderslide Ravine","Greatwood Vale","Malaka'jin","Mirkfallon Lake",
+    "Boulderslide Ravine","Malaka'jin","Mirkfallon Lake",
     "Stonetalon Peak","The Talondeep Path","Windshear Crag",
   },
   arathi_tw = {
-    "Wildtusk Village","Ruins of Zul'rasaz","Farwell Stead",
-    "Gallant Square","Livingstone Croft",
+    "Wildtusk Village","Ruins of Zul'Rasaz","Farwell Stead",
   },
   badlands_tw = {
-    "Ruins of Corthan","Scalebane Ridge","Crystalline Oasis",
-    "Crystalline Pinnacle","Redbrand's Digsite","Angor Digsite","Ruins of Zeth",
+    "Ruins of Corthan","Scalebane Ridge",
+    "Crystalline Pinnacle","Redbrand's Digsite","Angor Digsite",
   },
   ashenvale_tw = {
-    "Forest Song","Thalanaar","Talonbranch Glade",
-    "Demon Fall Ridge","Warsong Lumber Camp",
+    "Forest Song","Warsong Lumber Camp",
   },
 }
 
@@ -377,20 +399,18 @@ local ZONE_NAME_ALIASES = {
   ["Northshire Vineyards"]    = "Northshire Valley",
   ["Northshire River"]        = "Northshire Valley",
   ["Echo Ridge Mine"]         = "Northshire Valley",
-  ["Fargodeep Mine"]          = "The Fargodeep Mine",
-  ["The Fergodeep Mine"]      = "The Fargodeep Mine",
-  ["Fergodeep Mine"]          = "The Fargodeep Mine",
+  ["The Fergodeep Mine"]      = "Fargodeep Mine",
+  ["Fergodeep Mine"]          = "Fargodeep Mine",
+  ["The Fargodeep Mine"]      = "Fargodeep Mine",
   ["The Jasperlode Mine"]     = "Jasperlode Mine",
   ["Jasper Lode Mine"]        = "Jasperlode Mine",
   ["Jasperlode"]              = "Jasperlode Mine",
   ["Eastvale"]                = "Eastvale Logging Camp",
   ["East Vale Logging Camp"]  = "Eastvale Logging Camp",
   ["Lion's Pride Inn"]        = "Goldshire",
-  ["Mirror Lake Orchard"]     = "Mirror Lake",
   ["Westbrook"]               = "Westbrook Garrison",
   ["Azora"]                   = "Tower of Azora",
   ["Brackwell"]               = "Brackwell Pumpkin Patch",
-  ["Northshire Abby"]         = "Northshire Abbey",
 
   -- â”€â”€ Barrens â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   ["Crossroads"]              = "The Crossroads",
@@ -398,13 +418,12 @@ local ZONE_NAME_ALIASES = {
   ["Groldom Farm"]            = "Grol'dom Farm",
   ["Grol'dom"]                = "Grol'dom Farm",
   ["Lushwater"]               = "Lushwater Oasis",
-  ["Stagnant"]                = "Stagnant Oasis",
+  ["Stagnant"]                = "The Stagnant Oasis",
+  ["Stagnant Oasis"]          = "The Stagnant Oasis",
   ["Taurajo"]                 = "Camp Taurajo",
-  ["Mor'shan"]                = "Mor'shan Base Camp",
-  ["Morshan Base Camp"]       = "Mor'shan Base Camp",
-  ["Wailing Caverns"]         = "The Wailing Caverns",
-  ["Darsoks Rest"]            = "Darsok's Rest",
-  ["Darsok's"]                = "Darsok's Rest",
+  ["Mor'shan"]                = "The Mor'shan Rampart",
+  ["Mor'shan Base Camp"]      = "The Mor'shan Rampart",
+  ["Morshan Base Camp"]       = "The Mor'shan Rampart",
   ["Far Watch"]               = "Far Watch Post",
   ["Farwatch Post"]           = "Far Watch Post",
 
@@ -423,15 +442,15 @@ local ZONE_NAME_ALIASES = {
   ["Brolok Mound"]            = "Brol'ok Mound",
   ["Brol'ok"]                 = "Brol'ok Mound",
   ["Dryrock Mine"]            = "The Dryrock Mine",
-  ["The Dryrock Pit"]         = "Dryrock Valley (The Dryrock Pit)",
-  ["Dryrock Valley"]          = "Dryrock Valley (The Dryrock Pit)",
-  ["Dryrock Pit"]             = "Dryrock Valley (The Dryrock Pit)",
+  ["Dryrock Valley"]          = "The Dryrock Pit",
+  ["Dryrock Valley (The Dryrock Pit)"] = "The Dryrock Pit",
+  ["Dryrock Pit"]             = "The Dryrock Pit",
   ["Greymane Wall"]           = "The Greymane Wall",
   ["Greymane's"]              = "Greymane's Watch",
   ["Greymanes Watch"]         = "Greymane's Watch",
-  ["Hollow Web Cemetery"]     = "Hollow Web Cemetary",
-  ["Holloweb Cemetary"]       = "Hollow Web Cemetary",
-  ["Hollowweb Cemetery"]      = "Hollow Web Cemetary",
+  ["Hollow Web Cemetary"]     = "Hollow Web Cemetery",
+  ["Holloweb Cemetary"]       = "Hollow Web Cemetery",
+  ["Hollowweb Cemetery"]      = "Hollow Web Cemetery",
   ["Overgrown Acre"]          = "The Overgrown Acre",
 
   -- â”€â”€ Northwind â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -453,10 +472,8 @@ local ZONE_NAME_ALIASES = {
   ["Zul Hazu"]                = "Zul'Hazu",
 
   -- â”€â”€ Gillijim's Isle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  ["Broken Reef"]             = "The Broken Reef",
   ["Faelons Folly"]           = "Faelon's Folly",
   ["Faelon's"]                = "Faelon's Folly",
-  ["Gillijim's Canyon"]       = "Gillijim Canyon",
   ["Gillijim's Strand"]       = "Gillijim Strand",
   ["Maulogg Post"]            = "Maul'ogg Post",
   ["Maul'ogg"]                = "Maul'ogg Post",
@@ -464,6 +481,7 @@ local ZONE_NAME_ALIASES = {
   ["Zul'Razar Ruins"]         = "Ruins of Zul'Razar",
   ["Silver Coast"]            = "The Silver Coast",
   ["Silver Sandbar"]          = "The Silver Sandbar",
+  ["Southsea Sandbar"]        = "The Southsea Sandbar",
   ["Tangled Wood"]            = "The Tangled Wood",
   ["ZulRazar"]                = "Zul'Razar",
   ["Zul Razar"]               = "Zul'Razar",
@@ -487,17 +505,16 @@ local ZONE_NAME_ALIASES = {
   ["Bixxle's"]                = "Bixxle's Storehouse",
   ["Derelict Camp"]           = "The Derelict Camp",
   ["Jagged Isles"]            = "The Jagged Isles",
-  ["Shallow Strand"]          = "The Shallow Strand",
   ["Tazzos Shack"]            = "Tazzo's Shack",
   ["Tazzo's"]                 = "Tazzo's Shack",
-  ["Washing Shore"]           = "The Washing Shore",
 
   -- â”€â”€ Hyjal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   ["Emerald Gateway"]         = "The Emerald Gateway",
   ["Ruins of Telennas"]       = "The Ruins of Telennas",
   ["Telennas"]                = "The Ruins of Telennas",
-  ["ZulHathar"]               = "Zul'Hathar",
-  ["Zul Hathar"]              = "Zul'Hathar",
+  ["Zul'Hathar"]              = "Zul'Hatha",
+  ["ZulHathar"]               = "Zul'Hatha",
+  ["Zul Hathar"]              = "Zul'Hatha",
   ["Malakajin"]               = "Malaka'jin",
 
   -- â”€â”€ Tirisfal Uplands â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -518,15 +535,15 @@ local ZONE_NAME_ALIASES = {
   ["Talondeep Path"]          = "The Talondeep Path",
 
   -- â”€â”€ Arathi TW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  ["Zul'rasaz"]               = "Ruins of Zul'rasaz",
-  ["Ruins of Zulrasaz"]       = "Ruins of Zul'rasaz",
+  ["Ruins of Zul'rasaz"]      = "Ruins of Zul'Rasaz",
+  ["Zul'rasaz"]               = "Ruins of Zul'Rasaz",
+  ["Ruins of Zulrasaz"]       = "Ruins of Zul'Rasaz",
 
   -- â”€â”€ Badlands TW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   ["Redbrands Digsite"]       = "Redbrand's Digsite",
   ["Angor Fortress"]          = "Angor Digsite",
 
   -- â”€â”€ Ashenvale TW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  ["Demon Fall"]              = "Demon Fall Ridge",
   ["Warsong Lumber"]          = "Warsong Lumber Camp",
 }
 
@@ -727,25 +744,24 @@ local ACHIEVEMENTS = {
   explore_world_explorer={id="explore_world_explorer",name="World Explorer",desc="Complete all major exploration achievements across Azeroth.",category="Exploration",points=250,icon="Interface\\Icons\\INV_Misc_Spyglass_03",criteria_type="ach_meta",criteria_ids={"explore_kalimdor","explore_eastern_kingdoms","casual_explore_elwynn","casual_explore_barrens","explore_tw_balor","explore_tw_gilneas","explore_tw_northwind","explore_tw_lapidis","explore_tw_gillijim","explore_tw_scarlet_enclave","explore_tw_grim_reaches","explore_tw_telabim","explore_tw_hyjal","explore_tw_tirisfal_uplands"}},
 
   -- Turtle WoW: Unique zone-group exploration achievements
-  explore_tw_balor={id="explore_tw_balor",name="Explorer of Balor",desc="Discover all 6 locations in Balor.",category="Exploration",points=25,icon="Interface\\Icons\\INV_Misc_Platnumdisks",criteria_key="balor",criteria_type="zone_group"},
-  explore_tw_gillijim={id="explore_tw_gillijim",name="Explorer of Gillijim's Isle",desc="Discover all 16 locations on Gillijim's Isle.",category="Exploration",points=60,icon="Interface\\Icons\\INV_Misc_Gem_Pearl_01",criteria_key="gillijim",criteria_type="zone_group"},
-  explore_tw_gilneas={id="explore_tw_gilneas",name="Explorer of Gilneas",desc="Discover all 26 locations in Gilneas.",category="Exploration",points=75,icon="Interface\\Icons\\INV_Shield_06",criteria_key="gilneas",criteria_type="zone_group"},
+  explore_tw_balor={id="explore_tw_balor",name="Explorer of Balor",desc="Discover all 14 locations in Balor.",category="Exploration",points=25,icon="Interface\\Icons\\INV_Misc_Platnumdisks",criteria_key="balor",criteria_type="zone_group"},
+  explore_tw_gillijim={id="explore_tw_gillijim",name="Explorer of Gillijim's Isle",desc="Discover all 15 locations on Gillijim's Isle.",category="Exploration",points=60,icon="Interface\\Icons\\INV_Misc_Gem_Pearl_01",criteria_key="gillijim",criteria_type="zone_group"},
+  explore_tw_gilneas={id="explore_tw_gilneas",name="Explorer of Gilneas",desc="Discover all 22 locations in Gilneas.",category="Exploration",points=75,icon="Interface\\Icons\\INV_Shield_06",criteria_key="gilneas",criteria_type="zone_group"},
   explore_tw_hyjal={id="explore_tw_hyjal",name="Explorer of Hyjal",desc="Discover all 10 locations in Hyjal.",category="Exploration",points=40,icon="Interface\\Icons\\INV_Misc_Head_Dragon_Green",criteria_key="hyjal",criteria_type="zone_group"},
   explore_tw_lapidis={id="explore_tw_lapidis",name="Explorer of Lapidis Isle",desc="Discover all 10 locations on Lapidis Isle.",category="Exploration",points=40,icon="Interface\\Icons\\INV_Misc_Gem_Sapphire_02",criteria_key="lapidis",criteria_type="zone_group"},
-  explore_tw_northwind={id="explore_tw_northwind",name="Explorer of Northwind",desc="Discover all 7 locations in Northwind.",category="Exploration",points=30,icon="Interface\\Icons\\Spell_Frost_FrostShock",criteria_key="northwind",criteria_type="zone_group"},
-  explore_tw_telabim={id="explore_tw_telabim",name="Explorer of Tel'Abim",desc="Discover all 8 locations on Tel'Abim.",category="Exploration",points=35,icon="Interface\\Icons\\INV_Misc_Herb_BlackLotus",criteria_key="telabim",criteria_type="zone_group"},
+  explore_tw_northwind={id="explore_tw_northwind",name="Explorer of Northwind",desc="Discover all 17 locations in Northwind.",category="Exploration",points=30,icon="Interface\\Icons\\Spell_Frost_FrostShock",criteria_key="northwind",criteria_type="zone_group"},
+  explore_tw_telabim={id="explore_tw_telabim",name="Explorer of Tel'Abim",desc="Discover all 6 locations on Tel'Abim.",category="Exploration",points=35,icon="Interface\\Icons\\INV_Misc_Herb_BlackLotus",criteria_key="telabim",criteria_type="zone_group"},
   explore_tw_grim_reaches={id="explore_tw_grim_reaches",name="Explorer of the Grim Reaches",desc="Discover all 5 locations in the Grim Reaches.",category="Exploration",points=25,icon="Interface\\Icons\\Spell_Shadow_RaiseDead",criteria_key="grim_reaches",criteria_type="zone_group"},
   explore_tw_scarlet_enclave={id="explore_tw_scarlet_enclave",name="Explorer of the Scarlet Enclave",desc="Discover all 6 locations in the Scarlet Enclave.",category="Exploration",points=25,icon="Interface\\Icons\\Spell_Holy_WordFortitude",criteria_key="scarlet_enclave",criteria_type="zone_group"},
   explore_tw_tirisfal_uplands={id="explore_tw_tirisfal_uplands",name="Explorer of Tirisfal Uplands",desc="Discover all 14 locations in the Tirisfal Uplands.",category="Exploration",points=50,icon="Interface\\Icons\\Spell_Shadow_RagingScream",criteria_key="tirisfal_uplands",criteria_type="zone_group"},
   -- Turtle WoW: vanilla zone additions
-  explore_tw_arathi={id="explore_tw_arathi",name="Arathi Pathfinder",desc="Discover 5 new Turtle WoW locations in the Arathi Highlands.",category="Exploration",points=25,icon="Interface\\Icons\\INV_Misc_Map_02",criteria_key="arathi_tw",criteria_type="zone_group"},
-  explore_tw_ashenvale={id="explore_tw_ashenvale",name="Ashenvale Pathfinder",desc="Discover 5 new Turtle WoW locations in Ashenvale.",category="Exploration",points=25,icon="Interface\\Icons\\INV_Misc_Map_01",criteria_key="ashenvale_tw",criteria_type="zone_group"},
-  explore_tw_badlands={id="explore_tw_badlands",name="Badlands Pathfinder",desc="Discover 7 new Turtle WoW locations in the Badlands.",category="Exploration",points=30,icon="Interface\\Icons\\INV_Misc_Map_01",criteria_key="badlands_tw",criteria_type="zone_group"},
-  explore_tw_stonetalon={id="explore_tw_stonetalon",name="Stonetalon Pathfinder",desc="Discover 7 new Turtle WoW locations in Stonetalon Mountains.",category="Exploration",points=30,icon="Interface\\Icons\\INV_Misc_Map_01",criteria_key="stonetalon_tw",criteria_type="zone_group"},
+  explore_tw_arathi={id="explore_tw_arathi",name="Arathi Pathfinder",desc="Discover 3 new Turtle WoW locations in the Arathi Highlands.",category="Exploration",points=25,icon="Interface\\Icons\\INV_Misc_Map_02",criteria_key="arathi_tw",criteria_type="zone_group"},
+  explore_tw_ashenvale={id="explore_tw_ashenvale",name="Ashenvale Pathfinder",desc="Discover 2 new Turtle WoW locations in Ashenvale.",category="Exploration",points=25,icon="Interface\\Icons\\INV_Misc_Map_01",criteria_key="ashenvale_tw",criteria_type="zone_group"},
+  explore_tw_badlands={id="explore_tw_badlands",name="Badlands Pathfinder",desc="Discover 5 new Turtle WoW locations in the Badlands.",category="Exploration",points=30,icon="Interface\\Icons\\INV_Misc_Map_01",criteria_key="badlands_tw",criteria_type="zone_group"},
+  explore_tw_stonetalon={id="explore_tw_stonetalon",name="Stonetalon Pathfinder",desc="Discover 6 new Turtle WoW locations in Stonetalon Mountains.",category="Exploration",points=30,icon="Interface\\Icons\\INV_Misc_Map_01",criteria_key="stonetalon_tw",criteria_type="zone_group"},
   -- Exploration - Casual
   casual_explore_barrens={id="casual_explore_barrens",name="Barrens Explorer",desc="Discover all areas of The Barrens",category="Exploration",points=10,icon="Interface\\Icons\\INV_Misc_Food_Wheat_01",criteria_key="barrens",criteria_type="zone_group"},
   casual_explore_elwynn={id="casual_explore_elwynn",name="Elwynn Explorer",desc="Discover all areas of Elwynn Forest",category="Exploration",points=10,icon="Interface\\Icons\\INV_Misc_Flower_01",criteria_key="elwynn",criteria_type="zone_group"},
-
   -- PvP
   pvp_hk_2500={id="pvp_hk_2500",name="Battle-Hardened",desc="Earn 2500 honorable kills",category="PvP",points=75,icon="Interface\\Icons\\INV_Sword_48"},
   pvp_duel_25={id="pvp_duel_25",name="Dueling Champion",desc="Win 25 duels",category="PvP",points=35,icon="Interface\\Icons\\INV_Sword_39"},
@@ -2452,6 +2468,64 @@ function LeafVE_AchTest:BroadcastAchievements()
   self:BroadcastVersion()
 end
 
+-- Vanilla's addon-message cap is ~255 bytes; the existing achievement SYNC
+-- message above has no length guard at all (fine while achievement counts
+-- stay low, but a real latent bug -- out of scope to fix here). Collection
+-- names can run to dozens of entries per kind, so chunking is required from
+-- the start: names are packed into chunks that stay comfortably under the
+-- cap once the "COLSYNC:kind:i/n:" prefix is added back on send.
+local COLSYNC_CHUNK_LIMIT = 200
+
+local function BuildColSyncChunks(names)
+  local chunks = {}
+  local current = {}
+  local currentLen = 0
+  local n = table.getn(names)
+  for i = 1, n do
+    local nm = names[i]
+    local addLen = string.len(nm) + 1
+    if currentLen + addLen > COLSYNC_CHUNK_LIMIT and table.getn(current) > 0 then
+      table.insert(chunks, table.concat(current, ","))
+      current = {}
+      currentLen = 0
+    end
+    table.insert(current, nm)
+    currentLen = currentLen + addLen
+  end
+  if table.getn(current) > 0 then
+    table.insert(chunks, table.concat(current, ","))
+  end
+  return chunks
+end
+
+-- Broadcasts this player's own known mounts/companions/toys to the guild so
+-- everyone else can build a "who has this" picture. Unlike achievements,
+-- collection ownership is never revoked, so receivers just merge chunks in
+-- additively (see OnAddonMessage below) -- no reset-on-first-chunk needed.
+function LeafVE_AchTest:BroadcastMyCollections()
+  if not IsInGuild() then return end
+  EnsureDB()
+  if not LeafVE_AchTest_DB.collections then return end
+
+  local kindToDbKey = { mount = "mounts", companion = "companions", toy = "toys" }
+  for kind, dbKey in pairs(kindToDbKey) do
+    local saved = LeafVE_AchTest_DB.collections[dbKey]
+    if type(saved) == "table" then
+      local names = {}
+      for name in pairs(saved) do table.insert(names, name) end
+      local total = table.getn(names)
+      if total > 0 then
+        local chunks = BuildColSyncChunks(names)
+        local chunkTotal = table.getn(chunks)
+        for i = 1, chunkTotal do
+          SendAddonMessage(ADDON_COMM_PREFIX, "COLSYNC:"..kind..":"..i.."/"..chunkTotal..":"..chunks[i], "GUILD")
+        end
+        Debug("Broadcast "..total.." "..dbKey.." to guild in "..chunkTotal.." chunk(s)")
+      end
+    end
+  end
+end
+
 function LeafVE_AchTest:BroadcastVersion(targetPlayer)
   local version = GetAddonVersion()
   if not version or version == "" then return end
@@ -2546,6 +2620,50 @@ function LeafVE_AchTest:OnAddonMessage(prefix, message, channel, sender)
     if LeafVE and LeafVE.UI and LeafVE.UI.cardCurrentPlayer == sender then
       LeafVE.UI:ShowPlayerCard(sender)
     end
+    return
+  end
+
+  -- Parse a collection-ownership chunk: "COLSYNC:<kind>:<i>/<n>:<name1,name2,...>"
+  if string.sub(message, 1, 8) == "COLSYNC:" then
+    local body = string.sub(message, 9)
+    local c1 = string.find(body, ":")
+    if not c1 then return end
+    local kind = string.sub(body, 1, c1 - 1)
+    local rest = string.sub(body, c1 + 1)
+    local c2 = string.find(rest, ":")
+    if not c2 then return end
+    -- idxPart (rest before c2) is "<i>/<n>" -- purely informational, this
+    -- merge is additive so completeness/ordering across chunks don't matter.
+    local names = string.sub(rest, c2 + 1)
+
+    local dbKey = (kind == "mount" and "mounts") or (kind == "toy" and "toys") or (kind == "companion" and "companions") or nil
+    if not dbKey then return end
+
+    if type(LeafVE_AchTest_DB.guildCollections) ~= "table" then LeafVE_AchTest_DB.guildCollections = {} end
+    if type(LeafVE_AchTest_DB.guildCollections[dbKey]) ~= "table" then LeafVE_AchTest_DB.guildCollections[dbKey] = {} end
+    local bucket = LeafVE_AchTest_DB.guildCollections[dbKey]
+
+    local startPos = 1
+    local nlen = string.len(names)
+    while startPos <= nlen do
+      local commaPos = string.find(names, ",", startPos)
+      local nm
+      if commaPos then
+        nm = string.sub(names, startPos, commaPos - 1)
+        startPos = commaPos + 1
+      else
+        nm = string.sub(names, startPos)
+        startPos = nlen + 1
+      end
+      if nm ~= "" then
+        if type(bucket[nm]) ~= "table" then bucket[nm] = {} end
+        bucket[nm][sender] = true
+      end
+    end
+
+    if LeafVE_AchTest.Collections and LeafVE_AchTest.UI and LeafVE_AchTest.UI.currentView == "guildcollection" and LeafVE_AchTest.Collections.BuildGuildCollectionView then
+      LeafVE_AchTest.Collections:BuildGuildCollectionView()
+    end
   end
 end
 
@@ -2566,6 +2684,7 @@ broadcastFrame:SetScript("OnUpdate", function()
   if broadcastTimer >= 300 then -- 5 minutes
     broadcastTimer = 0
     LeafVE_AchTest:BroadcastAchievements()
+    LeafVE_AchTest:BroadcastMyCollections()
   end
 end)
 
@@ -2582,7 +2701,15 @@ loginBroadcast:SetScript("OnEvent", function()
     this:SetScript("OnUpdate", function()
       waitTimer = waitTimer + arg1
       if waitTimer >= 5 then
+        -- Force a fresh local scan first -- ScanSpellbook otherwise only
+        -- runs once a player opens the Mounts/Companions tab, which would
+        -- leave this login broadcast sending stale or empty data for
+        -- anyone who hasn't visited those tabs yet this session.
+        if LeafVE_AchTest.Collections and LeafVE_AchTest.Collections.ScanSpellbook then
+          LeafVE_AchTest.Collections:ScanSpellbook(false)
+        end
         LeafVE_AchTest:BroadcastAchievements()
+        LeafVE_AchTest:BroadcastMyCollections()
         this:SetScript("OnUpdate", nil)
         this:UnregisterEvent("PLAYER_ENTERING_WORLD")
       end
@@ -5537,12 +5664,12 @@ function LeafVE_AchTest.UI:BuildZoneMapFrame()
 
   local checkScroll = CreateFrame("ScrollFrame", nil, listBg)
   checkScroll:SetPoint("TOPLEFT", listBg, "TOPLEFT", 8, -8)
-  checkScroll:SetPoint("BOTTOMRIGHT", listBg, "BOTTOMRIGHT", -8, 8)
+  checkScroll:SetPoint("BOTTOMRIGHT", listBg, "BOTTOMRIGHT", -32, 8)
   checkScroll:EnableMouseWheel(true)
   f.checkScroll = checkScroll
 
   local checkChild = CreateFrame("Frame", nil, checkScroll)
-  checkChild:SetWidth(240)
+  checkChild:SetWidth(224)
   checkChild:SetHeight(1)
   checkScroll:SetScrollChild(checkChild)
   f.checkChild = checkChild
@@ -5555,6 +5682,106 @@ function LeafVE_AchTest.UI:BuildZoneMapFrame()
   local function GetChecklistScrollMax()
     return math.max(0, (checkChild:GetHeight() or 0) - (checkScroll:GetHeight() or 0))
   end
+  f.GetChecklistScrollMax = GetChecklistScrollMax
+
+  -- Visible scrollbar for the checklist -- same track/knob/up-down-button
+  -- styling as the main achievement window's scrollbar (self.scrollTrack /
+  -- self.scrollbar / self.scrollThumb in Build() above) instead of leaving
+  -- this list mouse-wheel-only with no visual sign it scrolls.
+  local checkTrack = CreateFrame("Frame", nil, listBg)
+  checkTrack:SetPoint("TOPRIGHT", listBg, "TOPRIGHT", -8, -30)
+  checkTrack:SetPoint("BOTTOMRIGHT", listBg, "BOTTOMRIGHT", -8, 30)
+  checkTrack:SetWidth(20)
+  checkTrack:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 8, edgeSize = 8,
+    insets = {left = 2, right = 2, top = 2, bottom = 2}
+  })
+  checkTrack:SetBackdropColor(0, 0, 0, 0.3)
+  checkTrack:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
+  f.checkTrack = checkTrack
+
+  local CHECK_THUMB_W, CHECK_THUMB_H = 20, 28
+  local checkScrollbar = CreateFrame("Slider", nil, checkTrack)
+  checkScrollbar:SetAllPoints(checkTrack)
+  checkScrollbar:SetWidth(20)
+  checkScrollbar:SetOrientation("VERTICAL")
+  checkScrollbar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+  local checkThumbTex = checkScrollbar:GetThumbTexture()
+  if checkThumbTex then
+    checkThumbTex:SetWidth(CHECK_THUMB_W)
+    checkThumbTex:SetHeight(CHECK_THUMB_H)
+    checkThumbTex:SetAlpha(0)
+  end
+  checkScrollbar:SetMinMaxValues(0, 1)
+  checkScrollbar:SetValue(0)
+  checkScrollbar:SetValueStep(20)
+  f.checkScrollbar = checkScrollbar
+
+  local checkThumb = checkTrack:CreateTexture(nil, "OVERLAY")
+  checkThumb:SetTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+  checkThumb:SetWidth(CHECK_THUMB_W)
+  checkThumb:SetHeight(CHECK_THUMB_H)
+  checkThumb:SetPoint("TOP", checkTrack, "TOP", 0, 0)
+  checkThumb:SetVertexColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 1)
+  f.checkThumb = checkThumb
+
+  local function UpdateCheckScrollThumb()
+    local minV, maxV = checkScrollbar:GetMinMaxValues()
+    minV = minV or 0
+    maxV = maxV or 0
+    local val = checkScrollbar:GetValue() or 0
+    local frac = 0
+    if maxV > minV then
+      frac = (val - minV) / (maxV - minV)
+      if frac < 0 then frac = 0 end
+      if frac > 1 then frac = 1 end
+    end
+    local travel = math.max(0, (checkTrack:GetHeight() or 0) - CHECK_THUMB_H)
+    checkThumb:ClearAllPoints()
+    checkThumb:SetPoint("TOP", checkTrack, "TOP", 0, -(frac * travel))
+  end
+  f.UpdateCheckScrollThumb = UpdateCheckScrollThumb
+
+  local checkScrollUp = CreateFrame("Button", nil, listBg, "UIPanelScrollUpButtonTemplate")
+  checkScrollUp:SetWidth(18)
+  checkScrollUp:SetHeight(18)
+  checkScrollUp:SetPoint("BOTTOM", checkTrack, "TOP", 0, 4)
+  f.checkScrollUp = checkScrollUp
+
+  local checkScrollDown = CreateFrame("Button", nil, listBg, "UIPanelScrollDownButtonTemplate")
+  checkScrollDown:SetWidth(18)
+  checkScrollDown:SetHeight(18)
+  checkScrollDown:SetPoint("TOP", checkTrack, "BOTTOM", 0, -4)
+  f.checkScrollDown = checkScrollDown
+
+  checkScrollbar:SetScript("OnValueChanged", function()
+    if checkScroll.UpdateScrollChildRect then checkScroll:UpdateScrollChildRect() end
+    local value = this:GetValue()
+    local maxScroll = GetChecklistScrollMax()
+    if value > maxScroll then value = maxScroll end
+    checkScroll:SetVerticalScroll(value)
+    UpdateCheckScrollThumb()
+  end)
+
+  checkScrollUp:SetScript("OnClick", function()
+    local current = checkScrollbar:GetValue() or 0
+    local newValue = current - 40
+    if newValue < 0 then newValue = 0 end
+    checkScrollbar:SetValue(newValue)
+    if PlaySound then PlaySound("UChatScrollButton") end
+  end)
+
+  checkScrollDown:SetScript("OnClick", function()
+    local current = checkScrollbar:GetValue() or 0
+    local _, maxValue = checkScrollbar:GetMinMaxValues()
+    local newValue = current + 40
+    if newValue > maxValue then newValue = maxValue end
+    checkScrollbar:SetValue(newValue)
+    if PlaySound then PlaySound("UChatScrollButton") end
+  end)
+
   checkScroll:SetScript("OnMouseWheel", function()
     if this.UpdateScrollChildRect then this:UpdateScrollChildRect() end
     local current = this:GetVerticalScroll()
@@ -5563,6 +5790,8 @@ function LeafVE_AchTest.UI:BuildZoneMapFrame()
     if newScroll < 0 then newScroll = 0 end
     if newScroll > maxScroll then newScroll = maxScroll end
     this:SetVerticalScroll(newScroll)
+    checkScrollbar:SetValue(newScroll)
+    UpdateCheckScrollThumb()
   end)
 
   self.zoneMapFrame = f
@@ -5695,6 +5924,12 @@ function LeafVE_AchTest.UI:PopulateZoneMapChecklist(ad)
     zm.checkScroll:UpdateScrollChildRect()
   end
   zm.checkScroll:SetVerticalScroll(0)
+  if zm.checkScrollbar then
+    local maxScroll = zm.GetChecklistScrollMax and zm.GetChecklistScrollMax() or 0
+    zm.checkScrollbar:SetMinMaxValues(0, maxScroll > 0 and maxScroll or 1)
+    zm.checkScrollbar:SetValue(0)
+  end
+  if zm.UpdateCheckScrollThumb then zm.UpdateCheckScrollThumb() end
 end
 
 function LeafVE_AchTest.UI:ShowZoneMapWindow(ad)
@@ -7145,19 +7380,24 @@ function LeafVE_AchTest.UI:Build()
   -- client across every value range, so its texture is driven invisible
   -- (it stays the real drag handle) and a hand-positioned knob graphic is
   -- drawn on top instead.
+  -- Right edge matches contentArt's own right inset (-26) instead of -18, and
+  -- the top is pulled down 6px further, so the up/down arrow buttons (which
+  -- sit outside the track itself) land fully inside contentArt's darkened
+  -- background instead of poking past its right and top edges.
   local scrollTrack = CreateFrame("Frame", nil, f)
-  scrollTrack:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, -164)
-  scrollTrack:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -18, 34)
+  scrollTrack:SetPoint("TOPRIGHT", f, "TOPRIGHT", -26, -170)
+  scrollTrack:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, 34)
   scrollTrack:SetWidth(20)
   scrollTrack:SetBackdrop({
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile = true, tileSize = 16, edgeSize = 8,
-    insets = {left = 3, right = 3, top = 3, bottom = 3}
+    tile = true, tileSize = 8, edgeSize = 8,
+    insets = {left = 2, right = 2, top = 2, bottom = 2}
   })
-  scrollTrack:SetBackdropColor(0.10, 0.10, 0.10, 0.90)
+  scrollTrack:SetBackdropColor(0, 0, 0, 0.3)
+  scrollTrack:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
 
-  local THUMB_W, THUMB_H = 20, 30
+  local THUMB_W, THUMB_H = 20, 28
   local scrollbar = CreateFrame("Slider", nil, scrollTrack)
   scrollbar:SetAllPoints(scrollTrack)
   scrollbar:SetWidth(20)
@@ -7179,6 +7419,9 @@ function LeafVE_AchTest.UI:Build()
   scrollThumb:SetWidth(THUMB_W)
   scrollThumb:SetHeight(THUMB_H)
   scrollThumb:SetPoint("TOP", scrollTrack, "TOP", 0, 0)
+  -- Gold tint on the knob to match the track's gold border above, instead
+  -- of leaving it Blizzard's plain default tan.
+  scrollThumb:SetVertexColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 1)
   self.scrollThumb = scrollThumb
 
   function LeafVE_AchTest.UI:UpdateScrollThumb()
@@ -7199,24 +7442,21 @@ function LeafVE_AchTest.UI:Build()
   end
   self.scrollTrack = scrollTrack
 
-  local scrollUp = CreateFrame("Button", nil, f)
-  scrollUp:SetWidth(22)
-  scrollUp:SetHeight(22)
+  -- Built with Blizzard's own UIPanelScroll{Up,Down}ButtonTemplate, same as
+  -- the Legends addon's scrollbars -- inherits the exact same textures and
+  -- highlight/pushed/disabled behavior instead of us reassigning them by
+  -- hand, and matches Legends' 18x18 square sizing (Blizzard's arrow art is
+  -- square; a non-square button stretches/distorts it).
+  local scrollUp = CreateFrame("Button", nil, f, "UIPanelScrollUpButtonTemplate")
+  scrollUp:SetWidth(18)
+  scrollUp:SetHeight(18)
   scrollUp:SetPoint("BOTTOM", scrollTrack, "TOP", 0, 4)
-  scrollUp:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
-  scrollUp:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down")
-  scrollUp:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight")
-  scrollUp:SetDisabledTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Disabled")
   self.scrollUp = scrollUp
 
-  local scrollDown = CreateFrame("Button", nil, f)
-  scrollDown:SetWidth(22)
-  scrollDown:SetHeight(22)
+  local scrollDown = CreateFrame("Button", nil, f, "UIPanelScrollDownButtonTemplate")
+  scrollDown:SetWidth(18)
+  scrollDown:SetHeight(18)
   scrollDown:SetPoint("TOP", scrollTrack, "BOTTOM", 0, -4)
-  scrollDown:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
-  scrollDown:SetPushedTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down")
-  scrollDown:SetHighlightTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Highlight")
-  scrollDown:SetDisabledTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Disabled")
   self.scrollDown = scrollDown
   scrollbar:SetScript("OnValueChanged", function()
     if LeafVE_AchTest.UI and LeafVE_AchTest.UI.scrollFrame then

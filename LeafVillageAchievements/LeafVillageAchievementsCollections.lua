@@ -104,6 +104,13 @@ local function EnsureDB()
   if type(LeafVE_AchTest_DB.collections.mounts) ~= "table" then LeafVE_AchTest_DB.collections.mounts = {} end
   if type(LeafVE_AchTest_DB.collections.companions) ~= "table" then LeafVE_AchTest_DB.collections.companions = {} end
   if type(LeafVE_AchTest_DB.collections.toys) ~= "table" then LeafVE_AchTest_DB.collections.toys = {} end
+
+  -- Guild-wide ownership data synced in via COLSYNC (see LeafVillageAchievements.lua).
+  -- Guarded here too since this file's EnsureDB may run before the other chunk's.
+  if type(LeafVE_AchTest_DB.guildCollections) ~= "table" then LeafVE_AchTest_DB.guildCollections = {} end
+  if type(LeafVE_AchTest_DB.guildCollections.mounts) ~= "table" then LeafVE_AchTest_DB.guildCollections.mounts = {} end
+  if type(LeafVE_AchTest_DB.guildCollections.companions) ~= "table" then LeafVE_AchTest_DB.guildCollections.companions = {} end
+  if type(LeafVE_AchTest_DB.guildCollections.toys) ~= "table" then LeafVE_AchTest_DB.guildCollections.toys = {} end
 end
 
 local function SafeCall(obj, method, a, b, c, d)
@@ -3016,6 +3023,7 @@ function ABC:UpdateTabVisuals()
   set(ui.achTab, current == "achievements")
   set(ui.titlesTab, current == "titles")
   set(ui.adminTab, current == "admin")
+  set(ui.guildCollectionTab, current == "guildcollection")
 end
 
 function ABC:InstallTabs()
@@ -3058,6 +3066,34 @@ function ABC:InstallTabs()
     end
   end
 
+  -- "Who has this mount" -- guild-wide ownership lookup, anchored after
+  -- Toys and pushing Admin over to make room, same re-anchor idiom used
+  -- for titlesTab above when Mounts gets inserted late.
+  if not ui.guildCollectionTab and ui.toyTab then
+    local guildCollectionTab = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    guildCollectionTab:SetPoint("LEFT", ui.toyTab, "RIGHT", 5, 0)
+    guildCollectionTab:SetWidth(60)
+    guildCollectionTab:SetHeight(ui.toyTab:GetHeight() or 26)
+    guildCollectionTab:SetText("Guild")
+    guildCollectionTab:SetScript("OnClick", function()
+      LeafVE_AchTest.UI.currentView = "guildcollection"
+      LeafVE_AchTest.UI:Refresh()
+    end)
+    ui.guildCollectionTab = guildCollectionTab
+    -- Every other tab (achTab/companionTab/mountsTab/toyTab/titlesTab/
+    -- adminTab) gets this in UI:Build() (LeafVillageAchievements.lua
+    -- ~7088-7093) right after creation -- this one is built later, from
+    -- here in InstallTabs, and was never skinned, which is why it was
+    -- still showing plain Blizzard grey/blue instead of the ashen texture
+    -- + gold text every other tab button has.
+    if LeafVE_AchTest.SkinAshenButton then LeafVE_AchTest.SkinAshenButton(guildCollectionTab) end
+
+    if ui.adminTab then
+      ui.adminTab:ClearAllPoints()
+      ui.adminTab:SetPoint("LEFT", guildCollectionTab, "RIGHT", 20, 0)
+    end
+  end
+
   ABC:UpdateTabVisuals()
   return true
 end
@@ -3084,6 +3120,7 @@ function ABC:InstallHooks()
     if self.abcStableMountSearch then self.abcStableMountSearch:Hide() end
     if self.abcStableCompanionSearch then self.abcStableCompanionSearch:Hide() end
     if self.abcStableToySearch then self.abcStableToySearch:Hide() end
+    if self.abcStableGuildSearch then self.abcStableGuildSearch:Hide() end
 
     -- The mounts/companions/toys branches below return before oldRefresh ever
     -- runs, so the base UI:Refresh's own summaryFrame/titleSummaryFrame
@@ -3106,11 +3143,16 @@ function ABC:InstallHooks()
       ABC:BuildCollectionView("toy")
       ABC:UpdateTabVisuals()
       return
+    elseif self.currentView == "guildcollection" then
+      ABC:BuildGuildCollectionView()
+      ABC:UpdateTabVisuals()
+      return
     end
 
     HideFrame(self.abcMountSidebarFrame)
     HideFrame(self.abcCompanionSidebarFrame)
     HideFrame(self.abcToySidebarFrame)
+    HideFrame(self.guildCollectionSidebarFrame)
     if self.scrollChild then ClearScrollChild(self) end
     local result = oldRefresh(self)
 
@@ -4592,11 +4634,12 @@ end
 local function ABC_StableSearchViewName(kind)
   if kind == "mount" then return "mounts" end
   if kind == "toy" then return "toys" end
+  if kind == "guild" then return "guildcollection" end
   return "companions"
 end
 
 local function ABC_StableGetSearchFrame(ui, kind)
-  local key = kind == "mount" and "abcStableMountSearch" or kind == "toy" and "abcStableToySearch" or "abcStableCompanionSearch"
+  local key = kind == "mount" and "abcStableMountSearch" or kind == "toy" and "abcStableToySearch" or kind == "guild" and "abcStableGuildSearch" or "abcStableCompanionSearch"
   if ui[key] then return ui[key] end
 
   local holder = CreateFrame("Frame", nil, ui.frame)
@@ -4624,7 +4667,7 @@ local function ABC_StableGetSearchFrame(ui, kind)
 
   local placeholder = holder:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   placeholder:SetPoint("LEFT", box, "LEFT", 12, 0)
-  placeholder:SetText(kind == "mount" and "name, source, item..." or kind == "toy" and "name or source..." or "name or source...")
+  placeholder:SetText(kind == "mount" and "name, source, item..." or kind == "toy" and "name or source..." or kind == "guild" and "item name or guildie..." or "name or source...")
   placeholder:SetTextColor(0.40, 0.40, 0.40)
   holder.placeholder = placeholder
 
@@ -4679,7 +4722,11 @@ local function ABC_StableGetSearchFrame(ui, kind)
       this._abcPending = false
       this._abcElapsed = 0
       if LeafVE_AchTest and LeafVE_AchTest.UI and LeafVE_AchTest.UI.currentView == ABC_StableSearchViewName(kind) then
-        ABC:BuildCollectionView(kind)
+        if kind == "guild" then
+          ABC:BuildGuildCollectionView()
+        else
+          ABC:BuildCollectionView(kind)
+        end
       end
     end
   end)
@@ -4692,9 +4739,21 @@ local function ABC_StableShowSearch(ui, kind)
   local mountSearch = ABC_StableGetSearchFrame(ui, "mount")
   local companionSearch = ABC_StableGetSearchFrame(ui, "companion")
   local toySearch = ABC_StableGetSearchFrame(ui, "toy")
-  mountSearch:Hide(); companionSearch:Hide(); toySearch:Hide()
+  local guildSearch = ABC_StableGetSearchFrame(ui, "guild")
+  -- Hide only the ones that AREN'T the target kind -- unconditionally
+  -- hiding (then re-showing) the target too used to steal keyboard focus
+  -- from its own EditBox on every refresh this runs inside of, including
+  -- the debounced refresh each search box's own OnTextChanged triggers --
+  -- so typing a 2nd character into guild search (or any of these) fell
+  -- through to game keybinds instead of the box, since WoW clears an
+  -- EditBox's focus whenever its frame gets hidden.
+  if kind ~= "mount" then mountSearch:Hide() end
+  if kind ~= "companion" then companionSearch:Hide() end
+  if kind ~= "toy" then toySearch:Hide() end
+  if kind ~= "guild" then guildSearch:Hide() end
   if kind == "mount" then mountSearch:Show()
   elseif kind == "toy" then toySearch:Show()
+  elseif kind == "guild" then guildSearch:Show()
   else companionSearch:Show() end
 end
 
@@ -4702,6 +4761,136 @@ local function ABC_StableHideSearch(ui)
   if ui.abcStableMountSearch then ui.abcStableMountSearch:Hide() end
   if ui.abcStableCompanionSearch then ui.abcStableCompanionSearch:Hide() end
   if ui.abcStableToySearch then ui.abcStableToySearch:Hide() end
+  if ui.abcStableGuildSearch then ui.abcStableGuildSearch:Hide() end
+end
+
+-- "Who has this mount" -- guild-wide ownership counts per mount/companion/
+-- toy, sorted most-owned first, with items nobody in the guild owns simply
+-- never appearing (the source table only ever gains a key once someone's
+-- COLSYNC broadcast names it -- see LeafVillageAchievements.lua:OnAddonMessage).
+--
+-- Lives down here (not next to BuildCollectionView above) because it needs
+-- ABC_StableSearchText/ABC_StableGetSearchFrame/ABC_StableEnsureDB as
+-- upvalues -- those are locals declared earlier in this same chunk, and a
+-- Lua 5.0 local isn't visible to code that appears before its declaration
+-- (the earlier draft of this view hit exactly this with ABC_StableEnsureDB;
+-- moving the whole view down here avoids the class of bug outright instead
+-- of routing around it).
+ABC.guildCollectionKind = ABC.guildCollectionKind or "mount"
+ABC.guildCollectionExpanded = nil
+
+local ABC_GUILD_COLLECTION_KINDS = {
+  {value="leaderboard", label="Leaderboard"},
+  {value="mount", label="Mounts"},
+  {value="companion", label="Companions"},
+  {value="toy", label="Toys"},
+}
+
+-- Same visual template as EnsureMountSidebar/EnsureCompanionSidebar above
+-- (122px bordered column at the window's left margin, row buttons with a
+-- listbox-highlight hover texture and a gold/orange label) -- kind
+-- switching for this tab lives here instead of top-of-content sub-tabs, to
+-- match how every other collection view puts its left-hand switcher in the
+-- same sidebar slot.
+function ABC:EnsureGuildCollectionSidebar(ui)
+  if not ui or not ui.frame then return nil end
+  if ui.guildCollectionSidebarFrame then return ui.guildCollectionSidebarFrame end
+
+  local frame = CreateFrame("Frame", nil, ui.frame)
+  frame:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", 18, -98)
+  frame:SetPoint("BOTTOMLEFT", ui.frame, "BOTTOMLEFT", 18, 10)
+  frame:SetWidth(122)
+  frame:SetBackdrop({
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 8,
+    insets = { left = 2, right = 2, top = 2, bottom = 2 },
+  })
+  frame:SetBackdropColor(0, 0, 0, 0)
+  frame:SetBackdropBorderColor(0.55, 0.42, 0.18, 1)
+
+  -- Same ashen wood-panel texture the achievements/titles sidebars use
+  -- (TEX.ashenSidebar in LeafVillageAchievements.lua), not the plain
+  -- Blizzard dialog background the other ABC sidebars fall back to -- this
+  -- one was still on that fallback, which is why it read as "missing its
+  -- background" next to every other tab's themed sidebar.
+  local bg = frame:CreateTexture(nil, "BACKGROUND")
+  bg:SetPoint("TOPLEFT", frame, "TOPLEFT", 2, -2)
+  bg:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 2)
+  if LeafVE_AchTest.TEX and LeafVE_AchTest.TEX.ashenSidebar then
+    bg:SetTexture(LeafVE_AchTest.TEX.ashenSidebar)
+    bg:SetTexCoord(0, 1, 0, 1)
+  else
+    bg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Background-Dark")
+  end
+  bg:SetVertexColor(1, 1, 1, 1)
+  frame.bg = bg
+  frame.buttons = {}
+
+  for i = 1, table.getn(ABC_GUILD_COLLECTION_KINDS) do
+    local def = ABC_GUILD_COLLECTION_KINDS[i]
+    local btn = CreateFrame("Button", nil, frame)
+    btn:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -(i - 1) * 27 - 4)
+    btn:SetWidth(110)
+    btn:SetHeight(24)
+    btn.kindValue = def.value
+
+    local hi = btn:CreateTexture(nil, "BACKGROUND")
+    hi:SetAllPoints(btn)
+    hi:SetTexture("Interface\\Buttons\\UI-Listbox-Highlight")
+    hi:SetVertexColor(0.72, 0.28, 0.08, 0.65)
+    hi:Hide()
+    btn.highlight = hi
+
+    local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("LEFT", btn, "LEFT", 8, 0)
+    label:SetWidth(100)
+    label:SetJustifyH("LEFT")
+    label:SetText(def.label)
+    label:SetTextColor(0.92, 0.78, 0.26)
+    btn.label = label
+
+    btn:SetScript("OnClick", function()
+      ABC.guildCollectionKind = this.kindValue
+      -- Same as EnsureMountSidebar's filter buttons resetting ABC.pages.mount
+      -- on filter change -- switching sub-category always lands on page 1.
+      ABC.pages.guild = 1
+      PlaySound("igMainMenuOptionCheckBoxOn")
+      ABC:BuildGuildCollectionView()
+    end)
+    btn:SetScript("OnEnter", function()
+      if this.highlight then this.highlight:Show() end
+      if this.label then this.label:SetTextColor(1, 1, 1) end
+    end)
+    btn:SetScript("OnLeave", function()
+      local selected = ABC.guildCollectionKind or "mount"
+      if this.kindValue ~= selected then
+        if this.highlight then this.highlight:Hide() end
+        if this.label then this.label:SetTextColor(0.92, 0.78, 0.26) end
+      end
+    end)
+    table.insert(frame.buttons, btn)
+  end
+
+  ui.guildCollectionSidebarFrame = frame
+  return frame
+end
+
+-- Same active/inactive treatment as RefreshMountSidebar: a persistent
+-- highlight + orange label on the selected row, gold on the rest.
+function ABC:RefreshGuildCollectionSidebar(ui)
+  local frame = self:EnsureGuildCollectionSidebar(ui)
+  if not frame then return end
+  local selected = ABC.guildCollectionKind or "mount"
+  for i = 1, table.getn(frame.buttons or {}) do
+    local btn = frame.buttons[i]
+    if btn.kindValue == selected then
+      if btn.highlight then btn.highlight:Show() end
+      if btn.label then btn.label:SetTextColor(1.0, 0.45, 0.18) end
+    else
+      if btn.highlight then btn.highlight:Hide() end
+      if btn.label then btn.label:SetTextColor(0.92, 0.78, 0.26) end
+    end
+  end
 end
 
 local function ABC_StableMatch(row, kind)
@@ -4883,6 +5072,33 @@ local function ABC_BuildCardSkeleton(parent, index)
   -- whatever it's currently populated with.
   card:SetScript("OnEnter", function()
     local d = this.data
+    -- Guild-aggregate cards have no personal collected/missing state (every
+    -- card here is "collected" by construction) -- swap the tooltip body for
+    -- the owner roster instead, everything else about the hover (border tint,
+    -- anchor) stays identical to the collected-card treatment below.
+    if this.isGuildCard then
+      ABC_StableSetBorder(this, 1.0, 0.58, 0.14, 1)
+      GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+      GameTooltip:SetText(tostring(d and d.name or "Unknown"), 1, 0.82, 0.36)
+      local owners = this.guildOwners or {}
+      local ownerCount = table.getn(owners)
+      GameTooltip:AddLine(ownerCount == 1 and "Owned by 1 guildie" or ("Owned by "..ownerCount.." guildies"), 0.45, 1.0, 0.42)
+      if ownerCount > 0 then
+        GameTooltip:AddLine(" ")
+        -- Capped so a large guild's full roster on a common mount can't
+        -- balloon the tooltip into an unreadable wall of names.
+        local shown = owners
+        local suffix = ""
+        if ownerCount > 30 then
+          shown = {}
+          for i = 1, 30 do shown[i] = owners[i] end
+          suffix = ", and "..(ownerCount - 30).." more"
+        end
+        GameTooltip:AddLine(table.concat(shown, ", ")..suffix, 0.84, 0.84, 0.82, true)
+      end
+      GameTooltip:Show()
+      return
+    end
     local coll = d and d.collected == true
     ABC_StableSetBorder(this, coll and 1.0 or 0.58, coll and 0.58 or 0.48, coll and 0.14 or 0.36, 1)
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
@@ -4901,6 +5117,11 @@ local function ABC_BuildCardSkeleton(parent, index)
     GameTooltip:Show()
   end)
   card:SetScript("OnLeave", function()
+    if this.isGuildCard then
+      ABC_StableSetBorder(this, 0.72, 0.43, 0.12, 1)
+      GameTooltip:Hide()
+      return
+    end
     local d = this.data
     local coll = d and d.collected == true
     ABC_StableSetBorder(this, coll and 0.72 or 0.31, coll and 0.43 or 0.27, coll and 0.12 or 0.22, 1)
@@ -5010,9 +5231,459 @@ end
 
 local function ABC_StableCard(parent, index, data, kind)
   local card = ABC.cardPool[index] or ABC_BuildCardSkeleton(parent, index)
+  -- Cards are pooled by index and shared across every kind/view that uses
+  -- this card system, including the guild-aggregate grid below -- clear its
+  -- guild flag here so a card last shown on the Guild tab doesn't keep
+  -- reading as one after being repopulated for a personal Mounts/Companions/
+  -- Toys view.
+  card.isGuildCard = false
   ABC_PopulateCard(card, parent, index, data, kind)
   table.insert(ABC.activeCards, card)
   return card
+end
+
+-- Guild-aggregate variant of ABC_StableCard: same pooled skeleton and the
+-- exact same ABC_PopulateCard fill logic (data.collected is always forced
+-- true by BuildGuildCollectionView, so every card renders in the warm/gold
+-- "collected" treatment -- background, border, accent, portrait, source
+-- line, points/category/level detail all come out identical to a personal
+-- collected card), then a few fields are overridden afterward for the parts
+-- that mean something different for aggregate ownership data rather than a
+-- personal collected/missing state.
+local function ABC_StableGuildCard(parent, index, data, kind)
+  local card = ABC.cardPool[index] or ABC_BuildCardSkeleton(parent, index)
+  ABC_PopulateCard(card, parent, index, data, kind)
+
+  local ownerCount = tonumber(data and data.ownerCount) or 0
+  card.status:SetText(ownerCount == 1 and "1 GUILDIE" or (tostring(ownerCount).." GUILDIES"))
+  card.status:SetTextColor(0.42, 0.92, 0.34)
+  -- No personal earned-date applies to an aggregate ownership card.
+  card.collectedDate:Hide()
+  -- Summoning someone else's mount/companion isn't a thing.
+  card.summonBtn:Hide()
+
+  card.isGuildCard = true
+  card.guildOwners = data and data.owners or {}
+
+  table.insert(ABC.activeCards, card)
+  return card
+end
+
+-- Card-grid rendering, byte-for-byte the same layout system BuildCollectionView
+-- uses for the personal Mounts/Companions/Toys tabs (see ABC_BuildCardSkeleton/
+-- ABC_PopulateCard/ABC_StableCard below) instead of a bespoke flat list --
+-- that mismatch (rows vs. cards) was the actual reason this tab kept reading
+-- as "different style" through two earlier passes that only fixed the
+-- sidebar/search bar. ABC_StableGuildCard (defined right after ABC_StableCard,
+-- once the card-pool helpers exist) does the same get-or-build-skeleton +
+-- populate + pool-track sequence, then overrides the handful of fields that
+-- mean something different for aggregate guild data (owner count instead of
+-- collected/missing, no per-item date, no Summon button).
+function ABC:BuildGuildCollectionView()
+  if not LeafVE_AchTest or not LeafVE_AchTest.UI then return end
+  local ui = LeafVE_AchTest.UI
+  if not ui.frame or not ui.scrollChild then return end
+
+  ABC.buildingCollectionView = true
+
+  ui.currentAchList = nil
+  ui.currentAchOwner = nil
+  if ui.achievementFrames then
+    for i = 1, table.getn(ui.achievementFrames) do
+      if ui.achievementFrames[i] then ui.achievementFrames[i]:Hide() end
+    end
+  end
+  if ui.summaryFrame then ui.summaryFrame:Hide() end
+  if ui.titleSummaryFrame then ui.titleSummaryFrame:Hide() end
+
+  ABC_StableEnsureDB()
+  if ABC.modelLabFrame then ABC.modelLabFrame:Hide() end
+  ReleaseActiveModels()
+  HideOriginalFilters(ui)
+  ClearScrollChild(ui)
+  ShowFrame(ui.scrollFrame)
+  ShowFrame(ui.contentArt)
+  -- Same reasoning as BuildCollectionView: card pages are capped to fit the
+  -- viewport, so there's nothing to scroll here either.
+  HideFrame(ui.scrollbar)
+  HideFrame(ui.scrollTrack)
+  HideFrame(ui.scrollThumb)
+  HideFrame(ui.scrollUp)
+  HideFrame(ui.scrollDown)
+  HideFrame(ui.sidebarFrame)
+  HideFrame(ui.titleSidebarFrame)
+  HideFrame(ui.adminFrame)
+  HideFrame(ui.companionSidebarFrame)
+  HideFrame(ui.mountSidebarFrame)
+  HideFrame(ui.abcMountSidebarFrame)
+  HideFrame(ui.abcCompanionSidebarFrame)
+  HideFrame(ui.abcToySidebarFrame)
+
+  ShowFrame(self:EnsureGuildCollectionSidebar(ui))
+  self:RefreshGuildCollectionSidebar(ui)
+
+  -- Same search-bar dispatcher BuildCollectionView uses -- hides the mount/
+  -- companion/toy search bars and shows this tab's own.
+  ABC_StableShowSearch(ui, "guild")
+
+  local kind = ABC.guildCollectionKind or "mount"
+  if kind == "leaderboard" then
+    self:BuildGuildLeaderboardView(ui)
+    return
+  end
+  local dbKey = (kind == "mount" and "mounts") or (kind == "toy" and "toys") or "companions"
+
+  -- Full master-list data (category/source/points/requiredLevel/description)
+  -- for every item of this kind, keyed by name, so guild rows can carry the
+  -- same rich fields personal cards show instead of just a name and count.
+  local fullList = BuildSortedList(kind)
+  local byName = {}
+  for _, row in ipairs(fullList) do byName[row.name] = row end
+
+  -- Only items with at least one known owner ever appear -- the bucket
+  -- itself never gains a key for anything nobody's synced ownership of.
+  local bucket = (LeafVE_AchTest_DB.guildCollections and LeafVE_AchTest_DB.guildCollections[dbKey]) or {}
+  local query = Lower(ABC_StableSearchText("guild") or "")
+  local rows = {}
+  for name, owners in pairs(bucket) do
+    -- Matches either the item name or any owner's name, so typing a
+    -- guildie in this same search box surfaces everything they own instead
+    -- of only ever filtering by mount/companion/toy name.
+    local matches = query == ""
+    if not matches then
+      matches = string.find(Lower(name), query, 1, true) and true or false
+    end
+    if not matches then
+      for playerName in pairs(owners) do
+        if string.find(Lower(playerName), query, 1, true) then
+          matches = true
+          break
+        end
+      end
+    end
+    if matches then
+      local ownerNames = {}
+      for playerName in pairs(owners) do table.insert(ownerNames, playerName) end
+      if table.getn(ownerNames) > 0 then
+        table.sort(ownerNames)
+        local base = byName[name]
+        local data = {}
+        if base then
+          for k, v in pairs(base) do data[k] = v end
+        end
+        data.name = name
+        -- Always the "collected" (gold/warm) card variant -- everything in
+        -- this list has at least one owner by construction, there's no
+        -- personal locked/missing state to represent here.
+        data.collected = true
+        data.owners = ownerNames
+        data.ownerCount = table.getn(ownerNames)
+        table.insert(rows, data)
+      end
+    end
+  end
+  table.sort(rows, function(a, b)
+    if a.ownerCount ~= b.ownerCount then return a.ownerCount > b.ownerCount end
+    return Lower(a.name) < Lower(b.name)
+  end)
+
+  local header = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  header:SetPoint("TOPLEFT", ui.scrollChild, "TOPLEFT", 10, -4)
+  header:SetText(kind == "mount" and "Guild Mount Collection" or kind == "toy" and "Guild Toy Collection" or "Guild Companion Collection")
+  header:SetTextColor(1.0, 0.82, 0.36)
+
+  local totalRows = table.getn(rows)
+  local summary = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  summary:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -3)
+  summary:SetText(tostring(totalRows).." "..(kind == "mount" and "mounts" or kind == "toy" and "toys" or "companions").." owned across the guild")
+  summary:SetTextColor(0.78, 0.78, 0.78)
+
+  -- No progress bar here -- BuildCollectionView's bar tracks personal percent
+  -- collected, and there's no equivalent single completion number for an
+  -- aggregate guild list, so the card grid starts right under the summary
+  -- line instead of leaving the bar's vertical slot empty.
+  local shim = ui.abcCardShim
+  if not shim then
+    shim = CreateFrame("Frame", nil, ui.scrollChild)
+    ui.abcCardShim = shim
+  end
+  shim:SetParent(ui.scrollChild)
+  shim:ClearAllPoints()
+  shim:SetPoint("TOPLEFT", summary, "BOTTOMLEFT", 0, -14)
+  shim:SetWidth(690); shim:SetHeight(1)
+  shim:Show()
+
+  local firstCardY = 60
+  if shim.GetTop and ui.scrollChild.GetTop then
+    local shimTop, childTop = shim:GetTop(), ui.scrollChild:GetTop()
+    if shimTop and childTop then firstCardY = childTop - shimTop end
+  end
+
+  if totalRows == 0 then
+    -- Same reasoning as BuildCollectionView's own empty branch: no card gets
+    -- populated below, so without this, whatever the previous tab (a
+    -- personal Mounts/Companions/Toys view, or a different guild sub-kind)
+    -- left shown in the pool stayed visible right through this empty state
+    -- instead of the grid actually clearing.
+    for i = 1, table.getn(ABC.cardPool) do
+      if ABC.cardPool[i] then ABC.cardPool[i]:Hide() end
+    end
+    local bucketHasAny = false
+    for _ in pairs(bucket) do bucketHasAny = true; break end
+    local empty = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    empty:SetPoint("TOPLEFT", shim, "TOPLEFT", 18, -22)
+    empty:SetWidth(640); empty:SetJustifyH("LEFT")
+    if query ~= "" and bucketHasAny then
+      empty:SetText("No results found. Try a different search.")
+    else
+      empty:SetText("No guild data yet -- it fills in as guildies log in with an updated addon.")
+    end
+    empty:SetTextColor(1.0, 0.82, 0.36)
+    SetScrollHeight(ui, 420)
+    ABC.buildingCollectionView = false
+    return
+  end
+
+  local perPage = self.cardsPerPage or 6
+  local totalPages = math.ceil(math.max(totalRows, 1) / perPage)
+  if totalPages < 1 then totalPages = 1 end
+  -- Single shared page counter for all three guild sub-kinds (not per-kind)
+  -- to match the search box's own ABC.pages["guild"] = 1 reset on text
+  -- change/clear (ABC_StableGetSearchFrame above) -- keeping one key means
+  -- that reset actually reaches the counter this view reads, instead of a
+  -- per-kind key the search box doesn't know to touch.
+  local page = tonumber(self.pages.guild) or 1
+  if page < 1 then page = 1 end
+  if page > totalPages then page = totalPages end
+  self.pages.guild = page
+
+  local firstIndex = (page - 1) * perPage + 1
+  local lastIndex = math.min(firstIndex + perPage - 1, totalRows)
+  local localIndex = 1
+  for i = firstIndex, lastIndex do
+    local rowData = rows[i]
+    local ok, err = pcall(ABC_StableGuildCard, shim, localIndex, rowData, kind)
+    if not ok then
+      Print("Guild card error for "..tostring(rowData and rowData.name or "Unknown")..": "..tostring(err))
+      CreateCardFailure(shim, localIndex, rowData, err)
+    end
+    localIndex = localIndex + 1
+  end
+  for i = localIndex, table.getn(ABC.cardPool) do
+    if ABC.cardPool[i] then ABC.cardPool[i]:Hide() end
+  end
+
+  local maxRows = math.ceil(perPage / 3)
+  local pagerY = firstCardY + maxRows * 187 + 8
+
+  local pageText = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  pageText:SetWidth(70); pageText:SetJustifyH("CENTER")
+  pageText:SetPoint("TOP", ui.scrollChild, "TOPLEFT", 345, -pagerY)
+  pageText:SetText("Page "..tostring(page).." / "..tostring(totalPages))
+  pageText:SetTextColor(0.85, 0.78, 0.62)
+
+  local prevBtn = CreateFrame("Button", nil, ui.scrollChild)
+  prevBtn:SetWidth(24); prevBtn:SetHeight(24)
+  prevBtn:SetPoint("RIGHT", pageText, "LEFT", -8, 0)
+  prevBtn:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
+  prevBtn:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Down")
+  prevBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+  prevBtn:SetScript("OnClick", function()
+    ABC.pages.guild = math.max((tonumber(ABC.pages.guild) or 1) - 1, 1)
+    ABC:BuildGuildCollectionView()
+  end)
+  if page <= 1 then
+    prevBtn:Disable()
+    prevBtn:SetAlpha(0.35)
+  end
+
+  local nextBtn = CreateFrame("Button", nil, ui.scrollChild)
+  nextBtn:SetWidth(24); nextBtn:SetHeight(24)
+  nextBtn:SetPoint("LEFT", pageText, "RIGHT", 8, 0)
+  nextBtn:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
+  nextBtn:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down")
+  nextBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+  nextBtn:SetScript("OnClick", function()
+    ABC.pages.guild = math.min((tonumber(ABC.pages.guild) or 1) + 1, totalPages)
+    ABC:BuildGuildCollectionView()
+  end)
+  if page >= totalPages then
+    nextBtn:Disable()
+    nextBtn:SetAlpha(0.35)
+  end
+
+  SetScrollHeight(ui, pagerY + 24 + 10)
+  ABC.buildingCollectionView = false
+end
+
+-- Guild-wide "top collectors" leaderboard: ranks players by how many
+-- distinct mounts/companions/toys they own, one top-10 column per kind,
+-- built by inverting the same guildCollections[dbKey][itemName][playerName]
+-- = true tables the item-grid view above reads. Reuses the "guild" search
+-- box as a player-name filter instead of an item-name one.
+-- Per-rank tint used by ABC_BuildLeaderboardRow's badge + row border: gold/
+-- silver/bronze for the top 3, a neutral dark tier for everyone else --
+-- same warm-vs-neutral convention the item cards already use for collected
+-- vs. missing state, just applied to rank instead.
+local ABC_LEADERBOARD_RANK_BG = {
+  [1] = {0.40, 0.31, 0.05, 1},
+  [2] = {0.28, 0.28, 0.30, 1},
+  [3] = {0.30, 0.17, 0.05, 1},
+}
+local ABC_LEADERBOARD_RANK_BORDER = {
+  [1] = {1.0, 0.82, 0.20},
+  [2] = {0.78, 0.78, 0.82},
+  [3] = {0.80, 0.50, 0.20},
+}
+local ABC_LEADERBOARD_RANK_TEXT = {
+  [1] = {1.0, 0.86, 0.30},
+  [2] = {0.88, 0.88, 0.90},
+  [3] = {0.88, 0.60, 0.32},
+}
+local ABC_LEADERBOARD_DEFAULT_BORDER = {0.32, 0.32, 0.35}
+local ABC_LEADERBOARD_DEFAULT_TEXT = {0.75, 0.75, 0.78}
+
+-- One player's row within a leaderboard column: a bordered card (matching
+-- the collection cards' background/border convention) with a rank badge,
+-- the player's name, and their count, instead of a single flat line of
+-- colored text.
+local function ABC_BuildLeaderboardRow(parent, x, y, width, height, rank, name, count)
+  local row = CreateFrame("Frame", nil, parent)
+  row:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+  row:SetWidth(width)
+  row:SetHeight(height)
+
+  local borderColor = ABC_LEADERBOARD_RANK_BORDER[rank] or ABC_LEADERBOARD_DEFAULT_BORDER
+  local isTop3 = rank <= 3
+  ABC_StableBackground(row, 0.07, 0.07, 0.08, 0.92)
+  ABC_StableCreateBorder(row, 1, borderColor[1], borderColor[2], borderColor[3], isTop3 and 0.95 or 0.4)
+
+  local badgeSize = height - 4
+  local badge = CreateFrame("Frame", nil, row)
+  badge:SetPoint("LEFT", row, "LEFT", 2, 0)
+  badge:SetWidth(badgeSize)
+  badge:SetHeight(badgeSize)
+  local badgeBg = ABC_LEADERBOARD_RANK_BG[rank] or {0.10, 0.10, 0.11, 1}
+  ABC_StableBackground(badge, badgeBg[1], badgeBg[2], badgeBg[3], badgeBg[4] or 1)
+  ABC_StableCreateBorder(badge, 1, borderColor[1], borderColor[2], borderColor[3], 0.95)
+
+  local rankText = badge:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  rankText:SetPoint("CENTER", badge, "CENTER", 0, 0)
+  rankText:SetText(tostring(rank))
+  local rankColor = ABC_LEADERBOARD_RANK_TEXT[rank] or ABC_LEADERBOARD_DEFAULT_TEXT
+  rankText:SetTextColor(rankColor[1], rankColor[2], rankColor[3])
+
+  local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  nameText:SetPoint("LEFT", badge, "RIGHT", 6, 0)
+  nameText:SetPoint("RIGHT", row, "RIGHT", -30, 0)
+  nameText:SetJustifyH("LEFT")
+  nameText:SetText(tostring(name))
+  nameText:SetTextColor(0.92, 0.90, 0.85)
+
+  local countText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  countText:SetPoint("RIGHT", row, "RIGHT", -5, 0)
+  countText:SetText(tostring(count))
+  countText:SetTextColor(0.50, 0.82, 1.0)
+
+  return row
+end
+
+function ABC:BuildGuildLeaderboardView(ui)
+  -- BuildGuildCollectionView hides the scroll chrome before dispatching
+  -- here, on the assumption every guild view's content is capped to fit
+  -- the viewport (true for the card grids, which page instead of
+  -- scrolling). 20 rows per column no longer reliably fits, so this view
+  -- re-enables it -- SetScrollHeight below (shared with every other
+  -- scrollable list in this addon) sets the actual min/max once the real
+  -- content height is known.
+  ShowFrame(ui.scrollbar)
+  ShowFrame(ui.scrollTrack)
+  ShowFrame(ui.scrollThumb)
+  ShowFrame(ui.scrollUp)
+  ShowFrame(ui.scrollDown)
+
+  local header = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  header:SetPoint("TOPLEFT", ui.scrollChild, "TOPLEFT", 10, -4)
+  header:SetText("Guild Collector Leaderboard")
+  header:SetTextColor(1.0, 0.82, 0.36)
+
+  local summary = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  summary:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -3)
+  summary:SetText("Top 20 collectors by distinct mounts, companions, and toys owned")
+  summary:SetTextColor(0.78, 0.78, 0.78)
+
+  local query = Lower(ABC_StableSearchText("guild") or "")
+
+  local columns = {
+    {dbKey = "mounts", title = "Top Mount Collectors"},
+    {dbKey = "companions", title = "Top Companion Collectors"},
+    {dbKey = "toys", title = "Top Toy Collectors"},
+  }
+
+  local columnWidth = 220
+  local rowWidth = columnWidth - 16
+  local startX = 10
+  local startY = 62
+  local rowHeight = 24
+  local rowGap = 3
+
+  for colIndex = 1, table.getn(columns) do
+    local col = columns[colIndex]
+    local bucket = (LeafVE_AchTest_DB.guildCollections and LeafVE_AchTest_DB.guildCollections[col.dbKey]) or {}
+
+    -- Invert item->owners into player->count.
+    local counts = {}
+    for _, owners in pairs(bucket) do
+      for playerName in pairs(owners) do
+        counts[playerName] = (counts[playerName] or 0) + 1
+      end
+    end
+
+    local ranked = {}
+    for playerName, count in pairs(counts) do
+      if query == "" or string.find(Lower(playerName), query, 1, true) then
+        table.insert(ranked, {name = playerName, count = count})
+      end
+    end
+    table.sort(ranked, function(a, b)
+      if a.count ~= b.count then return a.count > b.count end
+      return Lower(a.name) < Lower(b.name)
+    end)
+
+    local x = startX + (colIndex - 1) * columnWidth
+
+    local colTitle = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    colTitle:SetPoint("TOPLEFT", ui.scrollChild, "TOPLEFT", x + 2, -startY)
+    colTitle:SetText(col.title)
+    colTitle:SetTextColor(1.0, 0.82, 0.36)
+
+    local colUnderline = ABC_StableMakeSolid(ui.scrollChild, "ARTWORK")
+    colUnderline:SetPoint("TOPLEFT", colTitle, "BOTTOMLEFT", -2, -4)
+    colUnderline:SetWidth(rowWidth)
+    colUnderline:SetHeight(1)
+    ABC_StableSetTextureColor(colUnderline, 1.0, 0.82, 0.36, 0.5)
+
+    if table.getn(ranked) == 0 then
+      local emptyText = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+      emptyText:SetPoint("TOPLEFT", colTitle, "BOTTOMLEFT", 2, -14)
+      emptyText:SetWidth(rowWidth)
+      emptyText:SetJustifyH("LEFT")
+      emptyText:SetText(query ~= "" and "No matches." or "No guild data yet.")
+      emptyText:SetTextColor(0.6, 0.6, 0.6)
+    else
+      local limit = math.min(20, table.getn(ranked))
+      for i = 1, limit do
+        local entry = ranked[i]
+        ABC_BuildLeaderboardRow(
+          ui.scrollChild, x, -startY - 16 - (i - 1) * (rowHeight + rowGap),
+          rowWidth, rowHeight, i, entry.name, entry.count
+        )
+      end
+    end
+  end
+
+  SetScrollHeight(ui, startY + 16 + 20 * (rowHeight + rowGap) + 30)
+  ABC.buildingCollectionView = false
 end
 
 function ABC:BuildCollectionView(kind)
@@ -5073,6 +5744,7 @@ function ABC:BuildCollectionView(kind)
   HideFrame(ui.abcMountSidebarFrame)
   HideFrame(ui.abcCompanionSidebarFrame)
   HideFrame(ui.abcToySidebarFrame)
+  HideFrame(ui.guildCollectionSidebarFrame)
 
   if kind == "mount" then
     HideFrame(ui.companionSidebarFrame)
@@ -5186,6 +5858,13 @@ function ABC:BuildCollectionView(kind)
   end
 
   if table.getn(list) == 0 then
+    -- No card gets populated below, so nothing else re-hides whatever the
+    -- previous tab (a different kind, or Guild) left shown in the pool --
+    -- without this, those stale cards stayed visible right through this
+    -- empty state instead of the grid actually going empty.
+    for i = 1, table.getn(ABC.cardPool) do
+      if ABC.cardPool[i] then ABC.cardPool[i]:Hide() end
+    end
     local empty = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     empty:SetPoint("TOPLEFT", shim, "TOPLEFT", 18, -22)
     empty:SetWidth(640); empty:SetJustifyH("LEFT")
