@@ -2623,47 +2623,78 @@ function LeafVE_AchTest:OnAddonMessage(prefix, message, channel, sender)
     return
   end
 
-  -- Parse a collection-ownership chunk: "COLSYNC:<kind>:<i>/<n>:<name1,name2,...>"
+  -- "COLSYNC:<kind>:<i>/<n>:<name1,name2,...>" -- queued instead of parsed
+  -- inline here. Three client crashes (all ACCESS_VIOLATION at the same
+  -- WoW.exe instruction, all with ClassicAPI.dll in the call stack, two of
+  -- them with a COLSYNC payload sitting in the stack memory next to the
+  -- crash frame) happened right around receiving this exact message type.
+  -- The actual fault is native code we can't patch, but handling it
+  -- synchronously here runs our Lua straight off the CHAT_MSG_ADDON event
+  -- while ClassicAPI's own hook for that event is still on the call stack --
+  -- deferring the real work to the next OnUpdate tick (see
+  -- ProcessPendingColSync below) gets it out of that call frame entirely.
   if string.sub(message, 1, 8) == "COLSYNC:" then
+    LeafVE_AchTest._pendingColSync = LeafVE_AchTest._pendingColSync or {}
+    table.insert(LeafVE_AchTest._pendingColSync, { message = message, sender = sender })
+    return
+  end
+end
+
+-- Drains the COLSYNC queue (see the OnAddonMessage comment above for why
+-- this isn't done inline in the event handler). Safe to call every frame --
+-- it's a no-op past the length check whenever the queue is empty.
+function LeafVE_AchTest:ProcessPendingColSync()
+  local queue = self._pendingColSync
+  if type(queue) ~= "table" or table.getn(queue) < 1 then return end
+  self._pendingColSync = {}
+
+  local dirty = false
+  for q = 1, table.getn(queue) do
+    local item = queue[q]
+    local message = item.message
+    local sender = item.sender
+
     local body = string.sub(message, 9)
     local c1 = string.find(body, ":")
-    if not c1 then return end
-    local kind = string.sub(body, 1, c1 - 1)
-    local rest = string.sub(body, c1 + 1)
-    local c2 = string.find(rest, ":")
-    if not c2 then return end
-    -- idxPart (rest before c2) is "<i>/<n>" -- purely informational, this
-    -- merge is additive so completeness/ordering across chunks don't matter.
-    local names = string.sub(rest, c2 + 1)
+    if c1 then
+      local kind = string.sub(body, 1, c1 - 1)
+      local rest = string.sub(body, c1 + 1)
+      local c2 = string.find(rest, ":")
+      if c2 then
+        -- idxPart (rest before c2) is "<i>/<n>" -- purely informational, this
+        -- merge is additive so completeness/ordering across chunks don't matter.
+        local names = string.sub(rest, c2 + 1)
+        local dbKey = (kind == "mount" and "mounts") or (kind == "toy" and "toys") or (kind == "companion" and "companions") or nil
+        if dbKey then
+          if type(LeafVE_AchTest_DB.guildCollections) ~= "table" then LeafVE_AchTest_DB.guildCollections = {} end
+          if type(LeafVE_AchTest_DB.guildCollections[dbKey]) ~= "table" then LeafVE_AchTest_DB.guildCollections[dbKey] = {} end
+          local bucket = LeafVE_AchTest_DB.guildCollections[dbKey]
 
-    local dbKey = (kind == "mount" and "mounts") or (kind == "toy" and "toys") or (kind == "companion" and "companions") or nil
-    if not dbKey then return end
-
-    if type(LeafVE_AchTest_DB.guildCollections) ~= "table" then LeafVE_AchTest_DB.guildCollections = {} end
-    if type(LeafVE_AchTest_DB.guildCollections[dbKey]) ~= "table" then LeafVE_AchTest_DB.guildCollections[dbKey] = {} end
-    local bucket = LeafVE_AchTest_DB.guildCollections[dbKey]
-
-    local startPos = 1
-    local nlen = string.len(names)
-    while startPos <= nlen do
-      local commaPos = string.find(names, ",", startPos)
-      local nm
-      if commaPos then
-        nm = string.sub(names, startPos, commaPos - 1)
-        startPos = commaPos + 1
-      else
-        nm = string.sub(names, startPos)
-        startPos = nlen + 1
-      end
-      if nm ~= "" then
-        if type(bucket[nm]) ~= "table" then bucket[nm] = {} end
-        bucket[nm][sender] = true
+          local startPos = 1
+          local nlen = string.len(names)
+          while startPos <= nlen do
+            local commaPos = string.find(names, ",", startPos)
+            local nm
+            if commaPos then
+              nm = string.sub(names, startPos, commaPos - 1)
+              startPos = commaPos + 1
+            else
+              nm = string.sub(names, startPos)
+              startPos = nlen + 1
+            end
+            if nm ~= "" then
+              if type(bucket[nm]) ~= "table" then bucket[nm] = {} end
+              bucket[nm][sender] = true
+            end
+          end
+          dirty = true
+        end
       end
     end
+  end
 
-    if LeafVE_AchTest.Collections and LeafVE_AchTest.UI and LeafVE_AchTest.UI.currentView == "guildcollection" and LeafVE_AchTest.Collections.BuildGuildCollectionView then
-      LeafVE_AchTest.Collections:BuildGuildCollectionView()
-    end
+  if dirty and LeafVE_AchTest.Collections and LeafVE_AchTest.UI and LeafVE_AchTest.UI.currentView == "guildcollection" and LeafVE_AchTest.Collections.BuildGuildCollectionView then
+    LeafVE_AchTest.Collections:BuildGuildCollectionView()
   end
 end
 
@@ -2680,6 +2711,11 @@ end)
 local broadcastTimer = 0
 local broadcastFrame = CreateFrame("Frame")
 broadcastFrame:SetScript("OnUpdate", function()
+  -- Drains any COLSYNC messages queued by OnAddonMessage this frame or
+  -- earlier -- cheap no-op via the length check whenever nothing's queued,
+  -- so piggybacking it on this existing OnUpdate doesn't need its own frame.
+  LeafVE_AchTest:ProcessPendingColSync()
+
   broadcastTimer = broadcastTimer + arg1
   if broadcastTimer >= 300 then -- 5 minutes
     broadcastTimer = 0
