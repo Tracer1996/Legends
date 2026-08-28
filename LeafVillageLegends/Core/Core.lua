@@ -14278,14 +14278,24 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     local myVer = LeafVE.version
     if not LeafVE.shownVersionNag and VersionLessThan(myVer, ver) then
       LeafVE.shownVersionNag = true
-      Print("|cFFFFAA00ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â  Your Ashen Banner addon is outdated! You have v"..myVer..", latest is v"..ver..". Please update!|r")
+      Print("|cFFFFAA00Your Ashen Banner addon is outdated! You have v"..myVer..", latest is v"..ver..". Please update!|r")
     end
     -- Warn once when a guildmate's version is below the minimum compatible version
     if VersionLessThan(ver, LeafVE.minCompatVersion) and ShouldPrintVersionWarnings() then
       if not LeafVE.warnedOldVersion then LeafVE.warnedOldVersion = {} end
       if not LeafVE.warnedOldVersion[sender] then
         LeafVE.warnedOldVersion[sender] = true
-        Print("|cFFFF4444ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â  "..sender.." is running an outdated version (v"..ver..") and their synced data will not be accepted. Ask them to update to v"..LeafVE.minCompatVersion.."+.|r")
+        -- Something in this client (VanillaHelpers.dll, going by the
+        -- loaded-modules list in the crash dumps) auto-linkifies anything
+        -- shaped like "19.0.0" in printed chat text into a fake |Hurl:...|h
+        -- hyperlink, regardless of surrounding punctuation/position -- every
+        -- variant tried there still tripped it. Breaking the literal
+        -- \d+%.\d+%.\d+ pattern by inserting a harmless same-color escape
+        -- after each dot defeats that pattern match on the raw string
+        -- while WoW still renders it as an unbroken "19.0.0" to the player
+        -- (|c...codes are invisible once rendered).
+        local safeMinVer = string.gsub(LeafVE.minCompatVersion, "%.", ".|cFFFF4444")
+        Print("|cFFFF4444"..sender.." is running an outdated version (v"..ver..") and their synced data will not be accepted. Ask them to update to v"..safeMinVer.."|r")
       end
     end
     return
