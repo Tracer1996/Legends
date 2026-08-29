@@ -3076,6 +3076,11 @@ function ABC:InstallTabs()
     guildCollectionTab:SetHeight(ui.toyTab:GetHeight() or 26)
     guildCollectionTab:SetText("Guild")
     guildCollectionTab:SetScript("OnClick", function()
+      -- Always land on the leaderboard, not whatever guild sub-kind
+      -- (mounts/companions/toys) happened to be selected last -- otherwise
+      -- clicking Guild after browsing "Toys" would silently reopen on Toys.
+      ABC.guildCollectionKind = "leaderboard"
+      ABC.pages.guild = 1
       LeafVE_AchTest.UI.currentView = "guildcollection"
       LeafVE_AchTest.UI:Refresh()
     end)
