@@ -5547,45 +5547,74 @@ local ABC_LEADERBOARD_DEFAULT_TEXT = {0.75, 0.75, 0.78}
 -- the collection cards' background/border convention) with a rank badge,
 -- the player's name, and their count, instead of a single flat line of
 -- colored text.
-local function ABC_BuildLeaderboardRow(parent, x, y, width, height, rank, name, count)
+--
+-- Split into a one-time skeleton build (ABC_BuildLeaderboardRowSkeleton) and
+-- a per-call content update (ABC_PopulateLeaderboardRow) that writes into
+-- the same widgets every time, mirroring ABC_BuildCardSkeleton/ABC_PopulateCard
+-- above -- without this, every search keystroke, page turn, or tab switch
+-- minted a brand new row (plus badge, borders, and three FontStrings) that
+-- ClearScrollChild's Hide()-only sweep left behind as an orphaned widget,
+-- so the live frame count grew without bound over a session. Position/size
+-- are fixed for a given (column, row-slot) pair since the layout constants
+-- never change between rebuilds, so those are only ever set once, at
+-- skeleton time.
+local function ABC_BuildLeaderboardRowSkeleton(parent, x, y, width, height)
   local row = CreateFrame("Frame", nil, parent)
   row:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
   row:SetWidth(width)
   row:SetHeight(height)
 
-  local borderColor = ABC_LEADERBOARD_RANK_BORDER[rank] or ABC_LEADERBOARD_DEFAULT_BORDER
-  local isTop3 = rank <= 3
+  -- Colors here are placeholders -- ABC_PopulateLeaderboardRow sets the
+  -- real ones (which depend on rank) via the *Set* helpers, every populate.
   ABC_StableBackground(row, 0.07, 0.07, 0.08, 0.92)
-  ABC_StableCreateBorder(row, 1, borderColor[1], borderColor[2], borderColor[3], isTop3 and 0.95 or 0.4)
+  ABC_StableCreateBorder(row, 1, 0, 0, 0, 1)
 
   local badgeSize = height - 4
   local badge = CreateFrame("Frame", nil, row)
   badge:SetPoint("LEFT", row, "LEFT", 2, 0)
   badge:SetWidth(badgeSize)
   badge:SetHeight(badgeSize)
-  local badgeBg = ABC_LEADERBOARD_RANK_BG[rank] or {0.10, 0.10, 0.11, 1}
-  ABC_StableBackground(badge, badgeBg[1], badgeBg[2], badgeBg[3], badgeBg[4] or 1)
-  ABC_StableCreateBorder(badge, 1, borderColor[1], borderColor[2], borderColor[3], 0.95)
+  ABC_StableBackground(badge, 0.10, 0.10, 0.11, 1)
+  ABC_StableCreateBorder(badge, 1, 0, 0, 0, 1)
+  row.badge = badge
 
   local rankText = badge:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   rankText:SetPoint("CENTER", badge, "CENTER", 0, 0)
-  rankText:SetText(tostring(rank))
-  local rankColor = ABC_LEADERBOARD_RANK_TEXT[rank] or ABC_LEADERBOARD_DEFAULT_TEXT
-  rankText:SetTextColor(rankColor[1], rankColor[2], rankColor[3])
+  row.rankText = rankText
 
   local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   nameText:SetPoint("LEFT", badge, "RIGHT", 6, 0)
   nameText:SetPoint("RIGHT", row, "RIGHT", -30, 0)
   nameText:SetJustifyH("LEFT")
-  nameText:SetText(tostring(name))
   nameText:SetTextColor(0.92, 0.90, 0.85)
+  row.nameText = nameText
 
   local countText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   countText:SetPoint("RIGHT", row, "RIGHT", -5, 0)
-  countText:SetText(tostring(count))
   countText:SetTextColor(0.50, 0.82, 1.0)
+  row.countText = countText
 
   return row
+end
+
+local function ABC_PopulateLeaderboardRow(row, rank, name, count)
+  local borderColor = ABC_LEADERBOARD_RANK_BORDER[rank] or ABC_LEADERBOARD_DEFAULT_BORDER
+  local isTop3 = rank <= 3
+  ABC_StableSetBorder(row, borderColor[1], borderColor[2], borderColor[3], isTop3 and 0.95 or 0.4)
+
+  local badge = row.badge
+  local badgeBg = ABC_LEADERBOARD_RANK_BG[rank] or {0.10, 0.10, 0.11, 1}
+  ABC_StableSetTextureColor(badge._abcStableBackground, badgeBg[1], badgeBg[2], badgeBg[3], badgeBg[4] or 1)
+  ABC_StableSetBorder(badge, borderColor[1], borderColor[2], borderColor[3], 0.95)
+
+  row.rankText:SetText(tostring(rank))
+  local rankColor = ABC_LEADERBOARD_RANK_TEXT[rank] or ABC_LEADERBOARD_DEFAULT_TEXT
+  row.rankText:SetTextColor(rankColor[1], rankColor[2], rankColor[3])
+
+  row.nameText:SetText(tostring(name))
+  row.countText:SetText(tostring(count))
+
+  row:Show()
 end
 
 function ABC:BuildGuildLeaderboardView(ui)
@@ -5602,15 +5631,27 @@ function ABC:BuildGuildLeaderboardView(ui)
   ShowFrame(ui.scrollUp)
   ShowFrame(ui.scrollDown)
 
-  local header = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  header:SetPoint("TOPLEFT", ui.scrollChild, "TOPLEFT", 10, -4)
-  header:SetText("Guild Collector Leaderboard")
-  header:SetTextColor(1.0, 0.82, 0.36)
+  -- Header/summary/column chrome and rows are pooled (see the comment on
+  -- ABC_BuildLeaderboardRowSkeleton above) since this view rebuilds on
+  -- every search keystroke, page turn, and tab switch.
+  if not ABC.lbHeader then
+    ABC.lbHeader = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    ABC.lbHeader:SetPoint("TOPLEFT", ui.scrollChild, "TOPLEFT", 10, -4)
+    ABC.lbHeader:SetText("Guild Collector Leaderboard")
+    ABC.lbHeader:SetTextColor(1.0, 0.82, 0.36)
+  end
+  ABC.lbHeader:Show()
 
-  local summary = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  summary:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -3)
-  summary:SetText("Top 20 collectors by distinct mounts, companions, and toys owned")
-  summary:SetTextColor(0.78, 0.78, 0.78)
+  if not ABC.lbSummary then
+    ABC.lbSummary = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    ABC.lbSummary:SetPoint("TOPLEFT", ABC.lbHeader, "BOTTOMLEFT", 0, -3)
+    ABC.lbSummary:SetText("Guild collectors ranked by distinct mounts, companions, and toys owned")
+    ABC.lbSummary:SetTextColor(0.78, 0.78, 0.78)
+  end
+  ABC.lbSummary:Show()
+
+  ABC.lbColumns = ABC.lbColumns or {}
+  ABC.lbRowPools = ABC.lbRowPools or {}
 
   local query = Lower(ABC_StableSearchText("guild") or "")
 
@@ -5626,6 +5667,7 @@ function ABC:BuildGuildLeaderboardView(ui)
   local startY = 62
   local rowHeight = 24
   local rowGap = 3
+  local maxRows = 0
 
   for colIndex = 1, table.getn(columns) do
     local col = columns[colIndex]
@@ -5639,50 +5681,94 @@ function ABC:BuildGuildLeaderboardView(ui)
       end
     end
 
-    local ranked = {}
+    -- Rank against the full, unfiltered standings first so a name search
+    -- can't relabel a match as "#1" -- it should keep showing wherever it
+    -- actually stands among the whole guild.
+    local full = {}
     for playerName, count in pairs(counts) do
-      if query == "" or string.find(Lower(playerName), query, 1, true) then
-        table.insert(ranked, {name = playerName, count = count})
-      end
+      table.insert(full, {name = playerName, count = count})
     end
-    table.sort(ranked, function(a, b)
+    table.sort(full, function(a, b)
       if a.count ~= b.count then return a.count > b.count end
       return Lower(a.name) < Lower(b.name)
     end)
 
+    local ranked = {}
+    for idx = 1, table.getn(full) do
+      local entry = full[idx]
+      entry.rank = idx
+      if query == "" or string.find(Lower(entry.name), query, 1, true) then
+        table.insert(ranked, entry)
+      end
+    end
+
     local x = startX + (colIndex - 1) * columnWidth
 
-    local colTitle = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    colTitle:SetPoint("TOPLEFT", ui.scrollChild, "TOPLEFT", x + 2, -startY)
-    colTitle:SetText(col.title)
-    colTitle:SetTextColor(1.0, 0.82, 0.36)
+    local colPool = ABC.lbColumns[colIndex]
+    if not colPool then
+      colPool = {}
+      ABC.lbColumns[colIndex] = colPool
+    end
 
-    local colUnderline = ABC_StableMakeSolid(ui.scrollChild, "ARTWORK")
-    colUnderline:SetPoint("TOPLEFT", colTitle, "BOTTOMLEFT", -2, -4)
-    colUnderline:SetWidth(rowWidth)
-    colUnderline:SetHeight(1)
-    ABC_StableSetTextureColor(colUnderline, 1.0, 0.82, 0.36, 0.5)
+    if not colPool.title then
+      colPool.title = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+      colPool.title:SetPoint("TOPLEFT", ui.scrollChild, "TOPLEFT", x + 2, -startY)
+      colPool.title:SetTextColor(1.0, 0.82, 0.36)
+    end
+    colPool.title:SetText(col.title)
+    colPool.title:Show()
 
-    if table.getn(ranked) == 0 then
-      local emptyText = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-      emptyText:SetPoint("TOPLEFT", colTitle, "BOTTOMLEFT", 2, -14)
-      emptyText:SetWidth(rowWidth)
-      emptyText:SetJustifyH("LEFT")
-      emptyText:SetText(query ~= "" and "No matches." or "No guild data yet.")
-      emptyText:SetTextColor(0.6, 0.6, 0.6)
-    else
-      local limit = math.min(20, table.getn(ranked))
-      for i = 1, limit do
-        local entry = ranked[i]
-        ABC_BuildLeaderboardRow(
-          ui.scrollChild, x, -startY - 16 - (i - 1) * (rowHeight + rowGap),
-          rowWidth, rowHeight, i, entry.name, entry.count
-        )
+    if not colPool.underline then
+      colPool.underline = ABC_StableMakeSolid(ui.scrollChild, "ARTWORK")
+      colPool.underline:SetPoint("TOPLEFT", colPool.title, "BOTTOMLEFT", -2, -4)
+      colPool.underline:SetWidth(rowWidth)
+      colPool.underline:SetHeight(1)
+      ABC_StableSetTextureColor(colPool.underline, 1.0, 0.82, 0.36, 0.5)
+    end
+    colPool.underline:Show()
+
+    local rowPool = ABC.lbRowPools[colIndex]
+    if not rowPool then
+      rowPool = {}
+      ABC.lbRowPools[colIndex] = rowPool
+    end
+
+    local rowCount = table.getn(ranked)
+    if rowCount == 0 then
+      if not colPool.emptyText then
+        colPool.emptyText = ui.scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        colPool.emptyText:SetPoint("TOPLEFT", colPool.title, "BOTTOMLEFT", 2, -14)
+        colPool.emptyText:SetWidth(rowWidth)
+        colPool.emptyText:SetJustifyH("LEFT")
+        colPool.emptyText:SetTextColor(0.6, 0.6, 0.6)
       end
+      colPool.emptyText:SetText(query ~= "" and "No matches." or "No guild data yet.")
+      colPool.emptyText:Show()
+    else
+      if colPool.emptyText then colPool.emptyText:Hide() end
+      if rowCount > maxRows then maxRows = rowCount end
+      for i = 1, rowCount do
+        local entry = ranked[i]
+        local row = rowPool[i]
+        if not row then
+          row = ABC_BuildLeaderboardRowSkeleton(
+            ui.scrollChild, x, -startY - 16 - (i - 1) * (rowHeight + rowGap),
+            rowWidth, rowHeight
+          )
+          rowPool[i] = row
+        end
+        ABC_PopulateLeaderboardRow(row, entry.rank, entry.name, entry.count)
+      end
+    end
+
+    -- Hide any rows left over from a previous, longer-lived rebuild of this
+    -- column (e.g. a search query that now matches fewer players).
+    for i = rowCount + 1, table.getn(rowPool) do
+      rowPool[i]:Hide()
     end
   end
 
-  SetScrollHeight(ui, startY + 16 + 20 * (rowHeight + rowGap) + 30)
+  SetScrollHeight(ui, startY + 16 + maxRows * (rowHeight + rowGap) + 30)
   ABC.buildingCollectionView = false
 end
 

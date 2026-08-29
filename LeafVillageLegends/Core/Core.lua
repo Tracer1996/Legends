@@ -42714,10 +42714,26 @@ function LeafVE.UI:RefreshAchievementsLeaderboard()
   for _, guildInfo in pairs(LeafVE.guildRosterCache) do
     allPlayers[Lower(guildInfo.name)] = { name = guildInfo.name, class = guildInfo.class or "Unknown" }
   end
+
+  -- True-up against the guild roster: a name from achievementCache that
+  -- ISN'T already in the roster loop above is someone who left/got kicked
+  -- (achievementCache is never pruned on its own, so a departed member's
+  -- last-cached points would otherwise keep showing up forever). Same
+  -- "absence from guildRosterCache means departed" convention as
+  -- PurgeWorkOrdersForDepartedRequesters, including its guard against
+  -- acting on an empty/not-yet-populated cache (e.g. right after login, or
+  -- when not currently in a guild) -- in that case fall back to showing
+  -- everyone cached, same as before this fix.
+  local hasRosterData = false
+  for _ in pairs(LeafVE.guildRosterCache or {}) do
+    hasRosterData = true
+    break
+  end
+
   if LeafVE_GlobalDB.achievementCache then
     for cachedName, _ in pairs(LeafVE_GlobalDB.achievementCache) do
       local lname = Lower(cachedName)
-      if not allPlayers[lname] then
+      if not allPlayers[lname] and not hasRosterData then
         allPlayers[lname] = { name = cachedName, class = "Unknown" }
       end
     end

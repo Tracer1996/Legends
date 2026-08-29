@@ -2507,6 +2507,8 @@ function LeafVE_AchTest:BroadcastMyCollections()
   EnsureDB()
   if not LeafVE_AchTest_DB.collections then return end
 
+  local me = ShortName(UnitName("player"))
+
   local kindToDbKey = { mount = "mounts", companion = "companions", toy = "toys" }
   for kind, dbKey in pairs(kindToDbKey) do
     local saved = LeafVE_AchTest_DB.collections[dbKey]
@@ -2514,6 +2516,21 @@ function LeafVE_AchTest:BroadcastMyCollections()
       local names = {}
       for name in pairs(saved) do table.insert(names, name) end
       local total = table.getn(names)
+
+      -- Self-seed guildCollections directly, since OnAddonMessage ignores
+      -- messages from ourselves (see the sender == me guard there) and so
+      -- never registers our own items via the COLSYNC round-trip.
+      if me and total > 0 then
+        if type(LeafVE_AchTest_DB.guildCollections) ~= "table" then LeafVE_AchTest_DB.guildCollections = {} end
+        if type(LeafVE_AchTest_DB.guildCollections[dbKey]) ~= "table" then LeafVE_AchTest_DB.guildCollections[dbKey] = {} end
+        local bucket = LeafVE_AchTest_DB.guildCollections[dbKey]
+        for i = 1, total do
+          local nm = names[i]
+          if type(bucket[nm]) ~= "table" then bucket[nm] = {} end
+          bucket[nm][me] = true
+        end
+      end
+
       if total > 0 then
         local chunks = BuildColSyncChunks(names)
         local chunkTotal = table.getn(chunks)
@@ -2539,6 +2556,16 @@ function LeafVE_AchTest:RequestGuildVersions()
   SendAddonMessage(ADDON_COMM_PREFIX, "VERREQ", "GUILD")
 end
 
+-- Asks the guild to re-broadcast their collections. Needed because COLSYNC
+-- on its own only reaches players who happen to be online at the same
+-- moment as the broadcaster's login/5-minute tick -- someone who logs in
+-- outside that overlap would otherwise never backfill data that's already
+-- sitting in everyone else's saved variables.
+function LeafVE_AchTest:RequestGuildCollections()
+  if not IsInGuild() then return end
+  SendAddonMessage(ADDON_COMM_PREFIX, "COLREQ", "GUILD")
+end
+
 -- Receive other players' achievements (FIXED for Vanilla WoW)
 function LeafVE_AchTest:OnAddonMessage(prefix, message, channel, sender)
   if prefix ~= ADDON_COMM_PREFIX then return end
@@ -2556,6 +2583,20 @@ function LeafVE_AchTest:OnAddonMessage(prefix, message, channel, sender)
 
   if message == "VERREQ" then
     self:BroadcastVersion()
+    return
+  end
+
+  if message == "COLREQ" then
+    -- Stagger the response instead of calling BroadcastMyCollections
+    -- straight from this handler -- a single COLREQ can reach the whole
+    -- guild at once, and having everyone reply in the same instant is
+    -- exactly the SendAddonMessage burst BroadcastMyCollections' own
+    -- comment warns is unthrottled. If a response is already pending,
+    -- extra requests in the same window are ignored (one reply is enough).
+    if not self._colReqResponsePending then
+      self._colReqResponsePending = true
+      self._colReqResponseDelay = math.random() * 3 + 1
+    end
     return
   end
 
@@ -2716,6 +2757,16 @@ broadcastFrame:SetScript("OnUpdate", function()
   -- so piggybacking it on this existing OnUpdate doesn't need its own frame.
   LeafVE_AchTest:ProcessPendingColSync()
 
+  -- Jittered reply to an incoming COLREQ -- see the OnAddonMessage handler
+  -- for why this can't just call BroadcastMyCollections() immediately.
+  if LeafVE_AchTest._colReqResponsePending then
+    LeafVE_AchTest._colReqResponseDelay = LeafVE_AchTest._colReqResponseDelay - arg1
+    if LeafVE_AchTest._colReqResponseDelay <= 0 then
+      LeafVE_AchTest._colReqResponsePending = false
+      LeafVE_AchTest:BroadcastMyCollections()
+    end
+  end
+
   broadcastTimer = broadcastTimer + arg1
   if broadcastTimer >= 300 then -- 5 minutes
     broadcastTimer = 0
@@ -2769,6 +2820,10 @@ versionReminderFrame:SetScript("OnEvent", function()
     if not requestedVersions and waitTimer >= 2 then
       requestedVersions = true
       LeafVE_AchTest:RequestGuildVersions()
+      -- Piggybacks on this same login timer to ask the guild for a
+      -- collections backfill -- see RequestGuildCollections for why COLSYNC
+      -- alone can't be relied on to ever reach a freshly-logged-in client.
+      LeafVE_AchTest:RequestGuildCollections()
     end
 
     if waitTimer >= 7 then
