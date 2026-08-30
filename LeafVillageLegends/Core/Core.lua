@@ -3941,6 +3941,13 @@ local function EnsureDB()
   if type(LeafVE_DB.weeklyRecap.noticeSeenByPlayer) ~= "table" then LeafVE_DB.weeklyRecap.noticeSeenByPlayer = {} end
   if not LeafVE_DB.loginStreaks then LeafVE_DB.loginStreaks = {} end
   if not LeafVE_DB.persistentRoster then LeafVE_DB.persistentRoster = {} end
+  -- Tracks consecutive complete-roster scans (see UpdateGuildRosterCache)
+  -- where a previously-known member was absent, so a departure can be
+  -- confirmed over multiple scans/days instead of trusting a single sample.
+  if not LeafVE_DB.rosterAbsenceTracking then LeafVE_DB.rosterAbsenceTracking = {} end
+  -- Audit trail of automatic departed-member data purges, so a purge is
+  -- always traceable rather than a silent deletion.
+  if not LeafVE_DB.departurePurgeLog then LeafVE_DB.departurePurgeLog = {} end
   if not LeafVE_DB.instanceTracking then LeafVE_DB.instanceTracking = {} end
   if not LeafVE_DB.questTracking then LeafVE_DB.questTracking = {} end
   if not LeafVE_DB.questCompletions then LeafVE_DB.questCompletions = {} end
@@ -8654,47 +8661,69 @@ function LeafVE:UpdateGuildRosterCache()
     GuildRoster()
     self.guildRosterRequestAt = now
   end
+  -- Force a COMPLETE roster (online + offline) for this scan instead of
+  -- relying on whatever the client's own "show offline members" checkbox
+  -- happens to be set to -- the departure-tracking below needs a real,
+  -- deterministic full-membership snapshot every time, not an online-only
+  -- one that would make every ordinary offline guildmate look "missing".
+  -- Restored right after reading so the player's own Guild-frame checkbox
+  -- state isn't silently changed by this.
+  local previousShowOffline = GetGuildRosterShowOffline and GetGuildRosterShowOffline()
+  if SetGuildRosterShowOffline then SetGuildRosterShowOffline(true) end
+
   local n = GetNumGuildMembers and GetNumGuildMembers() or 0
   -- GuildRoster() is async; if data hasn't arrived yet, don't stamp the cache as
   -- valid so that the GUILD_ROSTER_UPDATE handler can trigger a real rebuild.
-  if n == 0 then return end
+  if n == 0 then
+    if SetGuildRosterShowOffline and previousShowOffline ~= nil then SetGuildRosterShowOffline(previousShowOffline) end
+    return
+  end
 
   -- Get currently online members
+  local liveNames = {}
   for i = 1, n do
     local name, rank, rankIndex, level, class, zone, note, officernote, online, status = GetGuildRosterInfo(i)
     name = ShortName(name)
     if name then
       local isOnline = false
-      if online then 
-        if type(online) == "number" then 
-          isOnline = (online == 1) 
-        else 
-          isOnline = (online == true) 
-        end 
+      if online then
+        if type(online) == "number" then
+          isOnline = (online == 1)
+        else
+          isOnline = (online == true)
+        end
       end
-      
+
       local memberData = {
-        name = name, 
-        rank = rank, 
-        rankIndex = rankIndex, 
-        level = level, 
-        class = class, 
-        zone = zone, 
-        note = note, 
-        officernote = officernote, 
-        online = isOnline, 
+        name = name,
+        rank = rank,
+        rankIndex = rankIndex,
+        level = level,
+        class = class,
+        zone = zone,
+        note = note,
+        officernote = officernote,
+        online = isOnline,
         status = status,
         lastSeen = now
       }
-      
+
       self.guildRosterCache[Lower(name)] = memberData
-      
+      liveNames[Lower(name)] = true
+
       -- Store in persistent roster
       LeafVE_DB.persistentRoster[Lower(name)] = memberData
     end
   end
-  
-  -- Add offline members from persistent roster
+
+  if SetGuildRosterShowOffline and previousShowOffline ~= nil then SetGuildRosterShowOffline(previousShowOffline) end
+
+  -- Add offline members from persistent roster -- with ShowOffline forced
+  -- true above, every still-current member (online or not) is already in
+  -- liveNames/guildRosterCache from the loop above, so in practice this
+  -- only ever backfills stale historical persistentRoster entries; kept as
+  -- a harmless fallback for the (n == 0 return above notwithstanding) case
+  -- where the live scan came back incomplete.
   if LeafVE_DB.options.showOfflineMembers then
     for lowerName, memberData in pairs(LeafVE_DB.persistentRoster) do
       if not self.guildRosterCache[lowerName] then
@@ -8705,14 +8734,215 @@ function LeafVE:UpdateGuildRosterCache()
         end
         offlineCopy.online = false
         offlineCopy.zone = "Offline"
-        
+
         self.guildRosterCache[lowerName] = offlineCopy
       end
     end
   end
-  end -- end if InGuild()
-  
+
+  -- Stamped here, before departure tracking, rather than only at the very
+  -- end of this function -- UpdateRosterAbsenceTracking can synchronously
+  -- trigger PurgeDepartedPlayerData -> LeafVE.UI:Refresh(), and if that
+  -- refresh chain calls back into UpdateGuildRosterCache before this is
+  -- set, the throttle above wouldn't yet see this cycle as done and could
+  -- let a second, reentrant full scan-and-purge pass run inside the first.
   self.guildRosterCacheTime = now
+
+  -- liveNames reflects a real, complete (online+offline) roster scan this
+  -- call, so it's safe to use as this cycle's input to departure tracking.
+  self:UpdateRosterAbsenceTracking(liveNames)
+
+  end -- end if InGuild()
+
+  self.guildRosterCacheTime = now
+end
+
+-- Records, per guildmate, how many consecutive COMPLETE roster scans
+-- (liveNames, from UpdateGuildRosterCache with ShowOffline forced true) they
+-- were absent from. Anyone actually seen this scan has their record cleared
+-- immediately -- a single sighting is enough to fully clear suspicion, only
+-- repeated, sustained absence ever accumulates toward a purge. This alone
+-- doesn't delete anything; LeafVE:PurgeDepartedPlayerData is only invoked
+-- once BOTH ROSTER_DEPARTURE_MIN_MISS_STREAK consecutive misses AND
+-- ROSTER_DEPARTURE_MIN_ELAPSED real time have been observed.
+function LeafVE:UpdateRosterAbsenceTracking(liveNames)
+  EnsureDB()
+  local now = Now()
+  local me = ShortName(UnitName("player"))
+  local meLower = me and Lower(me)
+
+  for lowerName in pairs(liveNames) do
+    LeafVE_DB.rosterAbsenceTracking[lowerName] = nil
+  end
+
+  local confirmedDeparted = {}
+  for lowerName, memberData in pairs(LeafVE_DB.persistentRoster) do
+    -- Never evaluate the local player against their own client's roster
+    -- scan -- there is no scenario where "I don't see myself" should ever
+    -- be trusted over the fact that I am, self-evidently, still here.
+    if not liveNames[lowerName] and lowerName ~= meLower then
+      local record = LeafVE_DB.rosterAbsenceTracking[lowerName]
+      if not record then
+        record = { firstMissedAt = now, missStreak = 0 }
+        LeafVE_DB.rosterAbsenceTracking[lowerName] = record
+      end
+      record.missStreak = record.missStreak + 1
+      record.lastCheckedAt = now
+
+      if record.missStreak >= ROSTER_DEPARTURE_MIN_MISS_STREAK
+        and (now - record.firstMissedAt) >= ROSTER_DEPARTURE_MIN_ELAPSED then
+        table.insert(confirmedDeparted, memberData.name or lowerName)
+      end
+    end
+  end
+
+  -- Purged after the tracking loop above finishes, rather than inline, so a
+  -- purge's own writes (persistentRoster/rosterAbsenceTracking removal)
+  -- never touch the tables this function is still iterating over.
+  for i = 1, table.getn(confirmedDeparted) do
+    self:PurgeDepartedPlayerData(confirmedDeparted[i])
+  end
+end
+
+-- Permanently removes a confirmed-departed guildmate's roster entry and
+-- every per-player table this addon keeps on them (Ashen Ember totals,
+-- banner reputation, badges, shoutout records, point history, achievement
+-- cache, and misc identity caches), mirroring the field list already
+-- proven out by LeafVE:ResetMyData/the LVE_PLAYER_DATA_RESET: handler.
+-- IMPORTANT: only ever call this after LeafVE:UpdateRosterAbsenceTracking
+-- has confirmed sustained absence -- this function itself does not
+-- re-verify guild membership, by design, so all of the false-positive
+-- protection lives in the caller's confirmation gate, not here.
+--
+-- This only clears THIS client's own local mirror of that player's data --
+-- every guildmate's addon keeps its own replica via periodic sync
+-- broadcasts, so if this was ever wrong, the real player's own client will
+-- naturally resync their true data back in next time the two overlap
+-- online, rather than the loss being permanent guild-wide.
+function LeafVE:PurgeDepartedPlayerData(name)
+  if not name or name == "" then return end
+  local me = ShortName(UnitName("player"))
+  -- Absolute safeguard, independent of the caller's own me-exclusion --
+  -- this function must never be able to wipe the local player's own data.
+  if me and Lower(me) == Lower(name) then return end
+
+  EnsureDB()
+  local lowerName = Lower(name)
+
+  self.guildRosterCache[lowerName] = nil
+  LeafVE_DB.persistentRoster[lowerName] = nil
+  LeafVE_DB.rosterAbsenceTracking[lowerName] = nil
+
+  LeafVE_DB.alltime[name]            = nil
+  LeafVE_DB.season[name]             = nil
+  LeafVE_DB.loginStreaks[name]       = nil
+  LeafVE_DB.loginTracking[name]      = nil
+  LeafVE_DB.groupSessions[name]      = nil
+  LeafVE_DB.groupPointsToday[name]   = nil
+  LeafVE_DB.guildieGroupHours[name]  = nil
+  LeafVE_DB.guildieHonorableKills[name] = nil
+  LeafVE_DB.pvpStats[name]           = nil
+  if LeafVE_DB.guildJoinDate then LeafVE_DB.guildJoinDate[name] = nil end
+  LeafVE_DB.attendance[name]         = nil
+  LeafVE_DB.pointHistory[name]       = nil
+  LeafVE_DB.instanceTracking[name]   = nil
+  LeafVE_DB.questTracking[name]      = nil
+  LeafVE_DB.questCompletions[name]   = nil
+  LeafVE_DB.badges[name]             = nil
+  LeafVE_DB.equippedTitles[name]     = nil
+  LeafVE_DB.badgesAnnounced[name]    = nil
+  if LeafVE_DB.shinobiDutyRepBonuses then LeafVE_DB.shinobiDutyRepBonuses[name] = nil end
+  if LeafVE_DB.bannerRepTracking and LeafVE_DB.bannerRepTracking.players then LeafVE_DB.bannerRepTracking.players[lowerName] = nil end
+  if LeafVE_DB.bannerRepAllTimeTotals then LeafVE_DB.bannerRepAllTimeTotals[lowerName] = nil end
+  for key, _ in pairs(LeafVE_DB.badgesAnnounced) do
+    if type(key) == "string" and string.find(key, ":" .. name .. ":", 1, true) then
+      LeafVE_DB.badgesAnnounced[key] = nil
+    end
+  end
+  LeafVE_DB.lboard.alltime[name]     = nil
+  LeafVE_DB.lboard.updatedAt[name]   = nil
+  for _, wkData in pairs(LeafVE_DB.lboard.weekly) do
+    if type(wkData) == "table" then wkData[name] = nil end
+  end
+  if LeafVE_DB.lboard.season then
+    LeafVE_DB.lboard.season[name] = nil
+  end
+  for _, dayData in pairs(LeafVE_DB.global) do
+    if type(dayData) == "table" then dayData[name] = nil end
+  end
+  LeafVE_DB.shoutouts[name] = nil
+  for _, targets in pairs(LeafVE_DB.shoutouts) do
+    if type(targets) == "table" then targets[name] = nil end
+  end
+  if LeafVE_GlobalDB.achievementCache then
+    LeafVE_GlobalDB.achievementCache[name] = nil
+  end
+  if LeafVE_GlobalDB.titleCache then
+    LeafVE_GlobalDB.titleCache[lowerName] = nil
+  end
+  if LeafVE_GlobalDB.lboardCache then
+    if LeafVE_GlobalDB.lboardCache.alltime then
+      LeafVE_GlobalDB.lboardCache.alltime[name] = nil
+    end
+    if LeafVE_GlobalDB.lboardCache.weekly then
+      for _, wkData in pairs(LeafVE_GlobalDB.lboardCache.weekly) do
+        if type(wkData) == "table" then wkData[name] = nil end
+      end
+    end
+  end
+  if LeafVE_GlobalDB.badgeProgressCache then
+    LeafVE_GlobalDB.badgeProgressCache[name] = nil
+  end
+  if LeafVE_GlobalDB.gearCache then
+    LeafVE_GlobalDB.gearCache[lowerName] = nil
+  end
+  if LeafVE_GlobalDB.specCache then
+    LeafVE_GlobalDB.specCache[lowerName] = nil
+  end
+  if LeafVE_GlobalDB.talentCache then
+    LeafVE_GlobalDB.talentCache[lowerName] = nil
+  end
+  if LeafVE.talentSyncBuffer then
+    LeafVE.talentSyncBuffer[lowerName] = nil
+  end
+  if LeafVE_GlobalDB.playerNotes then
+    LeafVE_GlobalDB.playerNotes[name] = nil
+  end
+  if LeafVE_GlobalDB.professionDesignations then
+    LeafVE_GlobalDB.professionDesignations[lowerName] = nil
+  end
+  if LeafVE_GlobalDB.shinobiDutyRepBonuses then
+    LeafVE_GlobalDB.shinobiDutyRepBonuses[lowerName] = nil
+  end
+  if LeafVE_GlobalDB.bannerRepAllTimeTotals then
+    LeafVE_GlobalDB.bannerRepAllTimeTotals[lowerName] = nil
+  end
+  if LeafVE_GlobalDB.workOrderCrafterSignups then
+    LeafVE_GlobalDB.workOrderCrafterSignups[lowerName] = nil
+  end
+  if LeafVE_GlobalDB.workOrderCrafterSignupMeta then
+    LeafVE_GlobalDB.workOrderCrafterSignupMeta[lowerName] = nil
+  end
+
+  table.insert(LeafVE_DB.departurePurgeLog, {
+    name = name,
+    purgedAt = Now(),
+    reason = "confirmed_absent_from_guild_roster",
+  })
+  -- Keep the audit trail bounded -- this is a log for spot-checking, not an
+  -- archive that needs to grow forever.
+  while table.getn(LeafVE_DB.departurePurgeLog) > 50 do
+    table.remove(LeafVE_DB.departurePurgeLog, 1)
+  end
+
+  Print("|cFFD8A24A["..name.."]|r no longer appears to be in the guild -- their Ashen Ember, banner, and achievement data has been removed from your local cache.|r")
+
+  if LeafVE.UI and LeafVE.UI.Refresh then
+    LeafVE.UI:Refresh()
+  end
+  if LeafVE.UI and LeafVE.UI.RefreshAchievementsLeaderboard then
+    LeafVE.UI:RefreshAchievementsLeaderboard()
+  end
 end
 
 function LeafVE:GetGuildInfo(playerName)

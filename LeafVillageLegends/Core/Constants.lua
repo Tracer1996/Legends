@@ -12,6 +12,14 @@ GROUP_MIN_TIME = 300
 GROUP_COOLDOWN = 900
 GROUP_POINT_INTERVAL = 3600
 GUILD_ROSTER_CACHE_DURATION = 30
+-- A guildmate is only treated as "confirmed departed" (and their Ashen
+-- Ember/banner data purged) after being absent from this many consecutive
+-- COMPLETE roster scans (see UpdateGuildRosterCache's SetGuildRosterShowOffline
+-- toggle) AND at least this much real time has passed since they were first
+-- noticed missing -- both conditions, not either, so a single dropped scan or
+-- a normal multi-day absence can never trigger a purge on its own.
+ROSTER_DEPARTURE_MIN_MISS_STREAK = 5
+ROSTER_DEPARTURE_MIN_ELAPSED = 3 * SECONDS_PER_DAY
 SHOUTOUT_MAX_PER_DAY = 2
 WORK_ORDER_LOGIN_ALERT_COOLDOWN = 24 * SECONDS_PER_HOUR
 LBOARD_RESYNC_COOLDOWN = 30
