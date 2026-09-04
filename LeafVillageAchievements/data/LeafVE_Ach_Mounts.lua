@@ -108,6 +108,7 @@ local MOUNT_CATALOG = {
   {id="mount_swift_ostrich", name="Swift Ostrich", creatureId=17476, family="bird", source="Turtle WoW mount", icon="Interface\\Icons\\Spell_Magic_PolymorphChicken"},
   {id="mount_swift_palomino", name="Swift Palomino", creatureId=14561, family="horse", source="Human racial mount", icon="Interface\\Icons\\Ability_Mount_RidingHorse"},
   {id="mount_swift_razzashi_raptor", name="Swift Razzashi Raptor", creatureId=15090, family="raptor", source="Dungeon or raid mount", icon="Interface\\Icons\\Ability_Mount_Raptor"},
+  {id="mount_swift_riding_turtle", name="Swift Riding Turtle", creatureId=17266, family="turtle", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Hunter_Pet_Turtle"},
   {id="mount_swift_stormsaber", name="Swift Stormsaber", creatureId=14602, family="cat", source="Night Elf racial mount", icon="Interface\\Icons\\Ability_Mount_BlackPanther"},
   {id="mount_swift_timber_wolf", name="Swift Timber Wolf", creatureId=14539, family="wolf", source="Orc racial mount", icon="Interface\\Icons\\Ability_Mount_WhiteDireWolf"},
   {id="mount_swift_war_boar", name="Swift War Boar", creatureId=4535, family="boar", source="Turtle WoW mount", icon="Interface\\Icons\\Ability_Hunter_Pet_Boar"},

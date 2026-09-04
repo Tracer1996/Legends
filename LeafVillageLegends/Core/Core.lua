@@ -27314,6 +27314,27 @@ function CreateWorkOrderRecipeButton(parent)
         GameTooltip:AddLine(reagentLines[i], 0.85, 0.85, 0.85, 1)
       end
     end
+    local knownBy = this.knownByCrafters
+    local knownCount = type(knownBy) == "table" and table.getn(knownBy) or 0
+    if knownCount > 0 then
+      GameTooltip:AddLine(" ")
+      GameTooltip:AddLine("Known Crafters (" .. knownCount .. ")", 1, 0.82, 0.2)
+      local maxShown = 40
+      local perLine = 4
+      local shown = math.min(knownCount, maxShown)
+      local i = 1
+      while i <= shown do
+        local lineNames = {}
+        for j = i, math.min(i + perLine - 1, shown) do
+          table.insert(lineNames, knownBy[j])
+        end
+        GameTooltip:AddLine(table.concat(lineNames, ", "), 0.85, 0.85, 0.85, 1)
+        i = i + perLine
+      end
+      if knownCount > maxShown then
+        GameTooltip:AddLine("...and " .. (knownCount - maxShown) .. " more", 0.6, 0.6, 0.6, 1)
+      end
+    end
     GameTooltip:Show()
   end)
   btn:SetScript("OnLeave", function()
@@ -27323,6 +27344,323 @@ function CreateWorkOrderRecipeButton(parent)
 
   UpdateWorkOrderRecipeButtonVisual(btn, false)
   return btn
+end
+
+local RECIPE_CRAFTERS_ROW_HEIGHT = 24
+local RECIPE_CRAFTERS_COLUMNS = 2
+local RECIPE_CRAFTERS_COLUMN_GAP = 12
+
+local function CreateRecipeCrafterRow(parent)
+  local row = CreateFrame("Frame", nil, parent)
+  row:SetHeight(RECIPE_CRAFTERS_ROW_HEIGHT)
+
+  local stripe = row:CreateTexture(nil, "BACKGROUND")
+  stripe:SetAllPoints()
+  stripe:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
+  stripe:SetVertexColor(1, 1, 1, 0)
+  row.stripe = stripe
+
+  local text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  text:SetPoint("LEFT", row, "LEFT", 8, 0)
+  text:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+  text:SetJustifyH("LEFT")
+  text:SetJustifyV("MIDDLE")
+  row.text = text
+
+  return row
+end
+
+-- Side popup for browsing a recipe's full known-crafters list. Recipes can
+-- have 100+ known crafters, far more than the recipe row itself has room
+-- for, so this pairs a search box with the same offset/slider virtualized
+-- list pattern the Recipe Browser's own recipe list uses.
+function LeafVE.UI:CreateRecipeCraftersPopup()
+  if self.recipeCraftersPopup then return end
+
+  local popup = CreateFrame("Frame", "LeafVE_RecipeCraftersPopup", UIParent)
+  popup:SetFrameStrata("DIALOG")
+  popup:EnableMouse(true)
+  LayoutAshenSidePopup(popup)
+  popup:SetBackdrop({
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile = true, tileSize = 32, edgeSize = 32,
+    insets = { left = 11, right = 12, top = 12, bottom = 11 }
+  })
+  popup:SetBackdropColor(0, 0, 0, 0)
+  ApplyAshenScrollPopupSkin(popup)
+  popup:Hide()
+  popup:SetScript("OnHide", function() GameTooltip:Hide() end)
+
+  if UISpecialFrames then
+    table.insert(UISpecialFrames, "LeafVE_RecipeCraftersPopup")
+  end
+
+  local closeBtn = CreateFrame("Button", nil, popup, "UIPanelCloseButton")
+  closeBtn:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -5, -5)
+  closeBtn:SetScript("OnClick", function() popup:Hide() end)
+
+  -- Icon sits immediately left of the title, and the pair is recentered as
+  -- a group every refresh (RefreshRecipeCraftersPopup) since the recipe
+  -- name's width varies -- a fixed anchor would leave the title looking
+  -- left-shifted instead of centered like the popup's other titles.
+  local headerIcon = popup:CreateTexture(nil, "ARTWORK")
+  headerIcon:SetWidth(32)
+  headerIcon:SetHeight(32)
+  headerIcon:SetPoint("TOP", popup, "TOP", 0, -24)
+  headerIcon:SetTexture(LEAF_FALLBACK)
+  popup.headerIcon = headerIcon
+
+  local titleText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  titleText:SetPoint("LEFT", headerIcon, "RIGHT", 10, 0)
+  titleText:SetJustifyH("LEFT")
+  titleText:SetTextColor(THEME.gold[1], THEME.gold[2], THEME.gold[3])
+  popup.titleText = titleText
+
+  -- A proper opaque inset (same as the Recipe Browser's own "Recipe Search"
+  -- box) instead of laying text straight over the popup's ashen background
+  -- art -- names were sitting on top of the decorative texture and padded
+  -- too close to the edges to read cleanly. Anchored straight off the
+  -- popup (not the icon) so it stays put while the header recenters.
+  local contentPanel = CreateInset(popup)
+  contentPanel:SetPoint("TOPLEFT", popup, "TOPLEFT", 32, -66)
+  contentPanel:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -32, 22)
+  popup.contentPanel = contentPanel
+
+  local searchLabel = contentPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  searchLabel:SetPoint("TOPLEFT", contentPanel, "TOPLEFT", 12, -12)
+  searchLabel:SetText("|cFFFFD700Filter by name|r")
+
+  local subtitleText = contentPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  subtitleText:SetPoint("TOPRIGHT", contentPanel, "TOPRIGHT", -12, -12)
+  subtitleText:SetJustifyH("RIGHT")
+  popup.subtitleText = subtitleText
+
+  local searchBG = CreateFrame("Frame", nil, contentPanel)
+  searchBG:SetPoint("TOPLEFT", searchLabel, "BOTTOMLEFT", 0, -6)
+  searchBG:SetPoint("RIGHT", contentPanel, "RIGHT", -12, 0)
+  searchBG:SetHeight(22)
+  searchBG:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 12,
+    insets = {left = 3, right = 3, top = 3, bottom = 3}
+  })
+  searchBG:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
+  searchBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
+
+  local searchBox = CreateFrame("EditBox", nil, searchBG)
+  searchBox:SetPoint("TOPLEFT", searchBG, "TOPLEFT", 5, -4)
+  searchBox:SetPoint("BOTTOMRIGHT", searchBG, "BOTTOMRIGHT", -5, 4)
+  searchBox:SetFontObject(GameFontHighlightSmall)
+  searchBox:SetTextInsets(0, 0, 0, 0)
+  searchBox:SetAutoFocus(false)
+  searchBox:SetText("")
+  searchBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+  searchBox:SetScript("OnTextChanged", function()
+    local owner = LeafVE and LeafVE.UI and LeafVE.UI.recipeCraftersPopup
+    if owner and owner:IsVisible() then
+      owner.offset = 0
+      LeafVE.UI:RefreshRecipeCraftersPopup()
+    end
+  end)
+  popup.searchBox = searchBox
+
+  local listFrame = CreateFrame("Frame", nil, contentPanel)
+  listFrame:SetPoint("TOPLEFT", searchBG, "BOTTOMLEFT", 0, -10)
+  listFrame:SetPoint("BOTTOMRIGHT", contentPanel, "BOTTOMRIGHT", -26, 10)
+  listFrame:EnableMouse(true)
+  listFrame:EnableMouseWheel(true)
+  listFrame:SetScript("OnMouseWheel", function()
+    local owner = LeafVE and LeafVE.UI and LeafVE.UI.recipeCraftersPopup
+    if not owner then return end
+    -- offset counts LINES (not names) now that the list runs in columns.
+    local totalLines = math.ceil(table.getn(owner.filteredNames or {}) / RECIPE_CRAFTERS_COLUMNS)
+    local visibleRows = owner.visibleRows or 1
+    local maxOffset = math.max(0, totalLines - visibleRows)
+    local newOffset = (owner.offset or 0) - (arg1 or 0)
+    if newOffset < 0 then newOffset = 0 end
+    if newOffset > maxOffset then newOffset = maxOffset end
+    if newOffset == (owner.offset or 0) then return end
+    owner.offset = newOffset
+    LeafVE.UI:RefreshRecipeCraftersPopup()
+  end)
+  popup.listFrame = listFrame
+  popup.rows = {}
+  popup.offset = 0
+  popup.allNames = {}
+  popup.filteredNames = {}
+  popup.rowHeight = RECIPE_CRAFTERS_ROW_HEIGHT
+
+  local scrollBar = CreateFrame("Slider", nil, contentPanel)
+  scrollBar:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", 22, -8)
+  scrollBar:SetPoint("BOTTOMRIGHT", contentPanel, "BOTTOMRIGHT", -8, 10)
+  AddScrollBarArrows(scrollBar, contentPanel)
+  scrollBar:SetWidth(20)
+  scrollBar:SetOrientation("VERTICAL")
+  scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+  scrollBar:SetMinMaxValues(0, 0)
+  scrollBar:SetValue(0)
+  scrollBar:SetValueStep(1)
+  local thumb = scrollBar:GetThumbTexture()
+  thumb:SetWidth(20)
+  thumb:SetHeight(28)
+  scrollBar:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 8, edgeSize = 8,
+    insets = {left = 2, right = 2, top = 2, bottom = 2}
+  })
+  scrollBar:SetBackdropColor(0, 0, 0, 0.3)
+  scrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
+  scrollBar:SetScript("OnValueChanged", function()
+    if this.ignoreUpdate then return end
+    local owner = LeafVE and LeafVE.UI and LeafVE.UI.recipeCraftersPopup
+    if not owner then return end
+    local value = math.floor((this:GetValue() or 0) + 0.5)
+    if value < 0 then value = 0 end
+    if value == (owner.offset or 0) then return end
+    owner.offset = value
+    LeafVE.UI:RefreshRecipeCraftersPopup()
+  end)
+  popup.scrollBar = scrollBar
+
+  local emptyText = listFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  emptyText:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 4, -6)
+  emptyText:SetPoint("RIGHT", listFrame, "RIGHT", -4, 0)
+  emptyText:SetJustifyH("LEFT")
+  emptyText:SetJustifyV("TOP")
+  emptyText:SetText("|cFF888888No known crafters yet.|r")
+  popup.emptyText = emptyText
+
+  if self.ApplyPopupScale then
+    self:ApplyPopupScale(popup)
+  end
+
+  self.recipeCraftersPopup = popup
+end
+
+function LeafVE.UI:ShowRecipeCraftersPopup(recipe, knownBy)
+  if not recipe then return end
+  self:CreateRecipeCraftersPopup()
+
+  local popup = self.recipeCraftersPopup
+  popup.recipe = recipe
+  popup.allNames = type(knownBy) == "table" and knownBy or {}
+  popup.offset = 0
+  if popup.searchBox then
+    popup.searchBox:SetText("")
+  end
+  if popup.headerIcon then
+    popup.headerIcon:SetTexture(recipe.icon or LEAF_FALLBACK)
+  end
+
+  LayoutAshenSidePopup(popup)
+  self:RefreshRecipeCraftersPopup()
+  popup:Show()
+end
+
+function LeafVE.UI:RefreshRecipeCraftersPopup()
+  local popup = self.recipeCraftersPopup
+  if not popup then return end
+
+  local recipe = popup.recipe
+  if popup.titleText then
+    local qualityColor = recipe and WORK_ORDER_QUALITY_COLORS[recipe.quality or 1] or "|cFFFFFFFF"
+    popup.titleText:SetText(qualityColor .. tostring(recipe and recipe.name or "Recipe") .. "|r")
+  end
+
+  -- Recenter the icon+title as a group: the recipe name's width varies, so
+  -- centering the title alone (without moving the icon along with it) would
+  -- leave the pair looking lopsided.
+  if popup.headerIcon and popup.titleText then
+    local iconWidth = popup.headerIcon:GetWidth() or 32
+    local gap = 10
+    local maxTitleWidth = (popup:GetWidth() or 430) - 120
+    local titleWidth = popup.titleText:GetStringWidth() or 0
+    if titleWidth > maxTitleWidth then titleWidth = maxTitleWidth end
+    popup.titleText:SetWidth(titleWidth > 0 and titleWidth or 1)
+    local totalWidth = iconWidth + gap + titleWidth
+    popup.headerIcon:ClearAllPoints()
+    popup.headerIcon:SetPoint("TOP", popup, "TOP", (iconWidth - totalWidth) / 2, -24)
+  end
+
+  local allNames = popup.allNames or {}
+  local totalKnown = table.getn(allNames)
+  local filterText = Lower(Trim(popup.searchBox and popup.searchBox:GetText() or ""))
+  local filtered = {}
+  for i = 1, totalKnown do
+    local name = allNames[i]
+    if filterText == "" or string.find(Lower(name or ""), filterText, 1, true) then
+      table.insert(filtered, name)
+    end
+  end
+  popup.filteredNames = filtered
+
+  if popup.subtitleText then
+    if filterText ~= "" then
+      popup.subtitleText:SetText(string.format("|cFF75D9FF%d of %d known crafters|r", table.getn(filtered), totalKnown))
+    else
+      popup.subtitleText:SetText(string.format("|cFF75D9FF%d known crafter%s|r", totalKnown, totalKnown == 1 and "" or "s"))
+    end
+  end
+
+  -- Two columns so a large roster needs far less scrolling to browse.
+  local numColumns = RECIPE_CRAFTERS_COLUMNS
+  local listWidth = popup.listFrame:GetWidth() or 0
+  if not listWidth or listWidth < 200 then
+    listWidth = 320
+  end
+  local columnWidth = (listWidth - RECIPE_CRAFTERS_COLUMN_GAP * (numColumns - 1)) / numColumns
+
+  local rowHeight = popup.rowHeight or RECIPE_CRAFTERS_ROW_HEIGHT
+  local visibleLines = math.max(6, GetWorkOrderVisibleRowCount(popup.listFrame, rowHeight, 6))
+  local visibleSlots = visibleLines * numColumns
+  local totalRows = table.getn(filtered)
+  local totalLines = math.ceil(totalRows / numColumns)
+  local maxOffset = math.max(0, totalLines - visibleLines)
+  if (popup.offset or 0) > maxOffset then
+    popup.offset = maxOffset
+  end
+  popup.visibleRows = visibleLines
+
+  while table.getn(popup.rows) < visibleSlots do
+    table.insert(popup.rows, CreateRecipeCrafterRow(popup.listFrame))
+  end
+
+  local startIndex = (popup.offset or 0) * numColumns + 1
+  for slot = 1, table.getn(popup.rows) do
+    local rowFrame = popup.rows[slot]
+    local lineIndex = math.floor((slot - 1) / numColumns)
+    local colIndex = slot - 1 - (lineIndex * numColumns)
+    local dataIndex = startIndex + slot - 1
+    if slot <= visibleSlots and dataIndex <= totalRows then
+      rowFrame:SetWidth(columnWidth)
+      rowFrame:ClearAllPoints()
+      rowFrame:SetPoint("TOPLEFT", popup.listFrame, "TOPLEFT", colIndex * (columnWidth + RECIPE_CRAFTERS_COLUMN_GAP), -(lineIndex * rowHeight))
+      rowFrame.text:SetText(filtered[dataIndex] or "")
+      -- Zebra-stripe by absolute LINE (not column/slot), so both columns in
+      -- a row share the same stripe and it alternates row-to-row instead of
+      -- column-to-column, staying stable as you scroll.
+      local absoluteLine = (popup.offset or 0) + lineIndex
+      local isEven = (absoluteLine - 2 * math.floor(absoluteLine / 2)) == 0
+      rowFrame.stripe:SetVertexColor(1, 1, 1, isEven and 0.05 or 0)
+      rowFrame:Show()
+    else
+      rowFrame:Hide()
+    end
+  end
+
+  SyncWorkOrderSlider(popup.scrollBar, popup.offset or 0, maxOffset)
+
+  if popup.emptyText then
+    if totalRows > 0 then
+      popup.emptyText:Hide()
+    else
+      popup.emptyText:Show()
+      popup.emptyText:SetText(filterText ~= "" and "|cFF888888No crafters match that search.|r" or "|cFF888888No known crafters yet.|r")
+    end
+  end
 end
 
 function CreateWorkOrderOrderButton(parent)
@@ -41229,6 +41567,23 @@ function LeafVE.UI:RefreshRecipeBrowserPanel()
     end)
     btn.requestBtn = requestBtn
 
+    -- Opens the full known-crafters list for this recipe (recipes can have
+    -- 100+ known crafters -- far more than fits in the row's reagentText).
+    local craftersBtn = CreateFrame("Button", nil, btn, "UIPanelButtonTemplate")
+    craftersBtn:SetWidth(70)
+    craftersBtn:SetHeight(20)
+    craftersBtn:SetPoint("TOP", requestBtn, "BOTTOM", 0, -4)
+    craftersBtn:SetText("Crafters")
+    SkinButtonAccent(craftersBtn)
+    craftersBtn:SetScript("OnClick", function()
+      local rowBtn = this:GetParent()
+      local recipe = rowBtn and rowBtn.recipe
+      if not recipe or not LeafVE or not LeafVE.UI then return end
+      LeafVE.UI:ShowRecipeCraftersPopup(recipe, rowBtn.knownByCrafters)
+      PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
+    btn.craftersBtn = craftersBtn
+
     table.insert(panel.recipeButtons, btn)
   end
 
@@ -41258,10 +41613,21 @@ function LeafVE.UI:RefreshRecipeBrowserPanel()
       if btn.reagentText then
         local token = GetWorkOrderCrafterRecipeToken(recipe)
         local knownBy = token and panel.recipeKnowledgeIndex and panel.recipeKnowledgeIndex[token]
-        if type(knownBy) == "table" and table.getn(knownBy) > 0 then
-          btn.reagentText:SetText("|cFF66FF66Known by:|r " .. LeafVEEllipsizeText(table.concat(knownBy, ", "), 46))
+        local knownCount = type(knownBy) == "table" and table.getn(knownBy) or 0
+        btn.knownByCrafters = knownCount > 0 and knownBy or nil
+        if knownCount > 0 and knownCount <= 3 then
+          btn.reagentText:SetText("|cFF66FF66Known by:|r " .. table.concat(knownBy, ", "))
+        elseif knownCount > 3 then
+          btn.reagentText:SetText("|cFF66FF66Known by " .. knownCount .. " crafters|r")
         else
           btn.reagentText:SetText("|cFF888888No known crafters yet|r")
+        end
+        if btn.craftersBtn then
+          if knownCount > 0 then
+            btn.craftersBtn:Enable()
+          else
+            btn.craftersBtn:Disable()
+          end
         end
       end
       if btn.idText then
@@ -41275,6 +41641,7 @@ function LeafVE.UI:RefreshRecipeBrowserPanel()
       btn:Show()
     else
       btn.recipe = nil
+      btn.knownByCrafters = nil
       btn:Hide()
     end
   end
@@ -41289,8 +41656,27 @@ function LeafVE.UI:RefreshRecipeBrowserPanel()
   end
 
   if panel.summaryText then
+    -- Distinct crafters across the currently displayed (search-filtered)
+    -- recipe set, not the whole profession -- keeps this number in sync
+    -- with the recipe count next to it rather than a separate, wider scope.
+    local distinctCrafters = {}
+    local distinctCrafterCount = 0
+    for i = 1, table.getn(filtered) do
+      local token = GetWorkOrderCrafterRecipeToken(filtered[i])
+      local knownBy = token and panel.recipeKnowledgeIndex and panel.recipeKnowledgeIndex[token]
+      if type(knownBy) == "table" then
+        for j = 1, table.getn(knownBy) do
+          local name = knownBy[j]
+          if name and not distinctCrafters[name] then
+            distinctCrafters[name] = true
+            distinctCrafterCount = distinctCrafterCount + 1
+          end
+        end
+      end
+    end
+
     local apiNote = LeafVE:HasRecipeLinkAPI() and "" or "  |cFFFF6666(ClassicAPI not detected -- auto-detection disabled)|r"
-    panel.summaryText:SetText("|cFFAAAAAA" .. tostring(selectedProfession or "") .. ": " .. tostring(totalRows) .. " recipe(s)|r" .. apiNote)
+    panel.summaryText:SetText("|cFFAAAAAA" .. tostring(selectedProfession or "") .. ": " .. tostring(totalRows) .. " recipe(s)|r   |cFF555555|  |r|cFF88CCFFDistinct Crafters: " .. distinctCrafterCount .. "|r" .. apiNote)
   end
 end
 
@@ -43489,6 +43875,7 @@ function LeafVE.UI:Build()
       if LeafVE.UI.workOrderPopup then LeafVE.UI.workOrderPopup:Hide() end
       if LeafVE.UI.guildBankPopup then LeafVE.UI.guildBankPopup:Hide() end
       if LeafVE.UI.talentPopup then LeafVE.UI.talentPopup:Hide() end
+      if LeafVE.UI.recipeCraftersPopup then LeafVE.UI.recipeCraftersPopup:Hide() end
       LeafVE.UI:HideNativeTalentFrame()
     end)
   else
@@ -43511,6 +43898,7 @@ function LeafVE.UI:Build()
       if LeafVE.UI.workOrderPopup then LeafVE.UI.workOrderPopup:Hide() end
       if LeafVE.UI.guildBankPopup then LeafVE.UI.guildBankPopup:Hide() end
       if LeafVE.UI.talentPopup then LeafVE.UI.talentPopup:Hide() end
+      if LeafVE.UI.recipeCraftersPopup then LeafVE.UI.recipeCraftersPopup:Hide() end
       LeafVE.UI:HideNativeTalentFrame()
     end)
   end
