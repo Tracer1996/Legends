@@ -8935,8 +8935,6 @@ function LeafVE:PurgeDepartedPlayerData(name)
     table.remove(LeafVE_DB.departurePurgeLog, 1)
   end
 
-  Print("|cFFD8A24A["..name.."]|r no longer appears to be in the guild -- their Ashen Ember, banner, and achievement data has been removed from your local cache.|r")
-
   if LeafVE.UI and LeafVE.UI.Refresh then
     LeafVE.UI:Refresh()
   end
