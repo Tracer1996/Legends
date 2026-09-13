@@ -10,7 +10,7 @@ LeafVE_AchTest.DEBUG = false -- Set to true for debug messages
 LeafVE_AchTest.initialized = false -- Set to true after PLAYER_ENTERING_WORLD backlog scan
 
 local ADDON_COMM_PREFIX = "LeafVEAch"
-local LEAFVE_RELEASE_VERSION = "4.1.5"
+local LEAFVE_RELEASE_VERSION = "4.1.6"
 local VERSION_REMINDER_INTERVAL = 24 * 60 * 60
 local LEAFVE_ANNOUNCEMENT_ITEM_ID = 6948
 

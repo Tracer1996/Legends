@@ -5,7 +5,7 @@ AtlasLoot_Data = AtlasLoot_Data or {}
 LeafVE = LeafVE or {}
 LeafVE.name = "LeafVillageLegends"
 LeafVE.prefix = "LeafVE"
-LeafVE.version = "19.0.0"
+LeafVE.version = "19.1.0"
 LeafVE.allianceEnabled = false
 LeafVE.isAllianceStandalone = false
 LeafVE.guildBankOwner = "Methllyy"
@@ -22251,7 +22251,15 @@ function LeafVE:GetWorkOrderItemName(itemId)
   if scanTip then
     scanTip:ClearLines()
     scanTip:SetOwner(UIParent, "ANCHOR_NONE")
-    scanTip:SetHyperlink("item:" .. tostring(itemId))
+    -- A handful of Turtle-custom item ids (freshly added recipes whose
+    -- crafted item / reagents essentially no client has ever cached) have
+    -- been observed making SetHyperlink error instead of just leaving the
+    -- tooltip blank -- pcall keeps that from propagating up and aborting
+    -- whatever tooltip this is being resolved for mid-render (which, since
+    -- GameTooltip:Show() is always the LAST call in those handlers, would
+    -- otherwise leave the whole tooltip invisible rather than merely
+    -- missing this one item's name).
+    pcall(scanTip.SetHyperlink, scanTip, "item:" .. tostring(itemId))
     itemName = GetItemInfo(itemId)
   end
 
@@ -28064,47 +28072,74 @@ function CreateWorkOrderRecipeButton(parent)
     end
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
     GameTooltip:ClearLines()
-    if this.recipe.itemId then
-      GameTooltip:SetHyperlink("item:" .. tostring(this.recipe.itemId))
-      GameTooltip:AddLine(" ")
-      GameTooltip:AddLine("Profession: " .. tostring(this.recipe.profession or "Unknown"), 0.75, 0.95, 0.75)
-      if this.recipe.spellId then
-        GameTooltip:AddLine("Spell ID: " .. tostring(this.recipe.spellId), 0.85, 0.85, 0.85)
-      end
-    else
-      GameTooltip:SetText(this.recipe.name or "Recipe", THEME.gold[1], THEME.gold[2], THEME.gold[3], 1, true)
-      GameTooltip:AddLine("Profession: " .. tostring(this.recipe.profession or "Unknown"), 0.75, 0.95, 0.75)
-      if this.recipe.spellId then
-        GameTooltip:AddLine("Spell ID: " .. tostring(this.recipe.spellId), 0.85, 0.85, 0.85)
-      end
-    end
-    local reagentLines = LeafVE:GetWorkOrderReagentLines(this.recipe, 1)
-    if type(reagentLines) == "table" and table.getn(reagentLines) > 0 then
-      GameTooltip:AddLine(" ")
-      GameTooltip:AddLine("Reagents", 1, 0.82, 0.2)
-      for i = 1, table.getn(reagentLines) do
-        GameTooltip:AddLine(reagentLines[i], 0.85, 0.85, 0.85, 1)
-      end
-    end
-    local knownBy = this.knownByCrafters
-    local knownCount = type(knownBy) == "table" and table.getn(knownBy) or 0
-    if knownCount > 0 then
-      GameTooltip:AddLine(" ")
-      GameTooltip:AddLine("Known Crafters (" .. knownCount .. ")", 1, 0.82, 0.2)
-      local maxShown = 40
-      local perLine = 4
-      local shown = math.min(knownCount, maxShown)
-      local i = 1
-      while i <= shown do
-        local lineNames = {}
-        for j = i, math.min(i + perLine - 1, shown) do
-          table.insert(lineNames, knownBy[j])
+
+    -- The whole body is one pcall: an untraceable client-side error tied to
+    -- a specific Turtle-custom recipe (freshly added, essentially uncached
+    -- everywhere) was silently aborting this handler before it reached
+    -- GameTooltip:Show() below, leaving no tooltip at all rather than one
+    -- merely missing a line. Whatever the exact failure, this guarantees a
+    -- tooltip still appears -- worst case with just the recipe's name.
+    local ok, err = pcall(function()
+      if this.recipe.itemId then
+        local linkedOk = pcall(GameTooltip.SetHyperlink, GameTooltip, "item:" .. tostring(this.recipe.itemId))
+        if not linkedOk then
+          GameTooltip:ClearLines()
+          GameTooltip:SetText(this.recipe.name or "Recipe", THEME.gold[1], THEME.gold[2], THEME.gold[3], 1, true)
         end
-        GameTooltip:AddLine(table.concat(lineNames, ", "), 0.85, 0.85, 0.85, 1)
-        i = i + perLine
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Profession: " .. tostring(this.recipe.profession or "Unknown"), 0.75, 0.95, 0.75)
+        if this.recipe.spellId then
+          GameTooltip:AddLine("Spell ID: " .. tostring(this.recipe.spellId), 0.85, 0.85, 0.85)
+        end
+      else
+        GameTooltip:SetText(this.recipe.name or "Recipe", THEME.gold[1], THEME.gold[2], THEME.gold[3], 1, true)
+        GameTooltip:AddLine("Profession: " .. tostring(this.recipe.profession or "Unknown"), 0.75, 0.95, 0.75)
+        if this.recipe.spellId then
+          GameTooltip:AddLine("Spell ID: " .. tostring(this.recipe.spellId), 0.85, 0.85, 0.85)
+        end
       end
-      if knownCount > maxShown then
-        GameTooltip:AddLine("...and " .. (knownCount - maxShown) .. " more", 0.6, 0.6, 0.6, 1)
+      local reagentLines = LeafVE:GetWorkOrderReagentLines(this.recipe, 1)
+      if type(reagentLines) == "table" and table.getn(reagentLines) > 0 then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Reagents", 1, 0.82, 0.2)
+        for i = 1, table.getn(reagentLines) do
+          GameTooltip:AddLine(reagentLines[i], 0.85, 0.85, 0.85, 1)
+        end
+      end
+      local knownBy = this.knownByCrafters
+      local knownCount = type(knownBy) == "table" and table.getn(knownBy) or 0
+      if knownCount > 0 then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Known Crafters (" .. knownCount .. ")", 1, 0.82, 0.2)
+        local maxShown = 40
+        local perLine = 4
+        local shown = math.min(knownCount, maxShown)
+        local i = 1
+        while i <= shown do
+          local lineNames = {}
+          for j = i, math.min(i + perLine - 1, shown) do
+            table.insert(lineNames, knownBy[j])
+          end
+          GameTooltip:AddLine(table.concat(lineNames, ", "), 0.85, 0.85, 0.85, 1)
+          i = i + perLine
+        end
+        if knownCount > maxShown then
+          GameTooltip:AddLine("...and " .. (knownCount - maxShown) .. " more", 0.6, 0.6, 0.6, 1)
+        end
+      end
+    end)
+    if not ok then
+      GameTooltip:ClearLines()
+      GameTooltip:SetText(this.recipe.name or "Recipe", 1, 1, 1, 1, true)
+      GameTooltip:AddLine("|cFFFF6060(tooltip error -- see chat)|r", 1, 1, 1, 1)
+      -- Prints once per recipe per session (not once per hover) so this is
+      -- a real diagnostic rather than a spam source -- remove once the
+      -- underlying cause is found and fixed for real.
+      LeafVE.reportedRecipeTooltipErrors = LeafVE.reportedRecipeTooltipErrors or {}
+      local reportKey = this.recipe.uid or this.recipe.name
+      if reportKey and not LeafVE.reportedRecipeTooltipErrors[reportKey] then
+        LeafVE.reportedRecipeTooltipErrors[reportKey] = true
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF6060[LeafVE]|r Recipe tooltip error on \"" .. tostring(this.recipe.name) .. "\": " .. tostring(err))
       end
     end
     GameTooltip:Show()
