@@ -5,7 +5,7 @@ AtlasLoot_Data = AtlasLoot_Data or {}
 LeafVE = LeafVE or {}
 LeafVE.name = "LeafVillageLegends"
 LeafVE.prefix = "LeafVE"
-LeafVE.version = "19.0.0"
+LeafVE.version = "19.1.0"
 LeafVE.allianceEnabled = false
 LeafVE.isAllianceStandalone = false
 LeafVE.guildBankOwner = "Methllyy"
@@ -738,14 +738,22 @@ local function LeafVEGetTextHeight(fontString, minimumHeight)
   return height
 end
 
--- Jewelcrafting and Survival intentionally excluded here (not from
+-- Gardening intentionally excluded here (not from
 -- WORK_ORDER_MAIN_PROFESSION_ORDER/WORK_ORDER_SECONDARY_PROFESSION_ORDER,
 -- which drive the separate saved-profession designation picker on the
--- character card -- untouched) -- removes them from the Recipe Browser's
+-- character card -- untouched) -- removes it from the Recipe Browser's
 -- and Live Orders' profession sidebars entirely. Also drives
 -- EnsureWorkOrderCatalog's catalog.byProfession population (see there),
--- so their recipes stop being cataloged at all rather than just being
--- hidden in the UI.
+-- so its recipes stop being cataloged at all rather than just being
+-- hidden in the UI. Gardening plants seeds rather than casting a craft
+-- spell, so unlike Survival/Jewelcrafting below it has no real spellId to
+-- correct its transcription to at all.
+--
+-- Survival and Jewelcrafting are included despite the same transcription
+-- quirk Gardening has (their Atlas-CFM "id" columns hold a spell id, not an
+-- item id) -- SURVIVAL_RECIPE_ITEM_IDS/JEWELCRAFTING_RECIPE_ITEM_IDS plus
+-- EnsureWorkOrderCatalog correct that to a real spellId+itemId pair before
+-- cataloging, so neither needs any further special-casing past that point.
 WORK_ORDER_PROFESSION_ORDER = {
   "Alchemy",
   "Blacksmithing",
@@ -753,7 +761,9 @@ WORK_ORDER_PROFESSION_ORDER = {
   "Enchanting",
   "Engineering",
   "First Aid",
+  "Jewelcrafting",
   "Leatherworking",
+  "Survival",
   "Tailoring",
   "Gathering",
 }
@@ -765,7 +775,9 @@ WORK_ORDER_REQUEST_CATEGORY_ORDER = {
   "Enchanting",
   "Engineering",
   "First Aid",
+  "Jewelcrafting",
   "Leatherworking",
+  "Survival",
   "Tailoring",
   "Gathering",
 }
@@ -3941,6 +3953,13 @@ local function EnsureDB()
   if type(LeafVE_DB.weeklyRecap.noticeSeenByPlayer) ~= "table" then LeafVE_DB.weeklyRecap.noticeSeenByPlayer = {} end
   if not LeafVE_DB.loginStreaks then LeafVE_DB.loginStreaks = {} end
   if not LeafVE_DB.persistentRoster then LeafVE_DB.persistentRoster = {} end
+  -- Tracks consecutive complete-roster scans (see UpdateGuildRosterCache)
+  -- where a previously-known member was absent, so a departure can be
+  -- confirmed over multiple scans/days instead of trusting a single sample.
+  if not LeafVE_DB.rosterAbsenceTracking then LeafVE_DB.rosterAbsenceTracking = {} end
+  -- Audit trail of automatic departed-member data purges, so a purge is
+  -- always traceable rather than a silent deletion.
+  if not LeafVE_DB.departurePurgeLog then LeafVE_DB.departurePurgeLog = {} end
   if not LeafVE_DB.instanceTracking then LeafVE_DB.instanceTracking = {} end
   if not LeafVE_DB.questTracking then LeafVE_DB.questTracking = {} end
   if not LeafVE_DB.questCompletions then LeafVE_DB.questCompletions = {} end
@@ -8654,47 +8673,69 @@ function LeafVE:UpdateGuildRosterCache()
     GuildRoster()
     self.guildRosterRequestAt = now
   end
+  -- Force a COMPLETE roster (online + offline) for this scan instead of
+  -- relying on whatever the client's own "show offline members" checkbox
+  -- happens to be set to -- the departure-tracking below needs a real,
+  -- deterministic full-membership snapshot every time, not an online-only
+  -- one that would make every ordinary offline guildmate look "missing".
+  -- Restored right after reading so the player's own Guild-frame checkbox
+  -- state isn't silently changed by this.
+  local previousShowOffline = GetGuildRosterShowOffline and GetGuildRosterShowOffline()
+  if SetGuildRosterShowOffline then SetGuildRosterShowOffline(true) end
+
   local n = GetNumGuildMembers and GetNumGuildMembers() or 0
   -- GuildRoster() is async; if data hasn't arrived yet, don't stamp the cache as
   -- valid so that the GUILD_ROSTER_UPDATE handler can trigger a real rebuild.
-  if n == 0 then return end
+  if n == 0 then
+    if SetGuildRosterShowOffline and previousShowOffline ~= nil then SetGuildRosterShowOffline(previousShowOffline) end
+    return
+  end
 
   -- Get currently online members
+  local liveNames = {}
   for i = 1, n do
     local name, rank, rankIndex, level, class, zone, note, officernote, online, status = GetGuildRosterInfo(i)
     name = ShortName(name)
     if name then
       local isOnline = false
-      if online then 
-        if type(online) == "number" then 
-          isOnline = (online == 1) 
-        else 
-          isOnline = (online == true) 
-        end 
+      if online then
+        if type(online) == "number" then
+          isOnline = (online == 1)
+        else
+          isOnline = (online == true)
+        end
       end
-      
+
       local memberData = {
-        name = name, 
-        rank = rank, 
-        rankIndex = rankIndex, 
-        level = level, 
-        class = class, 
-        zone = zone, 
-        note = note, 
-        officernote = officernote, 
-        online = isOnline, 
+        name = name,
+        rank = rank,
+        rankIndex = rankIndex,
+        level = level,
+        class = class,
+        zone = zone,
+        note = note,
+        officernote = officernote,
+        online = isOnline,
         status = status,
         lastSeen = now
       }
-      
+
       self.guildRosterCache[Lower(name)] = memberData
-      
+      liveNames[Lower(name)] = true
+
       -- Store in persistent roster
       LeafVE_DB.persistentRoster[Lower(name)] = memberData
     end
   end
-  
-  -- Add offline members from persistent roster
+
+  if SetGuildRosterShowOffline and previousShowOffline ~= nil then SetGuildRosterShowOffline(previousShowOffline) end
+
+  -- Add offline members from persistent roster -- with ShowOffline forced
+  -- true above, every still-current member (online or not) is already in
+  -- liveNames/guildRosterCache from the loop above, so in practice this
+  -- only ever backfills stale historical persistentRoster entries; kept as
+  -- a harmless fallback for the (n == 0 return above notwithstanding) case
+  -- where the live scan came back incomplete.
   if LeafVE_DB.options.showOfflineMembers then
     for lowerName, memberData in pairs(LeafVE_DB.persistentRoster) do
       if not self.guildRosterCache[lowerName] then
@@ -8705,14 +8746,213 @@ function LeafVE:UpdateGuildRosterCache()
         end
         offlineCopy.online = false
         offlineCopy.zone = "Offline"
-        
+
         self.guildRosterCache[lowerName] = offlineCopy
       end
     end
   end
-  end -- end if InGuild()
-  
+
+  -- Stamped here, before departure tracking, rather than only at the very
+  -- end of this function -- UpdateRosterAbsenceTracking can synchronously
+  -- trigger PurgeDepartedPlayerData -> LeafVE.UI:Refresh(), and if that
+  -- refresh chain calls back into UpdateGuildRosterCache before this is
+  -- set, the throttle above wouldn't yet see this cycle as done and could
+  -- let a second, reentrant full scan-and-purge pass run inside the first.
   self.guildRosterCacheTime = now
+
+  -- liveNames reflects a real, complete (online+offline) roster scan this
+  -- call, so it's safe to use as this cycle's input to departure tracking.
+  self:UpdateRosterAbsenceTracking(liveNames)
+
+  end -- end if InGuild()
+
+  self.guildRosterCacheTime = now
+end
+
+-- Records, per guildmate, how many consecutive COMPLETE roster scans
+-- (liveNames, from UpdateGuildRosterCache with ShowOffline forced true) they
+-- were absent from. Anyone actually seen this scan has their record cleared
+-- immediately -- a single sighting is enough to fully clear suspicion, only
+-- repeated, sustained absence ever accumulates toward a purge. This alone
+-- doesn't delete anything; LeafVE:PurgeDepartedPlayerData is only invoked
+-- once BOTH ROSTER_DEPARTURE_MIN_MISS_STREAK consecutive misses AND
+-- ROSTER_DEPARTURE_MIN_ELAPSED real time have been observed.
+function LeafVE:UpdateRosterAbsenceTracking(liveNames)
+  EnsureDB()
+  local now = Now()
+  local me = ShortName(UnitName("player"))
+  local meLower = me and Lower(me)
+
+  for lowerName in pairs(liveNames) do
+    LeafVE_DB.rosterAbsenceTracking[lowerName] = nil
+  end
+
+  local confirmedDeparted = {}
+  for lowerName, memberData in pairs(LeafVE_DB.persistentRoster) do
+    -- Never evaluate the local player against their own client's roster
+    -- scan -- there is no scenario where "I don't see myself" should ever
+    -- be trusted over the fact that I am, self-evidently, still here.
+    if not liveNames[lowerName] and lowerName ~= meLower then
+      local record = LeafVE_DB.rosterAbsenceTracking[lowerName]
+      if not record then
+        record = { firstMissedAt = now, missStreak = 0 }
+        LeafVE_DB.rosterAbsenceTracking[lowerName] = record
+      end
+      record.missStreak = record.missStreak + 1
+      record.lastCheckedAt = now
+
+      if record.missStreak >= ROSTER_DEPARTURE_MIN_MISS_STREAK
+        and (now - record.firstMissedAt) >= ROSTER_DEPARTURE_MIN_ELAPSED then
+        table.insert(confirmedDeparted, memberData.name or lowerName)
+      end
+    end
+  end
+
+  -- Purged after the tracking loop above finishes, rather than inline, so a
+  -- purge's own writes (persistentRoster/rosterAbsenceTracking removal)
+  -- never touch the tables this function is still iterating over.
+  for i = 1, table.getn(confirmedDeparted) do
+    self:PurgeDepartedPlayerData(confirmedDeparted[i])
+  end
+end
+
+-- Permanently removes a confirmed-departed guildmate's roster entry and
+-- every per-player table this addon keeps on them (Ashen Ember totals,
+-- banner reputation, badges, shoutout records, point history, achievement
+-- cache, and misc identity caches), mirroring the field list already
+-- proven out by LeafVE:ResetMyData/the LVE_PLAYER_DATA_RESET: handler.
+-- IMPORTANT: only ever call this after LeafVE:UpdateRosterAbsenceTracking
+-- has confirmed sustained absence -- this function itself does not
+-- re-verify guild membership, by design, so all of the false-positive
+-- protection lives in the caller's confirmation gate, not here.
+--
+-- This only clears THIS client's own local mirror of that player's data --
+-- every guildmate's addon keeps its own replica via periodic sync
+-- broadcasts, so if this was ever wrong, the real player's own client will
+-- naturally resync their true data back in next time the two overlap
+-- online, rather than the loss being permanent guild-wide.
+function LeafVE:PurgeDepartedPlayerData(name)
+  if not name or name == "" then return end
+  local me = ShortName(UnitName("player"))
+  -- Absolute safeguard, independent of the caller's own me-exclusion --
+  -- this function must never be able to wipe the local player's own data.
+  if me and Lower(me) == Lower(name) then return end
+
+  EnsureDB()
+  local lowerName = Lower(name)
+
+  self.guildRosterCache[lowerName] = nil
+  LeafVE_DB.persistentRoster[lowerName] = nil
+  LeafVE_DB.rosterAbsenceTracking[lowerName] = nil
+
+  LeafVE_DB.alltime[name]            = nil
+  LeafVE_DB.season[name]             = nil
+  LeafVE_DB.loginStreaks[name]       = nil
+  LeafVE_DB.loginTracking[name]      = nil
+  LeafVE_DB.groupSessions[name]      = nil
+  LeafVE_DB.groupPointsToday[name]   = nil
+  LeafVE_DB.guildieGroupHours[name]  = nil
+  LeafVE_DB.guildieHonorableKills[name] = nil
+  LeafVE_DB.pvpStats[name]           = nil
+  if LeafVE_DB.guildJoinDate then LeafVE_DB.guildJoinDate[name] = nil end
+  LeafVE_DB.attendance[name]         = nil
+  LeafVE_DB.pointHistory[name]       = nil
+  LeafVE_DB.instanceTracking[name]   = nil
+  LeafVE_DB.questTracking[name]      = nil
+  LeafVE_DB.questCompletions[name]   = nil
+  LeafVE_DB.badges[name]             = nil
+  LeafVE_DB.equippedTitles[name]     = nil
+  LeafVE_DB.badgesAnnounced[name]    = nil
+  if LeafVE_DB.shinobiDutyRepBonuses then LeafVE_DB.shinobiDutyRepBonuses[name] = nil end
+  if LeafVE_DB.bannerRepTracking and LeafVE_DB.bannerRepTracking.players then LeafVE_DB.bannerRepTracking.players[lowerName] = nil end
+  if LeafVE_DB.bannerRepAllTimeTotals then LeafVE_DB.bannerRepAllTimeTotals[lowerName] = nil end
+  for key, _ in pairs(LeafVE_DB.badgesAnnounced) do
+    if type(key) == "string" and string.find(key, ":" .. name .. ":", 1, true) then
+      LeafVE_DB.badgesAnnounced[key] = nil
+    end
+  end
+  LeafVE_DB.lboard.alltime[name]     = nil
+  LeafVE_DB.lboard.updatedAt[name]   = nil
+  for _, wkData in pairs(LeafVE_DB.lboard.weekly) do
+    if type(wkData) == "table" then wkData[name] = nil end
+  end
+  if LeafVE_DB.lboard.season then
+    LeafVE_DB.lboard.season[name] = nil
+  end
+  for _, dayData in pairs(LeafVE_DB.global) do
+    if type(dayData) == "table" then dayData[name] = nil end
+  end
+  LeafVE_DB.shoutouts[name] = nil
+  for _, targets in pairs(LeafVE_DB.shoutouts) do
+    if type(targets) == "table" then targets[name] = nil end
+  end
+  if LeafVE_GlobalDB.achievementCache then
+    LeafVE_GlobalDB.achievementCache[name] = nil
+  end
+  if LeafVE_GlobalDB.titleCache then
+    LeafVE_GlobalDB.titleCache[lowerName] = nil
+  end
+  if LeafVE_GlobalDB.lboardCache then
+    if LeafVE_GlobalDB.lboardCache.alltime then
+      LeafVE_GlobalDB.lboardCache.alltime[name] = nil
+    end
+    if LeafVE_GlobalDB.lboardCache.weekly then
+      for _, wkData in pairs(LeafVE_GlobalDB.lboardCache.weekly) do
+        if type(wkData) == "table" then wkData[name] = nil end
+      end
+    end
+  end
+  if LeafVE_GlobalDB.badgeProgressCache then
+    LeafVE_GlobalDB.badgeProgressCache[name] = nil
+  end
+  if LeafVE_GlobalDB.gearCache then
+    LeafVE_GlobalDB.gearCache[lowerName] = nil
+  end
+  if LeafVE_GlobalDB.specCache then
+    LeafVE_GlobalDB.specCache[lowerName] = nil
+  end
+  if LeafVE_GlobalDB.talentCache then
+    LeafVE_GlobalDB.talentCache[lowerName] = nil
+  end
+  if LeafVE.talentSyncBuffer then
+    LeafVE.talentSyncBuffer[lowerName] = nil
+  end
+  if LeafVE_GlobalDB.playerNotes then
+    LeafVE_GlobalDB.playerNotes[name] = nil
+  end
+  if LeafVE_GlobalDB.professionDesignations then
+    LeafVE_GlobalDB.professionDesignations[lowerName] = nil
+  end
+  if LeafVE_GlobalDB.shinobiDutyRepBonuses then
+    LeafVE_GlobalDB.shinobiDutyRepBonuses[lowerName] = nil
+  end
+  if LeafVE_GlobalDB.bannerRepAllTimeTotals then
+    LeafVE_GlobalDB.bannerRepAllTimeTotals[lowerName] = nil
+  end
+  if LeafVE_GlobalDB.workOrderCrafterSignups then
+    LeafVE_GlobalDB.workOrderCrafterSignups[lowerName] = nil
+  end
+  if LeafVE_GlobalDB.workOrderCrafterSignupMeta then
+    LeafVE_GlobalDB.workOrderCrafterSignupMeta[lowerName] = nil
+  end
+
+  table.insert(LeafVE_DB.departurePurgeLog, {
+    name = name,
+    purgedAt = Now(),
+    reason = "confirmed_absent_from_guild_roster",
+  })
+  -- Keep the audit trail bounded -- this is a log for spot-checking, not an
+  -- archive that needs to grow forever.
+  while table.getn(LeafVE_DB.departurePurgeLog) > 50 do
+    table.remove(LeafVE_DB.departurePurgeLog, 1)
+  end
+
+  if LeafVE.UI and LeafVE.UI.Refresh then
+    LeafVE.UI:Refresh()
+  end
+  if LeafVE.UI and LeafVE.UI.RefreshAchievementsLeaderboard then
+    LeafVE.UI:RefreshAchievementsLeaderboard()
+  end
 end
 
 function LeafVE:GetGuildInfo(playerName)
@@ -14278,14 +14518,24 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     local myVer = LeafVE.version
     if not LeafVE.shownVersionNag and VersionLessThan(myVer, ver) then
       LeafVE.shownVersionNag = true
-      Print("|cFFFFAA00ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â  Your Ashen Banner addon is outdated! You have v"..myVer..", latest is v"..ver..". Please update!|r")
+      Print("|cFFFFAA00Your Ashen Banner addon is outdated! You have v"..myVer..", latest is v"..ver..". Please update!|r")
     end
     -- Warn once when a guildmate's version is below the minimum compatible version
     if VersionLessThan(ver, LeafVE.minCompatVersion) and ShouldPrintVersionWarnings() then
       if not LeafVE.warnedOldVersion then LeafVE.warnedOldVersion = {} end
       if not LeafVE.warnedOldVersion[sender] then
         LeafVE.warnedOldVersion[sender] = true
-        Print("|cFFFF4444ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â  "..sender.." is running an outdated version (v"..ver..") and their synced data will not be accepted. Ask them to update to v"..LeafVE.minCompatVersion.."+.|r")
+        -- Something in this client (VanillaHelpers.dll, going by the
+        -- loaded-modules list in the crash dumps) auto-linkifies anything
+        -- shaped like "19.0.0" in printed chat text into a fake |Hurl:...|h
+        -- hyperlink, regardless of surrounding punctuation/position -- every
+        -- variant tried there still tripped it. Breaking the literal
+        -- \d+%.\d+%.\d+ pattern by inserting a harmless same-color escape
+        -- after each dot defeats that pattern match on the raw string
+        -- while WoW still renders it as an unbroken "19.0.0" to the player
+        -- (|c...codes are invisible once rendered).
+        local safeMinVer = string.gsub(LeafVE.minCompatVersion, "%.", ".|cFFFF4444")
+        Print("|cFFFF4444"..sender.." is running an outdated version (v"..ver..") and their synced data will not be accepted. Ask them to update to v"..safeMinVer.."|r")
       end
     end
     return
@@ -22001,7 +22251,15 @@ function LeafVE:GetWorkOrderItemName(itemId)
   if scanTip then
     scanTip:ClearLines()
     scanTip:SetOwner(UIParent, "ANCHOR_NONE")
-    scanTip:SetHyperlink("item:" .. tostring(itemId))
+    -- A handful of Turtle-custom item ids (freshly added recipes whose
+    -- crafted item / reagents essentially no client has ever cached) have
+    -- been observed making SetHyperlink error instead of just leaving the
+    -- tooltip blank -- pcall keeps that from propagating up and aborting
+    -- whatever tooltip this is being resolved for mid-render (which, since
+    -- GameTooltip:Show() is always the LAST call in those handlers, would
+    -- otherwise leave the whole tooltip invisible rather than merely
+    -- missing this one item's name).
+    pcall(scanTip.SetHyperlink, scanTip, "item:" .. tostring(itemId))
     itemName = GetItemInfo(itemId)
   end
 
@@ -22193,6 +22451,16 @@ function CanonicalWorkOrderProfession(name)
   local trimmed = Trim(tostring(name or ""))
   if Lower(trimmed) == "farming" then
     return "Farming"
+  end
+  -- Survival, like Farming above, is a valid Work Order profession
+  -- (WORK_ORDER_PROFESSION_ORDER) but intentionally isn't part of the
+  -- separate saved-profession designation picker (WORK_ORDER_MAIN_PROFESSION_
+  -- ORDER/WORK_ORDER_SECONDARY_PROFESSION_ORDER), so CanonicalMainProfession/
+  -- CanonicalSecondaryProfession alone would never recognize it -- without
+  -- this, StoreWorkOrderRecord (and IsValidWorkOrderRecord) would reject
+  -- every Survival order as having an unrecognized profession.
+  if Lower(trimmed) == "survival" then
+    return "Survival"
   end
   return CanonicalMainProfession(name) or CanonicalSecondaryProfession(name)
 end
@@ -24653,6 +24921,734 @@ function AppendGatheringWorkOrderCatalogRecipes(catalog, seen)
   end
 end
 
+-- Survival has no separate recipe item -- Atlas-CFM's own Crafting.lua
+-- transcription (CFMLoot/Data/Tables/Crafting.lua, mirrored into this
+-- addon's Crafting.lua as Survival1/2/3) reuses each recipe's real spell id
+-- as a stand-in "item id" in both id columns of every row. This maps that
+-- real spell id to the real crafted item id, sourced directly from
+-- Atlas-CFM's own spell database (CFMLoot/Data/Tables/Spells.lua,
+-- AtlasCFM.SpellDB.craftspells[id].item) -- the same place Atlas-CFM's own
+-- UI resolves a Survival recipe's icon/name from (GetItemInfo on that real
+-- item, see LootBrowserUI.lua). Used by EnsureWorkOrderCatalog to correct
+-- the transcription before building the catalog recipe, so downstream code
+-- (icons, known-crafter spellId tokens, reagent lookups) never has to
+-- special-case Survival's ambiguous ids again.
+SURVIVAL_RECIPE_ITEM_IDS = {
+  [30004] = 106, -- Slowing Bolas
+  [30006] = 42108, -- Edged Machete
+  [30008] = 42109, -- Iron Spear
+  [30010] = 42110, -- Reinforced Fishing Rod
+  [30013] = 42111, -- Water Trudgers
+  [30015] = 42151, -- Bundle of Shade Wood Sticks
+  [30017] = 42112, -- Sharpened Herb Sickle
+  [30022] = 42113, -- Lined Wintercloak
+  [30024] = 42114, -- Sleek Pinewood Bow
+  [30027] = 42127, -- Superior Healing Salve
+  [30029] = 133, -- Savory Fishing Lure
+  [30031] = 42200, -- Smooth Ironfeather Arrows
+  [30033] = 42120, -- Heavy Duty Machete
+  [30035] = 42121, -- Thorium Edged Machete
+  [30037] = 42122, -- Thorium Spear
+  [30039] = 42124, -- Razor-sharp Skinning Knife
+  [30042] = 42153, -- Bundle of Star Wood Sticks
+  [30045] = 42123, -- Mastercraft Fishing Rod
+  [30050] = 33375, -- Miner's Rucksack
+  [30052] = 33376, -- Herbalist's Knapsack
+  [30054] = 33378, -- Skinner's Carryall
+  [30057] = 33379, -- Cooling Rations Bag
+  [30063] = 42129, -- Major Healing Salve
+  [30065] = 33377, -- Fisherman's Backpack
+  [30067] = 42201, -- Starfeather Arrows
+  [30069] = 36701, -- Oil-Powered Cooker
+  [30071] = 42329, -- Blackmouth Fishing Trap
+  [30073] = 42294, -- Rugged Mining Sack
+  [30078] = 42328, -- Snap Trap
+  [30084] = 42330, -- Firefin Fishing Trap
+  [30086] = 42331, -- Stonescale Fishing Trap
+  [36747] = 2633, -- Jungle Remedy
+  [36749] = 42231, -- Spirited Precision Sickle
+  [36751] = 42232, -- Prospector's Magnifying Lens
+  [36765] = 42149, -- Bundle of Simple Sticks
+  [36766] = 42089, -- Crude Walking Stick
+  [36767] = 42090, -- Crude Machete
+  [36768] = 42091, -- Crude Hatchet
+  [36769] = 42092, -- Crude Hunting Bow
+  [36770] = 42093, -- Copper Lantern
+  [36771] = 42229, -- Simple Slingshot
+  [36772] = 33369, -- Simple Herbalist's Backpack
+  [36773] = 33370, -- Makeshift Rations Bag
+  [36774] = 42233, -- Weak Healing Salve
+  [36785] = 42094, -- Makeshift Knife
+  [36786] = 42095, -- Gardening Gloves
+  [36787] = 42096, -- Crude Fishing Rod
+  [36788] = 42097, -- Hunting Spear
+  [36789] = 42098, -- Gardening Broom
+  [36795] = 42155, -- Nutritious Rations
+  [36796] = 42199, -- Shade Wood Arrows
+  [36797] = 42115, -- Vine Cutter
+  [36798] = 42116, -- Hiking Staff
+  [36799] = 42117, -- Tree Hatchet
+  [36800] = 42152, -- Bundle of Tropical Sticks
+  [36801] = 42118, -- Sunshade Hat
+  [36802] = 33374, -- Thick Rations Bag
+  [36803] = 42119, -- Warped Recurve Bow
+  [36804] = 42130, -- Spiced Berries
+  [36805] = 42131, -- Aromatic Berries
+  [36806] = 42230, -- Advanced Camouflage
+  [36807] = 42156, -- Emergency Parachute
+  [36808] = 42128, -- Stabilizing Healing Salve
+  [36809] = 145, -- Premium Fishing Lure
+  [36842] = 42099, -- Oakwood Bow
+  [36843] = 114, -- Simple Fishing Lure
+  [36844] = 42125, -- Healing Salve
+  [36845] = 33371, -- Fishing Bag
+  [36846] = 33372, -- Skinner's Pack
+  [36847] = 42100, -- Gardening Pitchfork
+  [36848] = 42101, -- Murloc Scale Coat
+  [36849] = 42150, -- Bundle of Bright Wood Sticks
+  [36850] = 42154, -- Sturdy Net
+  [36851] = 42102, -- Sturdy Cane
+  [36852] = 42103, -- Sturdy Knife
+  [36853] = 42104, -- Sturdy Blade
+  [36854] = 42105, -- Reliable Fishing Rod
+  [36855] = 42132, -- Throwable Net
+  [36856] = 42106, -- Hat of the Junior Chef
+  [36857] = 42107, -- Treasure Compass
+  [36858] = 42198, -- Bright Wood Arrows
+  [36859] = 33373, -- Studded Rations Bag
+  [36860] = 42126, -- Potent Healing Salve
+  [36861] = 125, -- Spicy Fishing Lure
+  [46064] = 6182, -- Dim Torch
+  [46066] = 65028, -- Murloc's Flippers
+  [46068] = 60001, -- Cleaning Cloth
+  [46072] = 51283, -- Traveler's Tent
+  [46073] = 51282, -- Fishing Boat
+  [46075] = 2714, -- Iron Lantern
+  [46077] = 65030, -- Repaired Electro-Lantern
+  [47101] = 7009, -- Survivalist's Skinning Knife
+  [47103] = 7010, -- Driftwood Fishing Pole
+}
+
+-- Jewelcrafting also has no separate recipe item -- same transcription
+-- quirk as Survival above (its Atlas-CFM "id" columns hold a spell id, not
+-- an item id), sourced the same way from Atlas-CFM's own spell database
+-- (CFMLoot/Data/Tables/Spells.lua, AtlasCFM.SpellDB.craftspells[id].item).
+JEWELCRAFTING_RECIPE_ITEM_IDS = {
+  [93] = 156, -- Refined Dwarven Necklace
+  [104] = 56112, -- Ancient Dwarven Gemstone
+  [29728] = 55150, -- Rough Gritted Paper
+  [29730] = 55156, -- Rough Copper Ring
+  [29732] = 55157, -- Copper Bangle
+  [34758] = 42205, -- Kodoheart Necklace
+  [36581] = 42195, -- Ceremonial Furbolg Pendant
+  [36591] = 42191, -- Crystalized Topaz Gemstone
+  [36905] = 55060, -- Grandstaff of the Shen'dralar Elder
+  [41001] = 55158, -- Bright Copper Ring
+  [41003] = 81030, -- Malachite Ring
+  [41005] = 55159, -- Sturdy Copper Ring
+  [41007] = 55160, -- Inlaid Copper Ring
+  [41009] = 81092, -- Copper Staff
+  [41011] = 55161, -- Encrusted Copper Bangle
+  [41013] = 55162, -- Lesser Fortification Ring
+  [41015] = 55163, -- Tigercrest Ring
+  [41017] = 55165, -- Small Pearlstone Staff
+  [41019] = 55166, -- Amber Ring
+  [41021] = 55167, -- Azure Ring
+  [41023] = 81031, -- Bright Copper Necklace
+  [41025] = 55168, -- Softglow Ring
+  [41027] = 55170, -- Topaz Studded Ring
+  [41029] = 55151, -- Coarse Gritted Paper
+  [41031] = 81032, -- Rough Gemstone Cluster
+  [41033] = 55171, -- Lavish Gemmed Necklace
+  [41035] = 55172, -- Amberstone Pendant
+  [41037] = 55173, -- Deepmist Choker
+  [41039] = 55174, -- Rough Bronze Ring
+  [41041] = 41308, -- Shimmering Bronze Ring
+  [41043] = 41309, -- Amber Orb
+  [41045] = 55175, -- Encrusted Bronze Staff
+  [41047] = 55176, -- Earthrock Loop
+  [41049] = 41310, -- Bronze Cuffed Bangles
+  [41051] = 41311, -- Shadowgem Band
+  [41053] = 41313, -- Bronze Scepter
+  [41055] = 41312, -- Pendant of Midnight
+  [41057] = 41314, -- Agatestone Crown
+  [41059] = 41315, -- Moonlight Staff
+  [41061] = 41316, -- Binding Signet
+  [41063] = 41318, -- Enchanted Bracelets
+  [41065] = 41320, -- Coarse Gemstone Cluster
+  [41067] = 41319, -- Rough Silver Ring
+  [41069] = 41325, -- Silver Medallion
+  [41071] = 41329, -- Ring of Purified Silver
+  [41081] = 41332, -- Rough Iron Ring
+  [41083] = 41331, -- Rough Gold Ring
+  [41085] = 41323, -- Emberstone Studded Ring
+  [41087] = 41321, -- Rough Thorium Ring
+  [41089] = 41324, -- Mithril Blackstone Necklace
+  [41091] = 55154, -- Dense Gritted Paper
+  [41093] = 55256, -- Radiant Thorium Twilight
+  [41095] = 55269, -- Glyph Codex
+  [41097] = 55271, -- Spellweaver Rod
+  [41099] = 55268, -- Quicksilver Whirl
+  [41101] = 55273, -- Crystalweft Bracers
+  [41103] = 55267, -- Ethereal Frostspark Crown
+  [41105] = 41330, -- Pendant of Arcane Radiance
+  [41201] = 55152, -- Heavy Gritted Paper
+  [41203] = 41344, -- Heavy Gemstone Cluster
+  [41205] = 55144, -- Goldfire Crystal Bracelet
+  [41207] = 55142, -- Quartz Halo
+  [41209] = 55148, -- Staff of Blossomed Jade
+  [41211] = 55143, -- Jade Harmony Circlet
+  [41213] = 55145, -- Goldenshade Quartz Crown
+  [41215] = 55146, -- The Golden Goblet
+  [41217] = 55147, -- Powerful Citrine Pendant
+  [41219] = 41322, -- Rough Mithril Ring
+  [41221] = 55141, -- Ironsun Citrine Ring
+  [41223] = 41340, -- Shimmering Gold Necklace
+  [41225] = 41342, -- Ironbloom Ring
+  [41227] = 41343, -- Ornate Mithril Scepter
+  [41229] = 55153, -- Solid Gritted Paper
+  [41231] = 55164, -- Minor Trollblood Ring
+  [41233] = 41341, -- Rough Truesilver Ring
+  [41235] = 55196, -- Aquamarine Pendant
+  [41237] = 56020, -- Solid Gemstone Cluster
+  [41239] = 41346, -- Greater Binding Signet
+  [41241] = 41345, -- Royal Gemstone Staff
+  [41243] = 41349, -- Emberstone Idol
+  [41245] = 41347, -- Runed Truesilver Ring
+  [41247] = 55169, -- Small Pearl Ring
+  [41249] = 81093, -- Bulky Copper Ring
+  [41251] = 55258, -- Blue Starfire
+  [41253] = 55265, -- Emerald Monarch's Glow
+  [41255] = 55259, -- Sapphire Luminescence
+  [41259] = 55272, -- Arcanum Baton
+  [41261] = 55266, -- Sunburst Tiara
+  [41263] = 56023, -- Ocean's Gaze
+  [41265] = 55260, -- Starry Thorium Band
+  [41267] = 56032, -- Ruby Ring of Ruin
+  [41269] = 56031, -- Encrusted Gemstone Ring
+  [41271] = 56033, -- Pure Gold Ring
+  [41273] = 55199, -- Prism Amulet
+  [41275] = 55202, -- Gemmed Citrine Pendant
+  [41277] = 55197, -- Starforge Amulet
+  [41279] = 55200, -- Voidheart Charm
+  [41281] = 55204, -- Runebound Amulet
+  [41283] = 55195, -- Astral Amulet
+  [41285] = 56034, -- Shimmering Moonstone Tablet
+  [41287] = 56035, -- Stormcloud Sigil
+  [41303] = 55264, -- Massive Jewel Circlet
+  [41305] = 56036, -- Golden Scepter of Authority
+  [41307] = 55243, -- Gemkeeper's Folio
+  [41309] = 55261, -- Stellar Ruby Ring
+  [41311] = 55178, -- Stellar Gemguards
+  [41313] = 55241, -- Garnet Guardian Staff
+  [41315] = 55198, -- Moonlit Charm
+  [41317] = 55263, -- Twilight Opal Cascade
+  [41321] = 56037, -- Gleaming Chain
+  [41323] = 56038, -- Talisman of Stone
+  [41325] = 56039, -- Medallion of Flame
+  [41327] = 56040, -- Gleaming Silver Necklace
+  [41329] = 56041, -- Ring of The Turtle
+  [41331] = 56042, -- Gem Encrusted Choker
+  [41333] = 56043, -- Goldcrest Amulet
+  [41335] = 56044, -- Shining Copper Cuffs
+  [41337] = 56045, -- Dawnbright Cuffs
+  [41339] = 56046, -- Circlet of Dampening
+  [41348] = 55180, -- Crystalfire Armlets
+  [41350] = 55228, -- Cinderfall Band
+  [41352] = 55242, -- Opaline Illuminator
+  [41354] = 55255, -- Skyfire Jewel
+  [41356] = 55244, -- Gemstone Compendium
+  [41541] = 56048, -- Dazzling Aquamarine Loop
+  [41546] = 56049, -- Alluring Citrine Choker
+  [41548] = 56050, -- Elaborate Golden Bracelets
+  [41550] = 56051, -- Heart of the Sea
+  [41552] = 56052, -- Staff of Gallitrea
+  [41554] = 56053, -- Golden Jade Ring
+  [41556] = 56054, -- Delicate Mithril Amulet
+  [41558] = 56055, -- Draenethyst Baton
+  [41560] = 55316, -- Ebon Ring
+  [41562] = 55317, -- The King's Conviction
+  [41564] = 55318, -- Shadowfall Jewel
+  [41566] = 55319, -- Ocean's Wrath
+  [41568] = 55320, -- Dazzling Moonstone Band
+  [41570] = 55321, -- Harpy Talon Ring
+  [41572] = 55322, -- Centaur Hoof Circlet
+  [41574] = 55323, -- Ogre Bone Band
+  [41579] = 55325, -- Marine's Demise
+  [41581] = 55326, -- Serpent's Coil Staff
+  [41583] = 55327, -- Farraki Ceremony Totem
+  [41585] = 55328, -- Sphinx's Wisdom Staff
+  [41587] = 55329, -- Gloomweed Bindings
+  [41589] = 56047, -- Crystal Earring
+  [41591] = 55324, -- Spectre Shade Ring
+  [41601] = 56002, -- Sharpened Citrine Gemstone
+  [41603] = 56004, -- Radiant Ember Gemstone
+  [41605] = 56006, -- Glowing Ruby Gemstone
+  [41607] = 56003, -- Shimmering Aqua Gemstone
+  [41609] = 56015, -- Azerothian Ruby Gemstone
+  [41611] = 56012, -- Gloomy Diamond Gemstone
+  [41613] = 56013, -- Flawless Black Gemstone
+  [41615] = 56016, -- Arcane Emerald Gemstone
+  [41617] = 56017, -- Tempered Azerothian Gemstone
+  [41619] = 56014, -- Stunning Imperial Gemstone
+  [41621] = 56018, -- Enchanted Emerald Gemstone
+  [41623] = 56058, -- Pure Shining Moonstone
+  [41625] = 56010, -- Beautiful Diamond Gemstone
+  [41627] = 56000, -- Pristine Crystal Gemstone
+  [41629] = 56001, -- Gleaming Jade Gemstone
+  [41631] = 56005, -- Illuminated Gemstone
+  [41633] = 56056, -- Burning Star Gemstone
+  [41635] = 56008, -- Brilliant Opal Gemstone
+  [41637] = 56009, -- Elegant Emerald Gemstone
+  [41639] = 56007, -- Shining Sapphire Gemstone
+  [41641] = 56011, -- Unstable Arcane Gemstone
+  [41643] = 56057, -- Glittering Sapphire Gemstone
+  [41696] = 56059, -- Shimmering Diamond Band
+  [41698] = 56060, -- Crown of Molten Ascension
+  [41700] = 56061, -- Embergem Cuffs
+  [41702] = 56062, -- Blackwing Signet of Command
+  [41704] = 56063, -- Talisman of Hinderance
+  [41706] = 56064, -- Mastercrafted Diamond Crown
+  [41708] = 56065, -- Opalstone Circle
+  [41710] = 56066, -- Deep Sapphire Circlet
+  [41712] = 56067, -- Dark Iron Signet Ring
+  [41714] = 56068, -- Opal Guided Bangles
+  [41716] = 56069, -- Crown of Elegance
+  [41718] = 56070, -- Ornate Mithril Bracelets
+  [41720] = 56071, -- Regal Twilight Staff
+  [41722] = 56072, -- Pendant of Instability
+  [41724] = 56073, -- Ornament of Restraint
+  [41726] = 55330, -- Hydrathorn Bracers
+  [41728] = 55331, -- Blackrock Ironclamps
+  [41730] = 55332, -- Monastery Emberbrace
+  [41732] = 55333, -- Shadowmoon Orb
+  [41734] = 55334, -- Fangclaw Relic
+  [41736] = 55335, -- Netherbane Rod
+  [41738] = 55336, -- Marine Root
+  [41740] = 55337, -- Mistwood Tiara
+  [41742] = 55338, -- Venomspire Diadem
+  [41744] = 55339, -- Bloodfire Circlet
+  [41746] = 55340, -- Shadowforged Eye
+  [41748] = 55341, -- Totem of Self Preservation
+  [41750] = 55210, -- Facetted Moonstone Brooch
+  [41752] = 55211, -- Obsidian Brooch
+  [41754] = 55212, -- Smoldering Brooch
+  [41756] = 55213, -- Vitriol Brooch
+  [41760] = 56074, -- Graceful Agate Gemstone
+  [41762] = 56075, -- Dreary Opal Gemstone
+  [41764] = 56077, -- Resurged Topaz Gemstone
+  [41768] = 56076, -- Resilient Arcane Gemstone
+  [41770] = 56019, -- Dense Gemstone Cluster
+  [41774] = 56090, -- Spellweaver Pendant
+  [41776] = 56091, -- Ring of Midnight
+  [41778] = 56092, -- Stormcloud Shackles
+  [41780] = 56093, -- Stormcloud Signet
+  [41782] = 56094, -- Golden Runed Ring
+  [41784] = 56095, -- Mana Binding Signet
+  [41786] = 56089, -- Ornate Mithril Crown
+  [41788] = 55359, -- Blazefury Circlet
+  [41790] = 55360, -- Ring of Unleashed Potential
+  [41792] = 55361, -- Empowered Domination Rod
+  [41794] = 55362, -- Orb of Clairvoyance
+  [41796] = 55363, -- Grail of Forgotten Memories
+  [41798] = 55364, -- Guardbreaker Charm
+  [41800] = 55365, -- Rudeus' Focusing Cane
+  [41802] = 55366, -- Spire of Channeled Power
+  [41804] = 55367, -- Bindings of Luminance
+  [41806] = 55368, -- Crown of the Illustrious Queen
+  [41808] = 56096, -- Mastercrafted Diamond Bangles
+  [41821] = 61818, -- Gorgeous Mountain Gemstone
+}
+
+-- Recipes confirmed to exist on the live server (Tortoise-WoW / Turtle WoW, sourced from
+-- https://xian55.github.io/tortoise-db-viewer/?browse=crafting's underlying SQLite DB --
+-- spell_creates/spell_reagent/items, cross-checked 2026-09-06) that have no entry anywhere
+-- in AtlasLoot_Data.AtlasLootCrafting (Crafting.lua) under their profession -- Atlas-CFM's
+-- own transcription simply never covered them, whether because Turtle-WoW added/edited the
+-- item (see items.custom in the DB) or because Atlas-CFM's vanilla data was just incomplete
+-- (plenty of plain vanilla recipes, e.g. the basic belt buckles, are missing too). Every
+-- entry here was verified three ways: a real craft_source row (trainer/recipe-item/auto,
+-- not hidden/debug), a full reagent list from spell_reagent, AND -- for every one not
+-- flagged items.custom -- an exact name+reagent match against Wowhead Classic's own tooltip
+-- data (nether.wowhead.com/classic/tooltip/spell/<id>), so a plain "vanilla" recipe here is
+-- independently confirmed, not just trusted from one source. That check dropped two groups
+-- entirely (both cut from this table, not merely left uncorrected): 34 recipes whose spell
+-- id matched nothing on live Classic OR TBC Wowhead (5 Alchemy "Cauldron of Major X
+-- Protection" spells with no items-table row at all, plus ~28 Enchanting-skill spells at
+-- odd ids, two literally named after non-enchant items -- "Wendigo Fur Cloak" and "Deprecated
+-- Dark Iron Pauldrons" -- indicating leftover alpha/cut-content DB rows, not real recipes);
+-- and 56 recipes (17 overlapping the above) with no discoverable in-game learn method at all
+-- in craft_source (trainer, recipe-teaching item, and auto-learn all empty) -- including the
+-- Dreamsteel/Dreamhide/Dreamthread/Hydracoil sets, which match known unused vanilla "Emerald
+-- Dream" development content that likely never shipped on any live realm.
+-- AppendMissingWorkOrderCatalogRecipes below needs no ApplyWorkOrderSpellInfo fallback --
+-- unlike a Crafting.lua-derived recipe, everything it needs is already on the entry. A few
+-- spell_creates rows reference an itemId with no items table row at all (e.g. the Cauldron
+-- protection potions, which spawn a world object rather than a real item) -- itemId is left
+-- nil for those so nothing downstream chases a bogus GetItemInfo lookup; spellId still
+-- identifies the recipe.
+WORK_ORDER_MISSING_RECIPES = {
+  -- Alchemy (22)
+  { profession = "Alchemy", spellId = 17632, itemId = 13503, name = "Alchemists' Stone", skillRequirement = 315, reagents = { {7076, 8} --[[Essence of Earth]], {7078, 8} --[[Essence of Fire]], {7080, 8} --[[Essence of Water]], {7082, 8} --[[Essence of Air]], {9262, 2} --[[Black Vitriol]], {12803, 8} --[[Living Essence]], {13468, 4} --[[Black Lotus]] } }, -- custom=1
+  { profession = "Alchemy", spellId = 36932, itemId = 47412, name = "Concoction of the Arcane Giant", skillRequirement = 310, reagents = { {9206, 1} --[[Elixir of Giants]], {13454, 1} --[[Greater Arcane Elixir]], {18256, 1} --[[Imbued Vial]] } }, -- custom=1
+  { profession = "Alchemy", spellId = 36935, itemId = 47414, name = "Concoction of the Dreamwater", skillRequirement = 310, reagents = { {12820, 1} --[[Winterfall Firewater]], {18256, 1} --[[Imbued Vial]], {61423, 1} --[[Dreamtonic]] } }, -- custom=1
+  { profession = "Alchemy", spellId = 36929, itemId = 47410, name = "Concoction of the Emerald Mongoose", skillRequirement = 310, reagents = { {13452, 1} --[[Elixir of the Mongoose]], {18256, 1} --[[Imbued Vial]], {61224, 1} --[[Dreamshard Elixir]] } }, -- custom=1
+  { profession = "Alchemy", spellId = 6619, itemId = 5632, name = "Cowardly Flight Potion", skillRequirement = 150, reagents = { {3356, 1} --[[Kingsblood]], {3372, 1} --[[Leaded Vial]], {5636, 1} --[[Delicate Feather]] } }, -- custom=0
+  { profession = "Alchemy", spellId = 57131, itemId = 61224, name = "Dreamshard Elixir", skillRequirement = 300, reagents = { {8925, 1} --[[Crystal Vial]], {11176, 1} --[[Dream Dust]], {61198, 1} --[[Small Dream Shard]] } }, -- custom=1
+  { profession = "Alchemy", spellId = 57557, itemId = 7070, name = "Elemental Water", skillRequirement = 301, reagents = { {7079, 1} --[[Globe of Water]] } }, -- custom=1
+  { profession = "Alchemy", spellId = 36903, itemId = 55048, name = "Elixir of Greater Arcane Power", skillRequirement = 300, reagents = { {8831, 3} --[[Purple Lotus]], {8925, 1} --[[Crystal Vial]] } }, -- custom=1
+  { profession = "Alchemy", spellId = 36901, itemId = 55046, name = "Elixir of Greater Frost Power", skillRequirement = 300, reagents = { {8925, 1} --[[Crystal Vial]], {13467, 3} --[[Icecap]] } }, -- custom=1
+  { profession = "Alchemy", spellId = 45989, itemId = 50237, name = "Elixir of Greater Nature Power", skillRequirement = 300, reagents = { {8838, 1} --[[Sungrass]], {8925, 1} --[[Crystal Vial]], {10286, 3} --[[Heart of the Wild]], {13464, 1} --[[Golden Sansam]] } }, -- custom=1
+  { profession = "Alchemy", spellId = 115, itemId = 56113, name = "Elixir of Rapid Growth", skillRequirement = 200, reagents = { {3372, 1} --[[Leaded Vial]], {4625, 1} --[[Firebloom]], {7068, 1} --[[Elemental Fire]] } }, -- custom=1
+  { profession = "Alchemy", spellId = 2336, itemId = 2460, name = "Elixir of Tongues (NYI)", skillRequirement = 100, reagents = { {785, 2} --[[Mageroyal]], {2449, 2} --[[Earthroot]], {3371, 1} --[[Empty Vial]] } }, -- custom=0
+  { profession = "Alchemy", spellId = 24366, itemId = 20002, name = "Greater Dreamless Sleep Potion", skillRequirement = 290, reagents = { {8925, 1} --[[Crystal Vial]], {13463, 2} --[[Dreamfoil]], {13464, 1} --[[Golden Sansam]] } }, -- custom=1
+  { profession = "Alchemy", spellId = 17579, itemId = 13460, name = "Greater Holy Protection Potion", skillRequirement = 305, reagents = { {7069, 1} --[[Elemental Air]], {8925, 1} --[[Crystal Vial]], {13464, 1} --[[Golden Sansam]] } }, -- custom=0
+  { profession = "Alchemy", spellId = 24367, itemId = 20008, name = "Living Action Potion", skillRequirement = 300, reagents = { {8925, 1} --[[Crystal Vial]], {10286, 2} --[[Heart of the Wild]], {13465, 2} --[[Mountain Silversage]], {13467, 2} --[[Icecap]] } }, -- custom=1
+  { profession = "Alchemy", spellId = 57129, itemId = 61225, name = "Lucidity Potion", skillRequirement = 300, reagents = { {730, 1} --[[Murloc Eye]], {8831, 1} --[[Purple Lotus]], {8925, 1} --[[Crystal Vial]], {13463, 1} --[[Dreamfoil]] } }, -- custom=1
+  { profession = "Alchemy", spellId = 24365, itemId = 20007, name = "Mageblood Potion", skillRequirement = 290, reagents = { {8925, 1} --[[Crystal Vial]], {13463, 1} --[[Dreamfoil]], {13466, 2} --[[Plaguebloom]] } }, -- custom=1
+  { profession = "Alchemy", spellId = 24368, itemId = 20004, name = "Major Troll's Blood Potion", skillRequirement = 305, reagents = { {8846, 1} --[[Gromsblood]], {8925, 1} --[[Crystal Vial]], {13466, 2} --[[Plaguebloom]] } }, -- custom=1
+  { profession = "Alchemy", spellId = 36589, itemId = 42184, name = "Mixologist Stone", skillRequirement = 330, reagents = { {12808, 8} --[[Essence of Undeath]], {13468, 1} --[[Black Lotus]], {18335, 4} --[[Pristine Black Diamond]], {20520, 2} --[[Dark Rune]], {61673, 2} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Alchemy", spellId = 11459, itemId = 9149, name = "Philosopher's Stone", skillRequirement = 240, reagents = { {3575, 4} --[[Iron Bar]], {4625, 4} --[[Firebloom]], {8831, 4} --[[Purple Lotus]], {9262, 1} --[[Black Vitriol]] } }, -- custom=0
+  { profession = "Alchemy", spellId = 57111, itemId = 61181, name = "Potion of Quickness", skillRequirement = 300, reagents = { {2459, 1} --[[Swiftness Potion]], {8846, 1} --[[Gromsblood]], {8925, 1} --[[Crystal Vial]], {13465, 2} --[[Mountain Silversage]] } }, -- custom=1
+  { profession = "Alchemy", spellId = 45061, itemId = 51262, name = "Volatile Concoction", skillRequirement = 135, reagents = { {730, 1} --[[Murloc Eye]], {814, 1} --[[Flask of Oil]], {3371, 1} --[[Empty Vial]] } }, -- custom=1
+  -- Blacksmithing (95)
+  { profession = "Blacksmithing", spellId = 57178, itemId = 61784, name = "Arcanite Belt Buckle", skillRequirement = 275, reagents = { {7071, 1} --[[Iron Buckle]], {11754, 1} --[[Black Diamond]], {12360, 2} --[[Arcanite Bar]], {12361, 1} --[[Blue Sapphire]], {12644, 2} --[[Dense Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 27589, itemId = 22194, name = "Black Grasp of the Destroyer", skillRequirement = 320, reagents = { {12810, 8} --[[Enchanted Leather]], {13512, 1} --[[Flask of Supreme Power]], {22202, 24} --[[Small Obsidian Shard]], {22203, 8} --[[Large Obsidian Shard]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 45063, itemId = 51264, name = "Blast Shield", skillRequirement = 100, reagents = { {818, 2} --[[Tigerseye]], {2840, 12} --[[Copper Bar]], {3470, 2} --[[Rough Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 16986, itemId = 12795, name = "Blood Talon", skillRequirement = 325, reagents = { {7910, 10} --[[Star Ruby]], {12360, 10} --[[Arcanite Bar]], {12644, 2} --[[Dense Grinding Stone]], {12655, 10} --[[Enchanted Thorium Bar]], {12662, 8} --[[Demonic Rune]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 46658, itemId = 65005, name = "Bloodletter Razor", skillRequirement = 265, reagents = { {3860, 24} --[[Mithril Bar]], {4304, 4} --[[Thick Leather]], {6037, 10} --[[Truesilver Bar]], {7910, 8} --[[Star Ruby]], {7966, 6} --[[Solid Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 24136, itemId = 19690, name = "Bloodsoul Breastplate", skillRequirement = 320, reagents = { {7910, 2} --[[Star Ruby]], {12359, 20} --[[Thorium Bar]], {19726, 2} --[[Bloodvine]], {19774, 10} --[[Souldarite]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 24138, itemId = 19692, name = "Bloodsoul Gauntlets", skillRequirement = 320, reagents = { {12359, 12} --[[Thorium Bar]], {12810, 4} --[[Enchanted Leather]], {19726, 2} --[[Bloodvine]], {19774, 6} --[[Souldarite]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 24137, itemId = 19691, name = "Bloodsoul Shoulders", skillRequirement = 320, reagents = { {7910, 1} --[[Star Ruby]], {12359, 16} --[[Thorium Bar]], {19726, 2} --[[Bloodvine]], {19774, 8} --[[Souldarite]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 46651, itemId = 60294, name = "Bloodstone Warblade", skillRequirement = 260, reagents = { {3860, 14} --[[Mithril Bar]], {3864, 2} --[[Citrine]], {4278, 10} --[[Lesser Bloodstone Ore]], {7966, 4} --[[Solid Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57196, itemId = 61810, name = "Bloody Belt Buckle", skillRequirement = 300, reagents = { {8846, 6} --[[Gromsblood]], {12359, 10} --[[Thorium Bar]], {19933, 6} --[[Glowing Scorpid Blood]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57166, itemId = 61780, name = "Bronze Belt Buckle", skillRequirement = 90, reagents = { {2841, 8} --[[Bronze Bar]], {2880, 1} --[[Weak Flux]], {3478, 2} --[[Coarse Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 46665, itemId = 65012, name = "Bronze Bruiser", skillRequirement = 140, reagents = { {1705, 2} --[[Lesser Moonstone]], {2841, 6} --[[Bronze Bar]], {3391, 2} --[[Elixir of Ogre's Strength]], {3466, 2} --[[Strong Flux]], {3478, 4} --[[Coarse Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 36948, itemId = 33135, name = "Bulwark of Unshaken Earth", skillRequirement = 320, reagents = { {7067, 8} --[[Elemental Earth]], {7075, 4} --[[Core of Earth]], {7076, 6} --[[Essence of Earth]], {12360, 2} --[[Arcanite Bar]], {12655, 12} --[[Enchanted Thorium Bar]], {18567, 1} --[[Elemental Flux]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 34762, itemId = 42203, name = "Ceremonial Belt Buckle", skillRequirement = 145, reagents = { {2319, 4} --[[Medium Leather]], {3575, 4} --[[Iron Bar]], {5116, 2} --[[Long Tail Feather]], {5373, 1} --[[Lucky Charm]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57163, itemId = 61779, name = "Copper Belt Buckle", skillRequirement = 25, reagents = { {2840, 8} --[[Copper Bar]], {2880, 1} --[[Weak Flux]], {3470, 2} --[[Rough Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 46663, itemId = 65010, name = "Copper Knuckles", skillRequirement = 60, reagents = { {2840, 8} --[[Copper Bar]], {3470, 2} --[[Rough Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 85, itemId = 82, name = "Dark Iron Belt Buckle", skillRequirement = 275, reagents = { {7071, 1} --[[Iron Buckle]], {7078, 1} --[[Essence of Fire]], {11371, 2} --[[Dark Iron Bar]], {12644, 2} --[[Dense Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 24914, itemId = 20550, name = "Darkrune Breastplate", skillRequirement = 320, reagents = { {6037, 10} --[[Truesilver Bar]], {12359, 20} --[[Thorium Bar]], {20520, 10} --[[Dark Rune]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 24912, itemId = 20549, name = "Darkrune Gauntlets", skillRequirement = 320, reagents = { {6037, 6} --[[Truesilver Bar]], {12359, 12} --[[Thorium Bar]], {12810, 2} --[[Enchanted Leather]], {20520, 6} --[[Dark Rune]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 24913, itemId = 20551, name = "Darkrune Helm", skillRequirement = 320, reagents = { {6037, 8} --[[Truesilver Bar]], {11754, 1} --[[Black Diamond]], {12359, 16} --[[Thorium Bar]], {20520, 8} --[[Dark Rune]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 24139, itemId = 19693, name = "Darksoul Breastplate", skillRequirement = 320, reagents = { {12359, 20} --[[Thorium Bar]], {12799, 2} --[[Large Opal]], {19774, 14} --[[Souldarite]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 24140, itemId = 19694, name = "Darksoul Leggings", skillRequirement = 320, reagents = { {12359, 18} --[[Thorium Bar]], {12799, 2} --[[Large Opal]], {19774, 12} --[[Souldarite]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 24141, itemId = 19695, name = "Darksoul Shoulders", skillRequirement = 320, reagents = { {12359, 16} --[[Thorium Bar]], {12799, 1} --[[Large Opal]], {19774, 10} --[[Souldarite]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 16987, itemId = 12802, name = "Darkspear", skillRequirement = 325, reagents = { {12364, 2} --[[Huge Emerald]], {12644, 2} --[[Dense Grinding Stone]], {12655, 20} --[[Enchanted Thorium Bar]], {12800, 2} --[[Azerothian Diamond]], {12804, 20} --[[Powerful Mojo]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 45487, itemId = 61185, name = "Dawnstone Hammer", skillRequirement = 315, reagents = { {12360, 16} --[[Arcanite Bar]], {12644, 10} --[[Dense Grinding Stone]], {12800, 6} --[[Azerothian Diamond]], {12810, 6} --[[Enchanted Leather]], {12811, 6} --[[Righteous Orb]], {13926, 6} --[[Golden Pearl]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 36593, itemId = 42183, name = "Denwatcher", skillRequirement = 330, reagents = { {7080, 8} --[[Essence of Water]], {12644, 4} --[[Dense Grinding Stone]], {12655, 30} --[[Enchanted Thorium Bar]], {12803, 8} --[[Living Essence]], {13463, 4} --[[Dreamfoil]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 74, itemId = 67, name = "Dragonscale Belt Buckle", skillRequirement = 235, reagents = { {7071, 1} --[[Iron Buckle]], {7966, 1} --[[Solid Grinding Stone]], {8165, 14} --[[Worn Dragonscale]], {12359, 4} --[[Thorium Bar]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 46661, itemId = 65008, name = "Dream's Herald", skillRequirement = 315, reagents = { {9197, 20} --[[Elixir of Dream Vision]], {12360, 14} --[[Arcanite Bar]], {12364, 10} --[[Huge Emerald]], {12644, 4} --[[Dense Grinding Stone]], {12803, 10} --[[Living Essence]], {20002, 10} --[[Greater Dreamless Sleep Potion]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57181, itemId = 61785, name = "Dreamsteel Belt Buckle", skillRequirement = 300, reagents = { {7076, 1} --[[Essence of Earth]], {12644, 2} --[[Dense Grinding Stone]], {12803, 1} --[[Living Essence]], {61216, 2} --[[Dreamsteel Bar]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 95, itemId = 87, name = "Enchanted Thorium Belt Buckle", skillRequirement = 285, reagents = { {7071, 1} --[[Iron Buckle]], {12644, 1} --[[Dense Grinding Stone]], {12655, 2} --[[Enchanted Thorium Bar]], {61673, 2} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 54009, itemId = 65039, name = "Fiery Chain Breastplate", skillRequirement = 315, reagents = { {11371, 14} --[[Dark Iron Bar]], {17010, 6} --[[Fiery Core]], {17011, 5} --[[Lava Core]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 46666, itemId = 65013, name = "Frostbound Slasher", skillRequirement = 190, reagents = { {3466, 4} --[[Strong Flux]], {3486, 4} --[[Heavy Grinding Stone]], {3829, 2} --[[Frost Oil]], {3859, 10} --[[Steel Bar]], {7070, 4} --[[Elemental Water]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 54003, itemId = 61648, name = "Fury of the Timbermaw", skillRequirement = 310, reagents = { {7076, 3} --[[Essence of Earth]], {7078, 3} --[[Essence of Fire]], {12359, 16} --[[Thorium Bar]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 69, itemId = 66, name = "Gold Belt Buckle", skillRequirement = 175, reagents = { {3486, 2} --[[Heavy Grinding Stone]], {3577, 8} --[[Gold Bar]], {7071, 1} --[[Iron Buckle]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 47032, itemId = 60576, name = "Hateforge Belt", skillRequirement = 300, reagents = { {7078, 2} --[[Essence of Fire]], {11754, 5} --[[Black Diamond]], {12359, 12} --[[Thorium Bar]], {12810, 1} --[[Enchanted Leather]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 47034, itemId = 60578, name = "Hateforge Boots", skillRequirement = 300, reagents = { {7077, 7} --[[Heart of Fire]], {7078, 2} --[[Essence of Fire]], {11754, 5} --[[Black Diamond]], {12359, 12} --[[Thorium Bar]], {12810, 3} --[[Enchanted Leather]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 47030, itemId = 60574, name = "Hateforge Cuirass", skillRequirement = 300, reagents = { {7078, 2} --[[Essence of Fire]], {8170, 6} --[[Rugged Leather]], {11371, 1} --[[Dark Iron Bar]], {11754, 12} --[[Black Diamond]], {12359, 24} --[[Thorium Bar]], {20520, 2} --[[Dark Rune]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 47033, itemId = 60577, name = "Hateforge Grips", skillRequirement = 300, reagents = { {7078, 8} --[[Essence of Fire]], {11371, 8} --[[Dark Iron Bar]], {11754, 18} --[[Black Diamond]], {12359, 40} --[[Thorium Bar]], {12810, 8} --[[Enchanted Leather]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 47029, itemId = 60573, name = "Hateforge Helmet", skillRequirement = 300, reagents = { {7078, 1} --[[Essence of Fire]], {11371, 1} --[[Dark Iron Bar]], {11754, 6} --[[Black Diamond]], {12359, 16} --[[Thorium Bar]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 47031, itemId = 60575, name = "Hateforge Leggings", skillRequirement = 300, reagents = { {7078, 2} --[[Essence of Fire]], {8170, 4} --[[Rugged Leather]], {11371, 1} --[[Dark Iron Bar]], {11754, 8} --[[Black Diamond]], {12359, 20} --[[Thorium Bar]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 27585, itemId = 22197, name = "Heavy Obsidian Belt", skillRequirement = 320, reagents = { {7076, 2} --[[Essence of Earth]], {12655, 4} --[[Enchanted Thorium Bar]], {22202, 14} --[[Small Obsidian Shard]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 28244, itemId = 22671, name = "Icebane Bracers", skillRequirement = 320, reagents = { {7080, 2} --[[Essence of Water]], {12359, 12} --[[Thorium Bar]], {12360, 2} --[[Arcanite Bar]], {22682, 4} --[[Frozen Rune]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 28242, itemId = 22669, name = "Icebane Breastplate", skillRequirement = 320, reagents = { {7080, 4} --[[Essence of Water]], {12359, 16} --[[Thorium Bar]], {12360, 2} --[[Arcanite Bar]], {22682, 7} --[[Frozen Rune]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 28243, itemId = 22670, name = "Icebane Gauntlets", skillRequirement = 320, reagents = { {7080, 2} --[[Essence of Water]], {12359, 12} --[[Thorium Bar]], {12360, 2} --[[Arcanite Bar]], {22682, 5} --[[Frozen Rune]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 46660, itemId = 65007, name = "Imperial Plate Gauntlets", skillRequirement = 280, reagents = { {7910, 1} --[[Star Ruby]], {8170, 4} --[[Rugged Leather]], {12359, 24} --[[Thorium Bar]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 16967, itemId = 12772, name = "Inlaid Thorium Hammer", skillRequirement = 295, reagents = { {3577, 4} --[[Gold Bar]], {6037, 2} --[[Truesilver Bar]], {8170, 4} --[[Rugged Leather]], {12359, 30} --[[Thorium Bar]], {12361, 2} --[[Blue Sapphire]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57169, itemId = 61781, name = "Iron Belt Buckle", skillRequirement = 140, reagents = { {3486, 2} --[[Heavy Grinding Stone]], {3575, 8} --[[Iron Bar]], {7071, 1} --[[Iron Buckle]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 8366, itemId = 6730, name = "Ironforge Chain", skillRequirement = 110, reagents = { {774, 2} --[[Malachite]], {2840, 12} --[[Copper Bar]], {3470, 2} --[[Rough Grinding Stone]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 8368, itemId = 6733, name = "Ironforge Gauntlets", skillRequirement = 170, reagents = { {1210, 3} --[[Shadowgem]], {2841, 8} --[[Bronze Bar]], {3478, 4} --[[Coarse Grinding Stone]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 28463, itemId = 22764, name = "Ironvine Belt", skillRequirement = 320, reagents = { {12655, 6} --[[Enchanted Thorium Bar]], {12803, 2} --[[Living Essence]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 28461, itemId = 22762, name = "Ironvine Breastplate", skillRequirement = 320, reagents = { {12360, 2} --[[Arcanite Bar]], {12655, 12} --[[Enchanted Thorium Bar]], {12803, 2} --[[Living Essence]], {19726, 2} --[[Bloodvine]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 28462, itemId = 22763, name = "Ironvine Gloves", skillRequirement = 320, reagents = { {12655, 8} --[[Enchanted Thorium Bar]], {12803, 2} --[[Living Essence]], {19726, 1} --[[Bloodvine]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 27586, itemId = 22198, name = "Jagged Obsidian Shield", skillRequirement = 320, reagents = { {7076, 4} --[[Essence of Earth]], {12655, 8} --[[Enchanted Thorium Bar]], {22202, 24} --[[Small Obsidian Shard]], {22203, 8} --[[Large Obsidian Shard]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 27588, itemId = 22195, name = "Light Obsidian Belt", skillRequirement = 320, reagents = { {12810, 4} --[[Enchanted Leather]], {22202, 14} --[[Small Obsidian Shard]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 46600, itemId = 46600, name = "Lordaeron Breastplate", skillRequirement = 275, reagents = { {818, 2} --[[Tigerseye]], {2840, 16} --[[Copper Bar]], {3470, 3} --[[Rough Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57172, itemId = 61782, name = "Mithril Belt Buckle", skillRequirement = 190, reagents = { {3860, 8} --[[Mithril Bar]], {6037, 1} --[[Truesilver Bar]], {7071, 1} --[[Iron Buckle]], {7966, 2} --[[Solid Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 9942, itemId = 7925, name = "Mithril Scale Gloves", skillRequirement = 240, reagents = { {3860, 8} --[[Mithril Bar]], {4234, 6} --[[Heavy Leather]], {4338, 4} --[[Mageweave Cloth]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 102, itemId = 103, name = "Obsidian Belt Buckle", skillRequirement = 300, reagents = { {7071, 1} --[[Iron Buckle]], {7076, 1} --[[Essence of Earth]], {7082, 1} --[[Essence of Air]], {12644, 2} --[[Dense Grinding Stone]], {22203, 2} --[[Large Obsidian Shard]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 27590, itemId = 22191, name = "Obsidian Mail Tunic", skillRequirement = 320, reagents = { {12800, 4} --[[Azerothian Diamond]], {12809, 10} --[[Guardian Stone]], {12810, 12} --[[Enchanted Leather]], {22202, 36} --[[Small Obsidian Shard]], {22203, 15} --[[Large Obsidian Shard]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 46657, itemId = 65004, name = "Ornate Bloodstone Dagger", skillRequirement = 300, reagents = { {3577, 6} --[[Gold Bar]], {8846, 10} --[[Gromsblood]], {11382, 2} --[[Blood of the Mountain]], {11752, 1} --[[Black Blood of the Tormented]], {12360, 14} --[[Arcanite Bar]], {12644, 4} --[[Dense Grinding Stone]], {12938, 1} --[[Blood of Heroes]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57621, itemId = 55528, name = "Otherworldly Breastplate", skillRequirement = 315, reagents = { {12360, 1} --[[Arcanite Bar]], {12607, 2} --[[Brilliant Chromatic Scale]], {15407, 2} --[[Cured Rugged Hide]], {61673, 6} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57617, itemId = 55526, name = "Otherworldly Coif", skillRequirement = 315, reagents = { {12360, 1} --[[Arcanite Bar]], {12607, 1} --[[Brilliant Chromatic Scale]], {15407, 1} --[[Cured Rugged Hide]], {61673, 6} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57623, itemId = 55529, name = "Otherworldly Leggings", skillRequirement = 315, reagents = { {12360, 1} --[[Arcanite Bar]], {12607, 2} --[[Brilliant Chromatic Scale]], {15407, 2} --[[Cured Rugged Hide]], {61673, 7} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57619, itemId = 55527, name = "Otherworldly Spaulders", skillRequirement = 315, reagents = { {12360, 1} --[[Arcanite Bar]], {12607, 3} --[[Brilliant Chromatic Scale]], {15407, 1} --[[Cured Rugged Hide]], {61673, 5} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 46667, itemId = 65014, name = "Pauldron of Deflection", skillRequirement = 315, reagents = { {7076, 6} --[[Essence of Earth]], {11371, 10} --[[Dark Iron Bar]], {12360, 10} --[[Arcanite Bar]], {12809, 8} --[[Guardian Stone]], {22203, 4} --[[Large Obsidian Shard]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 54005, itemId = 61649, name = "Pauldrons of the Timbermaw", skillRequirement = 315, reagents = { {7076, 6} --[[Essence of Earth]], {7078, 6} --[[Essence of Fire]], {12360, 2} --[[Arcanite Bar]], {12655, 12} --[[Enchanted Thorium Bar]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57629, itemId = 55532, name = "Reflective Breastplate", skillRequirement = 315, reagents = { {12360, 2} --[[Arcanite Bar]], {12655, 10} --[[Enchanted Thorium Bar]], {61673, 5} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57625, itemId = 55530, name = "Reflective Helmet", skillRequirement = 315, reagents = { {12360, 2} --[[Arcanite Bar]], {12655, 7} --[[Enchanted Thorium Bar]], {61673, 6} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57631, itemId = 55533, name = "Reflective Leggings", skillRequirement = 315, reagents = { {12360, 2} --[[Arcanite Bar]], {12655, 12} --[[Enchanted Thorium Bar]], {61673, 7} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57627, itemId = 55531, name = "Reflective Pauldrons", skillRequirement = 315, reagents = { {12360, 2} --[[Arcanite Bar]], {12655, 9} --[[Enchanted Thorium Bar]], {61673, 7} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 2671, itemId = 2867, name = "Rough Bronze Bracers", skillRequirement = 145, reagents = { {2841, 4} --[[Bronze Bar]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 16980, itemId = 12779, name = "Rune Edge", skillRequirement = 310, reagents = { {8170, 4} --[[Rugged Leather]], {12359, 30} --[[Thorium Bar]], {12644, 2} --[[Dense Grinding Stone]], {12799, 2} --[[Large Opal]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 47023, itemId = 60290, name = "Rune-Etched Breastplate", skillRequirement = 300, reagents = { {7910, 1} --[[Star Ruby]], {12359, 24} --[[Thorium Bar]], {12644, 1} --[[Dense Grinding Stone]], {12655, 4} --[[Enchanted Thorium Bar]], {12810, 2} --[[Enchanted Leather]], {20520, 4} --[[Dark Rune]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 47024, itemId = 60291, name = "Rune-Etched Crown", skillRequirement = 300, reagents = { {7080, 1} --[[Essence of Water]], {12359, 16} --[[Thorium Bar]], {12655, 2} --[[Enchanted Thorium Bar]], {20520, 2} --[[Dark Rune]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 47021, itemId = 60288, name = "Rune-Etched Greaves", skillRequirement = 300, reagents = { {12359, 20} --[[Thorium Bar]], {12361, 1} --[[Blue Sapphire]], {12655, 2} --[[Enchanted Thorium Bar]], {12810, 1} --[[Enchanted Leather]], {20520, 2} --[[Dark Rune]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 47026, itemId = 60287, name = "Rune-Etched Grips", skillRequirement = 300, reagents = { {12359, 12} --[[Thorium Bar]], {12655, 2} --[[Enchanted Thorium Bar]], {12810, 2} --[[Enchanted Leather]], {20520, 2} --[[Dark Rune]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 47022, itemId = 60289, name = "Rune-Etched Legplates", skillRequirement = 300, reagents = { {12359, 24} --[[Thorium Bar]], {12655, 6} --[[Enchanted Thorium Bar]], {12800, 1} --[[Azerothian Diamond]], {12810, 2} --[[Enchanted Leather]], {20520, 4} --[[Dark Rune]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 47025, itemId = 60292, name = "Rune-Etched Mantle", skillRequirement = 300, reagents = { {7076, 1} --[[Essence of Earth]], {12359, 14} --[[Thorium Bar]], {12655, 2} --[[Enchanted Thorium Bar]], {12810, 1} --[[Enchanted Leather]], {20520, 3} --[[Dark Rune]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 46664, itemId = 65011, name = "Sharpened Claw", skillRequirement = 90, reagents = { {2840, 8} --[[Copper Bar]], {2880, 4} --[[Weak Flux]], {3470, 4} --[[Rough Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57, itemId = 131, name = "Steel Belt Buckle", skillRequirement = 195, reagents = { {3859, 8} --[[Steel Bar]], {7071, 1} --[[Iron Buckle]], {7966, 1} --[[Solid Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 46629, itemId = 83413, name = "Steel Plate Armor", skillRequirement = 240, reagents = { {1705, 1} --[[Lesser Moonstone]], {3859, 20} --[[Steel Bar]], {3864, 1} --[[Citrine]], {7966, 4} --[[Solid Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 46631, itemId = 83415, name = "Steel Plate Barbute", skillRequirement = 245, reagents = { {3859, 10} --[[Steel Bar]], {3864, 4} --[[Citrine]], {6037, 8} --[[Truesilver Bar]], {7909, 2} --[[Aquamarine]], {7922, 1} --[[Steel Plate Helm]], {7966, 3} --[[Solid Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 46626, itemId = 83410, name = "Steel Plate Boots", skillRequirement = 230, reagents = { {3859, 14} --[[Steel Bar]], {7966, 2} --[[Solid Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 46627, itemId = 83411, name = "Steel Plate Gauntlets", skillRequirement = 235, reagents = { {3859, 16} --[[Steel Bar]], {7966, 4} --[[Solid Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 46628, itemId = 83412, name = "Steel Plate Legguards", skillRequirement = 240, reagents = { {3859, 18} --[[Steel Bar]], {3864, 1} --[[Citrine]], {7966, 2} --[[Solid Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 46630, itemId = 83414, name = "Steel Plate Pauldrons", skillRequirement = 245, reagents = { {3859, 20} --[[Steel Bar]], {3864, 1} --[[Citrine]], {6037, 1} --[[Truesilver Bar]], {7966, 3} --[[Solid Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 27587, itemId = 22196, name = "Thick Obsidian Breastplate", skillRequirement = 320, reagents = { {7076, 10} --[[Essence of Earth]], {12364, 4} --[[Huge Emerald]], {12655, 12} --[[Enchanted Thorium Bar]], {22202, 40} --[[Small Obsidian Shard]], {22203, 18} --[[Large Obsidian Shard]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57175, itemId = 61783, name = "Thorium Belt Buckle", skillRequirement = 240, reagents = { {6037, 1} --[[Truesilver Bar]], {7071, 1} --[[Iron Buckle]], {12359, 8} --[[Thorium Bar]], {12644, 2} --[[Dense Grinding Stone]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 16960, itemId = 12764, name = "Thorium Greatsword", skillRequirement = 285, reagents = { {8170, 4} --[[Rugged Leather]], {12359, 16} --[[Thorium Bar]], {12644, 2} --[[Dense Grinding Stone]] } }, -- custom=0
+  { profession = "Blacksmithing", spellId = 57113, itemId = 61182, name = "Thorium Spurs", skillRequirement = 275, reagents = { {7081, 1} --[[Breath of Wind]], {12359, 8} --[[Thorium Bar]], {12644, 2} --[[Dense Grinding Stone]], {61673, 1} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57189, itemId = 60008, name = "Towerforge Breastplate", skillRequirement = 310, reagents = { {11371, 12} --[[Dark Iron Bar]], {12360, 12} --[[Arcanite Bar]], {12655, 12} --[[Enchanted Thorium Bar]], {22202, 6} --[[Small Obsidian Shard]], {61673, 6} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57187, itemId = 60007, name = "Towerforge Crown", skillRequirement = 310, reagents = { {3824, 8} --[[Shadow Oil]], {11371, 10} --[[Dark Iron Bar]], {12360, 14} --[[Arcanite Bar]], {12655, 12} --[[Enchanted Thorium Bar]], {61673, 6} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57193, itemId = 60010, name = "Towerforge Demolisher", skillRequirement = 310, reagents = { {11371, 14} --[[Dark Iron Bar]], {12360, 14} --[[Arcanite Bar]], {12655, 12} --[[Enchanted Thorium Bar]], {18335, 1} --[[Pristine Black Diamond]], {22203, 2} --[[Large Obsidian Shard]], {61673, 8} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 57191, itemId = 60009, name = "Towerforge Pauldrons", skillRequirement = 310, reagents = { {11371, 8} --[[Dark Iron Bar]], {12360, 10} --[[Arcanite Bar]], {12655, 10} --[[Enchanted Thorium Bar]], {12800, 4} --[[Azerothian Diamond]], {61673, 4} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Blacksmithing", spellId = 90, itemId = 151, name = "Truesilver Belt Buckle", skillRequirement = 225, reagents = { {6037, 8} --[[Truesilver Bar]], {7071, 1} --[[Iron Buckle]], {7966, 2} --[[Solid Grinding Stone]] } }, -- custom=1
+  -- Cooking (15)
+  { profession = "Cooking", spellId = 58044, itemId = 41674, name = "Ambersap Glazed Boar Ribs", skillRequirement = 215, reagents = { {2677, 1} --[[Boar Ribs]], {2692, 1} --[[Hot Spices]], {41675, 1} --[[Ambersap]] } }, -- custom=1
+  { profession = "Cooking", spellId = 58046, itemId = 41673, name = "Crawford Apple Tarte", skillRequirement = 215, reagents = { {1179, 1} --[[Ice Cold Milk]], {4539, 1} --[[Goldenbark Apple]], {41677, 1} --[[Northwind Flour]] } }, -- custom=1
+  { profession = "Cooking", spellId = 57049, itemId = 60977, name = "Danonzo's Tel'Abim Delight", skillRequirement = 300, reagents = { {3713, 1} --[[Soothing Spices]], {13467, 1} --[[Icecap]], {60955, 1} --[[Gargantuan Tel'Abim Banana]] } }, -- custom=1
+  { profession = "Cooking", spellId = 57051, itemId = 60978, name = "Danonzo's Tel'Abim Medley", skillRequirement = 300, reagents = { {3713, 1} --[[Soothing Spices]], {13464, 2} --[[Golden Sansam]], {60955, 1} --[[Gargantuan Tel'Abim Banana]] } }, -- custom=1
+  { profession = "Cooking", spellId = 57047, itemId = 60976, name = "Danonzo's Tel'Abim Surprise", skillRequirement = 300, reagents = { {3713, 1} --[[Soothing Spices]], {10286, 1} --[[Heart of the Wild]], {60955, 1} --[[Gargantuan Tel'Abim Banana]] } }, -- custom=1
+  { profession = "Cooking", spellId = 32314, itemId = 42164, name = "Deep Sea Stew", skillRequirement = 315, reagents = { {3713, 2} --[[Soothing Spices]], {13760, 1} --[[Raw Sunscale Salmon]], {13890, 1} --[[Plated Armorfish]] } }, -- custom=1
+  { profession = "Cooking", spellId = 25659, itemId = 21023, name = "Dirge's Kickin' Chimaerok Chops", skillRequirement = 325, reagents = { {2692, 1} --[[Hot Spices]], {8150, 1} --[[Deeprock Salt]], {9061, 1} --[[Goblin Rocket Fuel]], {21024, 1} --[[Chimaerok Tenderloin]] } }, -- custom=1
+  { profession = "Cooking", spellId = 49551, itemId = 83309, name = "Empowering Herbal Salad", skillRequirement = 325, reagents = { {22529, 1} --[[Savage Frond]], {36668, 1} --[[Lush Cabbage Head]], {42000, 2} --[[Moonwhisper Berry]] } }, -- custom=1
+  { profession = "Cooking", spellId = 1207, itemId = 68513, name = "Fried Strider with a Side of Berries", skillRequirement = 265, reagents = { {2692, 2} --[[Hot Spices]], {42000, 1} --[[Moonwhisper Berry]], {42010, 1} --[[Meaty Strider Leg]] } }, -- custom=1
+  { profession = "Cooking", spellId = 45627, itemId = 84041, name = "Gilneas Hot Stew", skillRequirement = 225, reagents = { {159, 1} --[[Refreshing Spring Water]], {12203, 1} --[[Red Wolf Meat]], {12205, 1} --[[White Spider Meat]] } }, -- custom=1
+  { profession = "Cooking", spellId = 46085, itemId = 53015, name = "Gurubashi Gumbo", skillRequirement = 325, reagents = { {159, 1} --[[Refreshing Spring Water]], {2692, 1} --[[Hot Spices]], {3667, 1} --[[Tender Crocolisk Meat]], {3713, 1} --[[Soothing Spices]], {12037, 2} --[[Mystery Meat]], {12202, 1} --[[Tiger Meat]] } }, -- custom=1
+  { profession = "Cooking", spellId = 45999, itemId = 42186, name = "Honeycomb Delight", skillRequirement = 300, reagents = { {42016, 1} --[[Timbermaw Sap]], {42293, 1} --[[Timbermaw Honeycomb]] } }, -- custom=1
+  { profession = "Cooking", spellId = 45054, itemId = 30818, name = "Maritime Gumbo", skillRequirement = 75, reagents = { {159, 1} --[[Refreshing Spring Water]], {2674, 1} --[[Crawler Meat]] } }, -- custom=1
+  { profession = "Cooking", spellId = 22761, itemId = 18254, name = "Runn Tum Tuber Surprise", skillRequirement = 315, reagents = { {3713, 1} --[[Soothing Spices]], {18255, 1} --[[Runn Tum Tuber]] } }, -- custom=0
+  { profession = "Cooking", spellId = 32313, itemId = 42163, name = "Squid Eel Skewer", skillRequirement = 315, reagents = { {2692, 2} --[[Hot Spices]], {13755, 1} --[[Winter Squid]], {13757, 1} --[[Lightning Eel]] } }, -- custom=1
+  -- Enchanting (17)
+  { profession = "Enchanting", spellId = 25130, itemId = 20748, name = "Brilliant Mana Oil", skillRequirement = 310, reagents = { {8831, 3} --[[Purple Lotus]], {14344, 2} --[[Large Brilliant Shard]], {18256, 1} --[[Imbued Vial]] } }, -- custom=0
+  { profession = "Enchanting", spellId = 25129, itemId = 20749, name = "Brilliant Wizard Oil", skillRequirement = 310, reagents = { {4625, 3} --[[Firebloom]], {14344, 2} --[[Large Brilliant Shard]], {18256, 1} --[[Imbued Vial]] } }, -- custom=0
+  { profession = "Enchanting", spellId = 25086, itemId = nil, name = "Enchant Cloak - Dodge", skillRequirement = 320, reagents = { {12809, 8} --[[Guardian Stone]], {14344, 8} --[[Large Brilliant Shard]], {20725, 3} --[[Nexus Crystal]] } }, -- custom=0
+  { profession = "Enchanting", spellId = 25081, itemId = nil, name = "Enchant Cloak - Greater Fire Resistance", skillRequirement = 320, reagents = { {7078, 4} --[[Essence of Fire]], {14344, 8} --[[Large Brilliant Shard]], {20725, 3} --[[Nexus Crystal]] } }, -- custom=0
+  { profession = "Enchanting", spellId = 25082, itemId = nil, name = "Enchant Cloak - Greater Nature Resistance", skillRequirement = 320, reagents = { {12803, 4} --[[Living Essence]], {14344, 8} --[[Large Brilliant Shard]], {20725, 2} --[[Nexus Crystal]] } }, -- custom=0
+  { profession = "Enchanting", spellId = 25084, itemId = nil, name = "Enchant Cloak - Subtlety", skillRequirement = 320, reagents = { {11754, 2} --[[Black Diamond]], {14344, 6} --[[Large Brilliant Shard]], {20725, 4} --[[Nexus Crystal]] } }, -- custom=0
+  { profession = "Enchanting", spellId = 25078, itemId = nil, name = "Enchant Gloves - Fire Power", skillRequirement = 320, reagents = { {7078, 4} --[[Essence of Fire]], {14344, 10} --[[Large Brilliant Shard]], {20725, 2} --[[Nexus Crystal]] } }, -- custom=0
+  { profession = "Enchanting", spellId = 25074, itemId = nil, name = "Enchant Gloves - Frost Power", skillRequirement = 320, reagents = { {7080, 4} --[[Essence of Water]], {14344, 10} --[[Large Brilliant Shard]], {20725, 3} --[[Nexus Crystal]] } }, -- custom=0
+  { profession = "Enchanting", spellId = 25079, itemId = nil, name = "Enchant Gloves - Healing Power", skillRequirement = 320, reagents = { {12811, 1} --[[Righteous Orb]], {14344, 8} --[[Large Brilliant Shard]], {20725, 3} --[[Nexus Crystal]] } }, -- custom=0
+  { profession = "Enchanting", spellId = 25073, itemId = nil, name = "Enchant Gloves - Shadow Power", skillRequirement = 320, reagents = { {12808, 6} --[[Essence of Undeath]], {14344, 10} --[[Large Brilliant Shard]], {20725, 3} --[[Nexus Crystal]] } }, -- custom=0
+  { profession = "Enchanting", spellId = 25080, itemId = nil, name = "Enchant Gloves - Superior Agility", skillRequirement = 320, reagents = { {7082, 4} --[[Essence of Air]], {14344, 8} --[[Large Brilliant Shard]], {20725, 3} --[[Nexus Crystal]] } }, -- custom=0
+  { profession = "Enchanting", spellId = 25072, itemId = nil, name = "Enchant Gloves - Threat", skillRequirement = 320, reagents = { {14344, 6} --[[Large Brilliant Shard]], {18512, 8} --[[Larval Acid]], {20725, 4} --[[Nexus Crystal]] } }, -- custom=0
+  { profession = "Enchanting", spellId = 41758, itemId = 55248, name = "Enchanted Gemstone Oil", skillRequirement = 275, reagents = { {11175, 1} --[[Greater Nether Essence]], {16203, 1} --[[Greater Eternal Essence]], {55247, 1} --[[Gemstone Oil]] } }, -- custom=1
+  { profession = "Enchanting", spellId = 57518, itemId = 61732, name = "Eternal Dreamstone Shard", skillRequirement = 320, reagents = { {12803, 80} --[[Living Essence]], {13468, 5} --[[Black Lotus]], {20725, 10} --[[Nexus Crystal]], {61197, 5} --[[Fading Dream Fragment]], {61199, 25} --[[Bright Dream Shard]], {61673, 25} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Enchanting", spellId = 25127, itemId = 20747, name = "Lesser Mana Oil", skillRequirement = 260, reagents = { {8831, 2} --[[Purple Lotus]], {8925, 1} --[[Crystal Vial]], {11176, 3} --[[Dream Dust]] } }, -- custom=0
+  { profession = "Enchanting", spellId = 36579, itemId = 42196, name = "Timberheart Dreamcatcher", skillRequirement = 310, reagents = { {7076, 2} --[[Essence of Earth]], {7082, 2} --[[Essence of Air]], {11291, 8} --[[Star Wood]], {12364, 4} --[[Huge Emerald]], {12803, 4} --[[Living Essence]], {16203, 8} --[[Greater Eternal Essence]] } }, -- custom=1
+  { profession = "Enchanting", spellId = 25128, itemId = 20750, name = "Wizard Oil", skillRequirement = 285, reagents = { {4625, 2} --[[Firebloom]], {8925, 1} --[[Crystal Vial]], {16204, 3} --[[Illusion Dust]] } }, -- custom=0
+  -- Engineering (24)
+  { profession = "Engineering", spellId = 46610, itemId = 60099, name = "Battery-Powered Crowd Pummeler", skillRequirement = 260, reagents = { {814, 2} --[[Flask of Oil]], {3829, 1} --[[Frost Oil]], {4375, 6} --[[Whirring Bronze Gizmo]], {7191, 1} --[[Fused Wiring]], {9449, 1} --[[Manual Crowd Pummeler]], {18631, 1} --[[Truesilver Transformer]], {60098, 1} --[[Hypertech Battery Pack]] } }, -- custom=1
+  { profession = "Engineering", spellId = 24356, itemId = 19999, name = "Bloodvine Goggles", skillRequirement = 320, reagents = { {12804, 8} --[[Powerful Mojo]], {12810, 4} --[[Enchanted Leather]], {16006, 2} --[[Delicate Arcanite Converter]], {19726, 4} --[[Bloodvine]], {19774, 5} --[[Souldarite]] } }, -- custom=0
+  { profession = "Engineering", spellId = 24357, itemId = 19998, name = "Bloodvine Lens", skillRequirement = 320, reagents = { {12804, 8} --[[Powerful Mojo]], {12810, 4} --[[Enchanted Leather]], {16006, 1} --[[Delicate Arcanite Converter]], {19726, 5} --[[Bloodvine]], {19774, 5} --[[Souldarite]] } }, -- custom=0
+  { profession = "Engineering", spellId = 3929, itemId = 4364, name = "Coarse Blasting Powder", skillRequirement = 85, reagents = { {2836, 1} --[[Coarse Stone]] } }, -- custom=0
+  { profession = "Engineering", spellId = 3926, itemId = 4363, name = "Copper Modulator", skillRequirement = 95, reagents = { {2589, 2} --[[Linen Cloth]], {2840, 1} --[[Copper Bar]], {4359, 2} --[[Handful of Copper Bolts]] } }, -- custom=0
+  { profession = "Engineering", spellId = 3924, itemId = 4361, name = "Copper Tube", skillRequirement = 80, reagents = { {2840, 2} --[[Copper Bar]], {2880, 1} --[[Weak Flux]] } }, -- custom=0
+  { profession = "Engineering", spellId = 32310, itemId = 42202, name = "Enchanted Thorium Shells", skillRequirement = 320, reagents = { {12655, 2} --[[Enchanted Thorium Bar]], {15992, 1} --[[Dense Blasting Powder]] } }, -- custom=1
+  { profession = "Engineering", spellId = 36946, itemId = 33146, name = "Facetted Crystal Scope ", skillRequirement = 320, reagents = { {12655, 10} --[[Enchanted Thorium Bar]], {16000, 1} --[[Thorium Tube]], {16006, 4} --[[Delicate Arcanite Converter]], {42001, 2} --[[Raw Draenethyst Formation]], {61673, 2} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Engineering", spellId = 52749, itemId = 58305, name = "Giga-Charged Arcane Reflector", skillRequirement = 310, reagents = { {7076, 4} --[[Essence of Earth]], {7910, 4} --[[Star Ruby]], {11371, 8} --[[Dark Iron Bar]], {12363, 2} --[[Arcane Crystal]], {12803, 6} --[[Living Essence]], {18631, 4} --[[Truesilver Transformer]] } }, -- custom=1
+  { profession = "Engineering", spellId = 9273, itemId = 7148, name = "Goblin Jumper Cables", skillRequirement = 160, reagents = { {814, 2} --[[Flask of Oil]], {1210, 2} --[[Shadowgem]], {3575, 6} --[[Iron Bar]], {4306, 2} --[[Silk Cloth]], {4375, 2} --[[Whirring Bronze Gizmo]], {7191, 1} --[[Fused Wiring]] } }, -- custom=0
+  { profession = "Engineering", spellId = 12722, itemId = 10585, name = "Goblin Radio KABOOM-Box X23B76", skillRequirement = 240, reagents = { {3860, 2} --[[Mithril Bar]], {4389, 1} --[[Gyrochronatom]], {10560, 1} --[[Unstable Trigger]], {10561, 1} --[[Mithril Casing]] } }, -- custom=1
+  { profession = "Engineering", spellId = 3922, itemId = 4359, name = "Handful of Copper Bolts", skillRequirement = 45, reagents = { {2840, 1} --[[Copper Bar]] } }, -- custom=0
+  { profession = "Engineering", spellId = 46608, itemId = 60098, name = "Hypertech Battery Pack", skillRequirement = 250, reagents = { {4404, 1} --[[Silver Contact]], {10558, 1} --[[Gold Power Core]], {10561, 1} --[[Mithril Casing]] } }, -- custom=1
+  { profession = "Engineering", spellId = 45481, itemId = 61187, name = "Intricate Gyroscope Goggles", skillRequirement = 320, reagents = { {10548, 2} --[[Sniper Scope]], {12655, 8} --[[Enchanted Thorium Bar]], {12800, 1} --[[Azerothian Diamond]], {12810, 10} --[[Enchanted Leather]], {15994, 6} --[[Thorium Widget]], {16006, 8} --[[Delicate Arcanite Converter]] } }, -- custom=1
+  { profession = "Engineering", spellId = 41073, itemId = 41326, name = "Jewelry Lens", skillRequirement = 140, reagents = { {1705, 1} --[[Lesser Moonstone]], {2319, 1} --[[Medium Leather]], {2841, 2} --[[Bronze Bar]], {4371, 2} --[[Bronze Tube]], {4404, 1} --[[Silver Contact]] } }, -- custom=1
+  { profession = "Engineering", spellId = 41075, itemId = 41327, name = "Jewelry Scope", skillRequirement = 140, reagents = { {3864, 1} --[[Citrine]], {4389, 1} --[[Gyrochronatom]], {7191, 1} --[[Fused Wiring]], {10559, 2} --[[Mithril Tube]], {10561, 4} --[[Mithril Casing]] } }, -- custom=1
+  { profession = "Engineering", spellId = 47028, itemId = 51313, name = "Portable Wormhole Generator: Orgrimmar", skillRequirement = 125, reagents = { {1206, 1} --[[Moss Agate]], {2841, 2} --[[Bronze Bar]], {4375, 2} --[[Whirring Bronze Gizmo]], {10998, 1} --[[Lesser Astral Essence]] } }, -- custom=1
+  { profession = "Engineering", spellId = 47027, itemId = 51312, name = "Portable Wormhole Generator: Stormwind", skillRequirement = 125, reagents = { {1206, 1} --[[Moss Agate]], {2841, 2} --[[Bronze Bar]], {4375, 2} --[[Whirring Bronze Gizmo]], {10998, 1} --[[Lesser Astral Essence]] } }, -- custom=1
+  { profession = "Engineering", spellId = 41077, itemId = 41328, name = "Precision Jewelers Kit", skillRequirement = 185, reagents = { {4375, 3} --[[Whirring Bronze Gizmo]], {4382, 3} --[[Bronze Framework]], {4387, 1} --[[Iron Strut]], {4389, 1} --[[Gyrochronatom]], {55155, 1} --[[Jewelers Kit]] } }, -- custom=1
+  { profession = "Engineering", spellId = 3918, itemId = 4357, name = "Rough Blasting Powder", skillRequirement = 20, reagents = { {2835, 1} --[[Rough Stone]] } }, -- custom=0
+  { profession = "Engineering", spellId = 3973, itemId = 4404, name = "Silver Contact", skillRequirement = 110, reagents = { {2842, 1} --[[Silver Bar]] } }, -- custom=0
+  { profession = "Engineering", spellId = 28327, itemId = 22728, name = "Steam Tonk Controller", skillRequirement = 295, reagents = { {10558, 1} --[[Gold Power Core]], {10561, 1} --[[Mithril Casing]], {15994, 2} --[[Thorium Widget]] } }, -- custom=0
+  { profession = "Engineering", spellId = 45057, itemId = 51268, name = "Unstable Mining Dynamite", skillRequirement = 90, reagents = { {2589, 2} --[[Linen Cloth]], {4357, 2} --[[Rough Blasting Powder]], {4359, 4} --[[Handful of Copper Bolts]] } }, -- custom=1
+  { profession = "Engineering", spellId = 52747, itemId = 58304, name = "Voltage-Neutralizing Nature Reflector", skillRequirement = 310, reagents = { {11371, 8} --[[Dark Iron Bar]], {12364, 4} --[[Huge Emerald]], {12800, 2} --[[Azerothian Diamond]], {18631, 4} --[[Truesilver Transformer]], {61673, 3} --[[Arcane Essence]] } }, -- custom=1
+  -- First Aid (1)
+  { profession = "First Aid", spellId = 10844, itemId = 8546, name = "Powerful Smelling Salts", skillRequirement = 290, reagents = { {7078, 2} --[[Essence of Fire]], {8150, 4} --[[Deeprock Salt]], {18512, 1} --[[Larval Acid]] } }, -- custom=1
+  -- Leatherworking (68)
+  { profession = "Leatherworking", spellId = 24124, itemId = 19688, name = "Blood Tiger Breastplate", skillRequirement = 320, reagents = { {14341, 3} --[[Rune Thread]], {15407, 3} --[[Cured Rugged Hide]], {19726, 2} --[[Bloodvine]], {19768, 35} --[[Primal Tiger Leather]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 24125, itemId = 19689, name = "Blood Tiger Shoulders", skillRequirement = 320, reagents = { {14341, 3} --[[Rune Thread]], {15407, 3} --[[Cured Rugged Hide]], {19726, 2} --[[Bloodvine]], {19768, 25} --[[Primal Tiger Leather]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 54001, itemId = 65015, name = "Blue Dragonscale Boots", skillRequirement = 310, reagents = { {8170, 24} --[[Rugged Leather]], {14341, 1} --[[Rune Thread]], {15407, 1} --[[Cured Rugged Hide]], {15415, 25} --[[Blue Dragonscale]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 57010, itemId = 65023, name = "Boots of the Wind", skillRequirement = 320, reagents = { {4304, 20} --[[Thick Leather]], {7081, 10} --[[Breath of Wind]], {8172, 1} --[[Cured Thick Hide]], {8343, 4} --[[Heavy Silken Thread]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 28474, itemId = 22761, name = "Bramblewood Belt", skillRequirement = 320, reagents = { {12803, 2} --[[Living Essence]], {12810, 4} --[[Enchanted Leather]], {15407, 1} --[[Cured Rugged Hide]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 28473, itemId = 22760, name = "Bramblewood Boots", skillRequirement = 320, reagents = { {12803, 2} --[[Living Essence]], {12810, 6} --[[Enchanted Leather]], {15407, 2} --[[Cured Rugged Hide]], {18512, 2} --[[Larval Acid]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 28472, itemId = 22759, name = "Bramblewood Helm", skillRequirement = 320, reagents = { {12803, 2} --[[Living Essence]], {12810, 12} --[[Enchanted Leather]], {15407, 2} --[[Cured Rugged Hide]], {19726, 2} --[[Bloodvine]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 57008, itemId = 65022, name = "Breastplate of the Earth", skillRequirement = 320, reagents = { {4304, 40} --[[Thick Leather]], {7075, 12} --[[Core of Earth]], {8172, 3} --[[Cured Thick Hide]], {8343, 4} --[[Heavy Silken Thread]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 54013, itemId = 65036, name = "Chromatic Leggings", skillRequirement = 315, reagents = { {12607, 6} --[[Brilliant Chromatic Scale]], {14227, 4} --[[Ironweb Spider Silk]], {15407, 5} --[[Cured Rugged Hide]], {17010, 5} --[[Fiery Core]], {17011, 3} --[[Lava Core]], {17012, 6} --[[Core Leather]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 54007, itemId = 65038, name = "Corehound Gloves", skillRequirement = 315, reagents = { {12607, 6} --[[Brilliant Chromatic Scale]], {12810, 12} --[[Enchanted Leather]], {14227, 4} --[[Ironweb Spider Silk]], {15407, 5} --[[Cured Rugged Hide]], {17010, 9} --[[Fiery Core]], {17012, 12} --[[Core Leather]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 57016, itemId = 65026, name = "Depthstalker Helm", skillRequirement = 320, reagents = { {7080, 20} --[[Essence of Water]], {8170, 15} --[[Rugged Leather]], {8343, 2} --[[Heavy Silken Thread]], {12457, 10} --[[Juju Chill]], {15407, 5} --[[Cured Rugged Hide]], {15422, 20} --[[Frostsaber Leather]], {18294, 10} --[[Elixir of Greater Water Breathing]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 55, itemId = 65, name = "Dragonmaw Armor Kit", skillRequirement = 175, reagents = { {2321, 2} --[[Fine Thread]], {6371, 1} --[[Fire Oil]], {7287, 5} --[[Red Whelp Scale]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 70, itemId = 58112, name = "Dragonmaw Gloves", skillRequirement = 170, reagents = { {4234, 14} --[[Heavy Leather]], {4236, 2} --[[Cured Heavy Hide]], {4402, 2} --[[Small Flame Sac]], {5637, 2} --[[Large Fang]], {7287, 4} --[[Red Whelp Scale]], {55249, 2} --[[Crystal Quartz]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 46695, itemId = 65019, name = "Dragonscale Leggings", skillRequirement = 250, reagents = { {4304, 30} --[[Thick Leather]], {8165, 25} --[[Worn Dragonscale]], {8172, 3} --[[Cured Thick Hide]], {8343, 4} --[[Heavy Silken Thread]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 45455, itemId = 61229, name = "Dreamhide", skillRequirement = 310, reagents = { {8170, 1} --[[Rugged Leather]], {20381, 1} --[[Dreamscale]], {61198, 1} --[[Small Dream Shard]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 24703, itemId = 20380, name = "Dreamscale Breastplate", skillRequirement = 320, reagents = { {12803, 4} --[[Living Essence]], {12810, 12} --[[Enchanted Leather]], {14227, 6} --[[Ironweb Spider Silk]], {15407, 4} --[[Cured Rugged Hide]], {20381, 6} --[[Dreamscale]] } }, -- custom=0
+  { profession = "Leatherworking", spellId = 57012, itemId = 65024, name = "Earthguard Tunic", skillRequirement = 320, reagents = { {7076, 20} --[[Essence of Earth]], {8170, 20} --[[Rugged Leather]], {8343, 2} --[[Heavy Silken Thread]], {12809, 10} --[[Guardian Stone]], {13455, 5} --[[Greater Stoneshield Potion]], {15407, 6} --[[Cured Rugged Hide]], {15419, 20} --[[Warbear Leather]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 57115, itemId = 61183, name = "Enchanted Armor Kit", skillRequirement = 320, reagents = { {12810, 3} --[[Enchanted Leather]], {14341, 2} --[[Rune Thread]], {61673, 3} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 57609, itemId = 55522, name = "Ethereal Helmet", skillRequirement = 315, reagents = { {12810, 8} --[[Enchanted Leather]], {14227, 1} --[[Ironweb Spider Silk]], {15407, 2} --[[Cured Rugged Hide]], {61673, 5} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 57615, itemId = 55525, name = "Ethereal Leggings", skillRequirement = 315, reagents = { {12810, 13} --[[Enchanted Leather]], {14227, 2} --[[Ironweb Spider Silk]], {15407, 3} --[[Cured Rugged Hide]], {61673, 6} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 57611, itemId = 55523, name = "Ethereal Shoulder Pads", skillRequirement = 315, reagents = { {12810, 7} --[[Enchanted Leather]], {14227, 2} --[[Ironweb Spider Silk]], {15407, 2} --[[Cured Rugged Hide]], {61673, 4} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 57613, itemId = 55524, name = "Ethereal Tunic", skillRequirement = 315, reagents = { {12810, 12} --[[Enchanted Leather]], {14227, 1} --[[Ironweb Spider Silk]], {15407, 4} --[[Cured Rugged Hide]], {61673, 8} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 57014, itemId = 65025, name = "Flamewrath Leggings", skillRequirement = 320, reagents = { {7078, 25} --[[Essence of Fire]], {8170, 20} --[[Rugged Leather]], {8343, 2} --[[Heavy Silken Thread]], {11751, 2} --[[Burning Essence]], {15407, 5} --[[Cured Rugged Hide]], {15417, 15} --[[Devilsaur Leather]], {21546, 5} --[[Elixir of Greater Firepower]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 46622, itemId = 83403, name = "Grifter's Belt", skillRequirement = 215, reagents = { {4234, 10} --[[Heavy Leather]], {4236, 1} --[[Cured Heavy Hide]], {4291, 1} --[[Silken Thread]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 46620, itemId = 83405, name = "Grifter's Boots", skillRequirement = 215, reagents = { {4291, 3} --[[Silken Thread]], {4304, 7} --[[Thick Leather]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 46625, itemId = 83400, name = "Grifter's Cover", skillRequirement = 225, reagents = { {2605, 1} --[[Green Dye]], {4291, 2} --[[Silken Thread]], {4304, 8} --[[Thick Leather]], {4338, 4} --[[Mageweave Cloth]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 46621, itemId = 83404, name = "Grifter's Gauntlets", skillRequirement = 215, reagents = { {4291, 2} --[[Silken Thread]], {4304, 6} --[[Thick Leather]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 46623, itemId = 83402, name = "Grifter's Leggings", skillRequirement = 225, reagents = { {2605, 1} --[[Green Dye]], {4234, 2} --[[Heavy Leather]], {4291, 3} --[[Silken Thread]], {4304, 10} --[[Thick Leather]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 46624, itemId = 83401, name = "Grifter's Tunic", skillRequirement = 235, reagents = { {2605, 2} --[[Green Dye]], {3575, 2} --[[Iron Bar]], {4291, 4} --[[Silken Thread]], {4304, 12} --[[Thick Leather]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 34760, itemId = 42204, name = "Grimtotem Bracers", skillRequirement = 145, reagents = { {2319, 10} --[[Medium Leather]], {4233, 2} --[[Cured Medium Hide]], {4340, 2} --[[Gray Dye]], {5116, 8} --[[Long Tail Feather]], {5373, 4} --[[Lucky Charm]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 37, itemId = 55043, name = "Harness of the High Thane", skillRequirement = 320, reagents = { {4480, 10} --[[Thundering Charm]], {5117, 15} --[[Vibrant Plume]], {7081, 20} --[[Breath of Wind]], {7082, 8} --[[Essence of Air]], {12810, 12} --[[Enchanted Leather]], {14341, 4} --[[Rune Thread]], {15407, 6} --[[Cured Rugged Hide]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 28224, itemId = 22665, name = "Icy Scale Bracers", skillRequirement = 320, reagents = { {7080, 2} --[[Essence of Water]], {14227, 4} --[[Ironweb Spider Silk]], {15407, 2} --[[Cured Rugged Hide]], {15408, 16} --[[Heavy Scorpid Scale]], {22682, 4} --[[Frozen Rune]] } }, -- custom=0
+  { profession = "Leatherworking", spellId = 28222, itemId = 22664, name = "Icy Scale Breastplate", skillRequirement = 320, reagents = { {7080, 2} --[[Essence of Water]], {14227, 4} --[[Ironweb Spider Silk]], {15407, 4} --[[Cured Rugged Hide]], {15408, 24} --[[Heavy Scorpid Scale]], {22682, 7} --[[Frozen Rune]] } }, -- custom=0
+  { profession = "Leatherworking", spellId = 28223, itemId = 22666, name = "Icy Scale Gauntlets", skillRequirement = 320, reagents = { {7080, 2} --[[Essence of Water]], {14227, 4} --[[Ironweb Spider Silk]], {15407, 3} --[[Cured Rugged Hide]], {15408, 16} --[[Heavy Scorpid Scale]], {22682, 5} --[[Frozen Rune]] } }, -- custom=0
+  { profession = "Leatherworking", spellId = 45483, itemId = 61188, name = "Inscribed Runic Bracers", skillRequirement = 320, reagents = { {7076, 8} --[[Essence of Earth]], {12803, 4} --[[Living Essence]], {12810, 12} --[[Enchanted Leather]], {14341, 8} --[[Rune Thread]], {15407, 4} --[[Cured Rugged Hide]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 45069, itemId = 51284, name = "Lynxstep Boots", skillRequirement = 120, reagents = { {818, 1} --[[Tigerseye]], {2318, 8} --[[Light Leather]], {2321, 2} --[[Fine Thread]], {4231, 1} --[[Cured Light Hide]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 54015, itemId = 65037, name = "Molten Leggings", skillRequirement = 315, reagents = { {7076, 6} --[[Essence of Earth]], {12607, 6} --[[Brilliant Chromatic Scale]], {14227, 4} --[[Ironweb Spider Silk]], {15407, 4} --[[Cured Rugged Hide]], {17010, 3} --[[Fiery Core]], {17011, 6} --[[Lava Core]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 10550, itemId = 8195, name = "Nightscape Cloak", skillRequirement = 250, reagents = { {4291, 4} --[[Silken Thread]], {4304, 12} --[[Thick Leather]] } }, -- custom=0
+  { profession = "Leatherworking", spellId = 19106, itemId = 15141, name = "Onyxia Scale Breastplate", skillRequirement = 320, reagents = { {8170, 40} --[[Rugged Leather]], {14341, 2} --[[Rune Thread]], {15410, 12} --[[Scale of Onyxia]], {15416, 60} --[[Black Dragonscale]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 19093, itemId = 15138, name = "Onyxia Scale Cloak", skillRequirement = 320, reagents = { {14044, 1} --[[Cindercloth Cloak]], {14341, 1} --[[Rune Thread]], {15410, 1} --[[Scale of Onyxia]] } }, -- custom=0
+  { profession = "Leatherworking", spellId = 28221, itemId = 22663, name = "Polar Bracers", skillRequirement = 320, reagents = { {7080, 2} --[[Essence of Water]], {12810, 12} --[[Enchanted Leather]], {14227, 4} --[[Ironweb Spider Silk]], {15407, 2} --[[Cured Rugged Hide]], {22682, 4} --[[Frozen Rune]] } }, -- custom=0
+  { profession = "Leatherworking", spellId = 28220, itemId = 22662, name = "Polar Gloves", skillRequirement = 320, reagents = { {7080, 2} --[[Essence of Water]], {12810, 12} --[[Enchanted Leather]], {14227, 4} --[[Ironweb Spider Silk]], {15407, 3} --[[Cured Rugged Hide]], {22682, 5} --[[Frozen Rune]] } }, -- custom=0
+  { profession = "Leatherworking", spellId = 28219, itemId = 22661, name = "Polar Tunic", skillRequirement = 320, reagents = { {7080, 2} --[[Essence of Water]], {12810, 16} --[[Enchanted Leather]], {14227, 4} --[[Ironweb Spider Silk]], {15407, 4} --[[Cured Rugged Hide]], {22682, 7} --[[Frozen Rune]] } }, -- custom=0
+  { profession = "Leatherworking", spellId = 24123, itemId = 19687, name = "Primal Batskin Bracers", skillRequirement = 320, reagents = { {12803, 4} --[[Living Essence]], {14341, 3} --[[Rune Thread]], {15407, 3} --[[Cured Rugged Hide]], {19767, 8} --[[Primal Bat Leather]] } }, -- custom=0
+  { profession = "Leatherworking", spellId = 24122, itemId = 19686, name = "Primal Batskin Gloves", skillRequirement = 320, reagents = { {12803, 4} --[[Living Essence]], {14341, 3} --[[Rune Thread]], {15407, 4} --[[Cured Rugged Hide]], {19767, 10} --[[Primal Bat Leather]] } }, -- custom=0
+  { profession = "Leatherworking", spellId = 24121, itemId = 19685, name = "Primal Batskin Jerkin", skillRequirement = 320, reagents = { {12803, 4} --[[Living Essence]], {14341, 4} --[[Rune Thread]], {15407, 5} --[[Cured Rugged Hide]], {19767, 14} --[[Primal Bat Leather]] } }, -- custom=0
+  { profession = "Leatherworking", spellId = 47020, itemId = 81065, name = "Primalist's Boots", skillRequirement = 290, reagents = { {8170, 8} --[[Rugged Leather]], {14047, 4} --[[Runecloth]], {14341, 1} --[[Rune Thread]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 47015, itemId = 81061, name = "Primalist's Gloves", skillRequirement = 285, reagents = { {8170, 6} --[[Rugged Leather]], {14047, 4} --[[Runecloth]], {14341, 1} --[[Rune Thread]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 47017, itemId = 81063, name = "Primalist's Headdress", skillRequirement = 290, reagents = { {7080, 1} --[[Essence of Water]], {8170, 10} --[[Rugged Leather]], {12803, 1} --[[Living Essence]], {14341, 1} --[[Rune Thread]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 47018, itemId = 81064, name = "Primalist's Pants", skillRequirement = 290, reagents = { {8170, 12} --[[Rugged Leather]], {8343, 2} --[[Heavy Silken Thread]], {14341, 1} --[[Rune Thread]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 47016, itemId = 81062, name = "Primalist's Shoulders", skillRequirement = 285, reagents = { {8170, 12} --[[Rugged Leather]], {12803, 1} --[[Living Essence]], {14341, 1} --[[Rune Thread]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 47019, itemId = 81066, name = "Primalist's Vest", skillRequirement = 285, reagents = { {8170, 24} --[[Rugged Leather]], {12803, 4} --[[Living Essence]], {14341, 1} --[[Rune Thread]], {15407, 1} --[[Cured Rugged Hide]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 36911, itemId = 55054, name = "Prismatic Scale Barbute", skillRequirement = 300, reagents = { {8165, 20} --[[Worn Dragonscale]], {8170, 30} --[[Rugged Leather]], {15412, 5} --[[Green Dragonscale]], {15414, 5} --[[Red Dragonscale]], {15415, 5} --[[Blue Dragonscale]], {15416, 5} --[[Black Dragonscale]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 46655, itemId = 65002, name = "Red Dragonscale Boots", skillRequirement = 300, reagents = { {8170, 30} --[[Rugged Leather]], {12803, 4} --[[Living Essence]], {12810, 2} --[[Enchanted Leather]], {14341, 2} --[[Rune Thread]], {15414, 25} --[[Red Dragonscale]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 46653, itemId = 65000, name = "Red Dragonscale Leggings", skillRequirement = 315, reagents = { {8170, 35} --[[Rugged Leather]], {12803, 6} --[[Living Essence]], {12810, 4} --[[Enchanted Leather]], {14341, 2} --[[Rune Thread]], {15414, 40} --[[Red Dragonscale]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 46654, itemId = 65001, name = "Red Dragonscale Shoulders", skillRequirement = 315, reagents = { {8170, 30} --[[Rugged Leather]], {12803, 4} --[[Living Essence]], {12810, 3} --[[Enchanted Leather]], {14341, 1} --[[Rune Thread]], {15414, 30} --[[Red Dragonscale]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 24849, itemId = 20476, name = "Sandstalker Bracers", skillRequirement = 320, reagents = { {18512, 2} --[[Larval Acid]], {20498, 20} --[[Silithid Chitin]], {20501, 1} --[[Heavy Silithid Carapace]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 24851, itemId = 20478, name = "Sandstalker Breastplate", skillRequirement = 320, reagents = { {15407, 2} --[[Cured Rugged Hide]], {18512, 2} --[[Larval Acid]], {20498, 40} --[[Silithid Chitin]], {20501, 3} --[[Heavy Silithid Carapace]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 24850, itemId = 20477, name = "Sandstalker Gauntlets", skillRequirement = 320, reagents = { {15407, 1} --[[Cured Rugged Hide]], {18512, 2} --[[Larval Acid]], {20498, 30} --[[Silithid Chitin]], {20501, 2} --[[Heavy Silithid Carapace]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 46662, itemId = 65009, name = "Shadowskin Boots", skillRequirement = 225, reagents = { {1210, 6} --[[Shadowgem]], {4236, 4} --[[Cured Heavy Hide]], {4304, 8} --[[Thick Leather]], {7428, 8} --[[Shadowcat Hide]], {7971, 2} --[[Black Pearl]], {8343, 2} --[[Heavy Silken Thread]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 24846, itemId = 20481, name = "Spitfire Bracers", skillRequirement = 320, reagents = { {7078, 2} --[[Essence of Fire]], {20498, 20} --[[Silithid Chitin]], {20500, 1} --[[Light Silithid Carapace]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 24848, itemId = 20479, name = "Spitfire Breastplate", skillRequirement = 320, reagents = { {7078, 2} --[[Essence of Fire]], {15407, 2} --[[Cured Rugged Hide]], {20498, 40} --[[Silithid Chitin]], {20500, 3} --[[Light Silithid Carapace]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 24847, itemId = 20480, name = "Spitfire Gauntlets", skillRequirement = 320, reagents = { {7078, 2} --[[Essence of Fire]], {15407, 1} --[[Cured Rugged Hide]], {20498, 30} --[[Silithid Chitin]], {20500, 2} --[[Light Silithid Carapace]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 46659, itemId = 65006, name = "Stormscale Leggings", skillRequirement = 315, reagents = { {7082, 12} --[[Essence of Air]], {8170, 30} --[[Rugged Leather]], {12810, 16} --[[Enchanted Leather]], {15407, 4} --[[Cured Rugged Hide]], {15415, 40} --[[Blue Dragonscale]], {20295, 1} --[[Blue Dragonscale Leggings]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 36585, itemId = 42193, name = "Timberclaw Bracers", skillRequirement = 315, reagents = { {7076, 4} --[[Essence of Earth]], {7080, 4} --[[Essence of Water]], {8146, 40} --[[Wicked Claw]], {8170, 28} --[[Rugged Leather]], {14341, 2} --[[Rune Thread]], {15407, 1} --[[Cured Rugged Hide]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 47035, itemId = 65021, name = "Verdant Dreamer's Breastplate", skillRequirement = 300, reagents = { {8211, 1} --[[Wild Leather Vest]], {12803, 20} --[[Living Essence]], {12810, 16} --[[Enchanted Leather]], {14227, 4} --[[Ironweb Spider Silk]], {15407, 4} --[[Cured Rugged Hide]], {20002, 10} --[[Greater Dreamless Sleep Potion]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 57018, itemId = 65027, name = "Windwalker Boots", skillRequirement = 320, reagents = { {2459, 10} --[[Swiftness Potion]], {7082, 20} --[[Essence of Air]], {8170, 10} --[[Rugged Leather]], {8343, 2} --[[Heavy Silken Thread]], {12753, 6} --[[Skin of Shadow]], {15407, 6} --[[Cured Rugged Hide]], {15423, 20} --[[Chimera Leather]] } }, -- custom=1
+  { profession = "Leatherworking", spellId = 36587, itemId = 42192, name = "Witherhide Gloves", skillRequirement = 320, reagents = { {12753, 6} --[[Skin of Shadow]], {12808, 6} --[[Essence of Undeath]], {14341, 2} --[[Rune Thread]], {15407, 4} --[[Cured Rugged Hide]], {15419, 20} --[[Warbear Leather]] } }, -- custom=1
+  -- Tailoring (57)
+  { profession = "Tailoring", spellId = 36913, itemId = 55052, name = "Astronomer Raiments", skillRequirement = 315, reagents = { {9210, 5} --[[Ghost Dye]], {12361, 2} --[[Blue Sapphire]], {14048, 12} --[[Bolt of Runecloth]], {55048, 5} --[[Elixir of Greater Arcane Power]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46644, itemId = 83288, name = "Augerer's Boots", skillRequirement = 215, reagents = { {4234, 3} --[[Heavy Leather]], {4339, 2} --[[Bolt of Mageweave]], {6260, 1} --[[Blue Dye]], {7070, 1} --[[Elemental Water]], {8343, 1} --[[Heavy Silken Thread]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46643, itemId = 83289, name = "Augerer's Gloves", skillRequirement = 225, reagents = { {4339, 3} --[[Bolt of Mageweave]], {6260, 1} --[[Blue Dye]], {6373, 1} --[[Elixir of Firepower]], {8343, 2} --[[Heavy Silken Thread]], {9036, 1} --[[Magic Resistance Potion]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46639, itemId = 83286, name = "Augerer's Hat", skillRequirement = 230, reagents = { {3827, 2} --[[Mana Potion]], {4339, 3} --[[Bolt of Mageweave]], {6260, 1} --[[Blue Dye]], {7070, 1} --[[Elemental Water]], {8343, 1} --[[Heavy Silken Thread]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46642, itemId = 83290, name = "Augerer's Mantle", skillRequirement = 230, reagents = { {4339, 3} --[[Bolt of Mageweave]], {6149, 2} --[[Greater Mana Potion]], {6260, 1} --[[Blue Dye]], {7070, 1} --[[Elemental Water]], {8343, 1} --[[Heavy Silken Thread]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46640, itemId = 83287, name = "Augerer's Robe", skillRequirement = 235, reagents = { {1705, 2} --[[Lesser Moonstone]], {4339, 6} --[[Bolt of Mageweave]], {6260, 2} --[[Blue Dye]], {7070, 2} --[[Elemental Water]], {8343, 1} --[[Heavy Silken Thread]], {20746, 1} --[[Lesser Wizard Oil]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46641, itemId = 83291, name = "Augerer's Trousers", skillRequirement = 230, reagents = { {3827, 2} --[[Mana Potion]], {4339, 4} --[[Bolt of Mageweave]], {6260, 1} --[[Blue Dye]], {7070, 1} --[[Elemental Water]], {8343, 1} --[[Heavy Silken Thread]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 27660, itemId = 22249, name = "Big Bag of Enchantment", skillRequirement = 315, reagents = { {12810, 4} --[[Enchanted Leather]], {14048, 6} --[[Bolt of Runecloth]], {14227, 4} --[[Ironweb Spider Silk]], {14344, 4} --[[Large Brilliant Shard]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 24093, itemId = 19684, name = "Bloodvine Boots", skillRequirement = 315, reagents = { {12810, 4} --[[Enchanted Leather]], {14048, 4} --[[Bolt of Runecloth]], {14227, 4} --[[Ironweb Spider Silk]], {14342, 3} --[[Mooncloth]], {19726, 3} --[[Bloodvine]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 24092, itemId = 19683, name = "Bloodvine Leggings", skillRequirement = 315, reagents = { {12804, 4} --[[Powerful Mojo]], {14048, 4} --[[Bolt of Runecloth]], {14227, 2} --[[Ironweb Spider Silk]], {14342, 4} --[[Mooncloth]], {19726, 4} --[[Bloodvine]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 24091, itemId = 19682, name = "Bloodvine Vest", skillRequirement = 315, reagents = { {12804, 4} --[[Powerful Mojo]], {14048, 4} --[[Bolt of Runecloth]], {14227, 2} --[[Ironweb Spider Silk]], {14342, 3} --[[Mooncloth]], {19726, 5} --[[Bloodvine]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 8778, itemId = 7027, name = "Boots of Darkness", skillRequirement = 160, reagents = { {2319, 2} --[[Medium Leather]], {2321, 2} --[[Fine Thread]], {4305, 3} --[[Bolt of Silk Cloth]], {6048, 1} --[[Shadow Protection Potion]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 27724, itemId = 22251, name = "Cenarion Herb Bag", skillRequirement = 290, reagents = { {8831, 10} --[[Purple Lotus]], {11040, 8} --[[Morrowgrain]], {14048, 5} --[[Bolt of Runecloth]], {14341, 2} --[[Rune Thread]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 57601, itemId = 55518, name = "Cosmic Headdress", skillRequirement = 315, reagents = { {14048, 6} --[[Bolt of Runecloth]], {14227, 3} --[[Ironweb Spider Silk]], {14342, 2} --[[Mooncloth]], {61673, 5} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 57607, itemId = 55521, name = "Cosmic Leggings", skillRequirement = 315, reagents = { {14048, 6} --[[Bolt of Runecloth]], {14227, 2} --[[Ironweb Spider Silk]], {14342, 3} --[[Mooncloth]], {61673, 7} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 57603, itemId = 55519, name = "Cosmic Mantle", skillRequirement = 315, reagents = { {14048, 3} --[[Bolt of Runecloth]], {14227, 4} --[[Ironweb Spider Silk]], {14342, 2} --[[Mooncloth]], {61673, 4} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 57605, itemId = 55520, name = "Cosmic Vest", skillRequirement = 315, reagents = { {14048, 8} --[[Bolt of Runecloth]], {14227, 2} --[[Ironweb Spider Silk]], {14342, 3} --[[Mooncloth]], {61673, 7} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 36583, itemId = 42194, name = "Deeproot Sash", skillRequirement = 315, reagents = { {7971, 4} --[[Black Pearl]], {12808, 12} --[[Essence of Undeath]], {14048, 16} --[[Bolt of Runecloth]], {14256, 6} --[[Felcloth]], {14341, 2} --[[Rune Thread]], {20520, 12} --[[Dark Rune]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46636, itemId = 83283, name = "Diviner's Boots", skillRequirement = 235, reagents = { {2324, 1} --[[Bleach]], {4304, 2} --[[Thick Leather]], {4339, 3} --[[Bolt of Mageweave]], {8343, 3} --[[Heavy Silken Thread]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46635, itemId = 83282, name = "Diviner's Cowl", skillRequirement = 245, reagents = { {2324, 1} --[[Bleach]], {2842, 1} --[[Silver Bar]], {4339, 4} --[[Bolt of Mageweave]], {8343, 1} --[[Heavy Silken Thread]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46638, itemId = 83285, name = "Diviner's Epaulets", skillRequirement = 240, reagents = { {2324, 1} --[[Bleach]], {2842, 1} --[[Silver Bar]], {4339, 6} --[[Bolt of Mageweave]], {8343, 2} --[[Heavy Silken Thread]], {17028, 1} --[[Holy Candle]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46637, itemId = 83284, name = "Diviner's Mitts", skillRequirement = 235, reagents = { {2324, 1} --[[Bleach]], {4339, 3} --[[Bolt of Mageweave]], {6048, 1} --[[Shadow Protection Potion]], {8343, 2} --[[Heavy Silken Thread]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46633, itemId = 83280, name = "Diviner's Pantaloons", skillRequirement = 245, reagents = { {2324, 1} --[[Bleach]], {2842, 1} --[[Silver Bar]], {4339, 4} --[[Bolt of Mageweave]], {8343, 2} --[[Heavy Silken Thread]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46634, itemId = 83281, name = "Diviner's Robe", skillRequirement = 250, reagents = { {2324, 1} --[[Bleach]], {2842, 2} --[[Silver Bar]], {4339, 10} --[[Bolt of Mageweave]], {5500, 1} --[[Iridescent Pearl]], {8343, 4} --[[Heavy Silken Thread]], {17028, 1} --[[Holy Candle]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 45453, itemId = 61230, name = "Dreamthread", skillRequirement = 310, reagents = { {14341, 1} --[[Rune Thread]], {20381, 1} --[[Dreamscale]], {61198, 1} --[[Small Dream Shard]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 54011, itemId = 65035, name = "Flarecore Boots", skillRequirement = 315, reagents = { {7078, 10} --[[Essence of Fire]], {14227, 4} --[[Ironweb Spider Silk]], {14342, 6} --[[Mooncloth]], {17010, 5} --[[Fiery Core]], {17011, 4} --[[Lava Core]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 28210, itemId = 22660, name = "Gaea's Embrace", skillRequirement = 315, reagents = { {12803, 4} --[[Living Essence]], {14227, 4} --[[Ironweb Spider Silk]], {14342, 2} --[[Mooncloth]], {19726, 1} --[[Bloodvine]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 28208, itemId = 22658, name = "Glacial Cloak", skillRequirement = 315, reagents = { {7080, 2} --[[Essence of Water]], {14048, 4} --[[Bolt of Runecloth]], {14227, 4} --[[Ironweb Spider Silk]], {22682, 5} --[[Frozen Rune]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 28205, itemId = 22654, name = "Glacial Gloves", skillRequirement = 315, reagents = { {7080, 4} --[[Essence of Water]], {14048, 4} --[[Bolt of Runecloth]], {14227, 4} --[[Ironweb Spider Silk]], {22682, 5} --[[Frozen Rune]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 28207, itemId = 22652, name = "Glacial Vest", skillRequirement = 315, reagents = { {7080, 6} --[[Essence of Water]], {14048, 8} --[[Bolt of Runecloth]], {14227, 8} --[[Ironweb Spider Silk]], {22682, 7} --[[Frozen Rune]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 28209, itemId = 22655, name = "Glacial Wrists", skillRequirement = 315, reagents = { {7080, 2} --[[Essence of Water]], {14048, 2} --[[Bolt of Runecloth]], {14227, 4} --[[Ironweb Spider Silk]], {22682, 4} --[[Frozen Rune]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 45066, itemId = 51256, name = "Gloves of Manathirst", skillRequirement = 150, reagents = { {2321, 2} --[[Fine Thread]], {2996, 3} --[[Bolt of Linen Cloth]], {6260, 3} --[[Blue Dye]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 45485, itemId = 61186, name = "Gloves of Unwinding Mystery", skillRequirement = 315, reagents = { {8846, 24} --[[Gromsblood]], {9210, 10} --[[Ghost Dye]], {12810, 1} --[[Enchanted Leather]], {14048, 14} --[[Bolt of Runecloth]], {14344, 1} --[[Large Brilliant Shard]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 7636, itemId = 6243, name = "Green Woolen Robe", skillRequirement = 115, reagents = { {2321, 2} --[[Fine Thread]], {2605, 1} --[[Green Dye]], {2997, 3} --[[Bolt of Woolen Cloth]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 57633, itemId = 55534, name = "Ley-Kissed Drape", skillRequirement = 315, reagents = { {13926, 1} --[[Golden Pearl]], {14048, 6} --[[Bolt of Runecloth]], {14227, 4} --[[Ironweb Spider Silk]], {14342, 2} --[[Mooncloth]], {61673, 4} --[[Arcane Essence]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46646, itemId = 83293, name = "Pillager's Amice", skillRequirement = 275, reagents = { {4625, 1} --[[Firebloom]], {7068, 1} --[[Elemental Fire]], {14048, 4} --[[Bolt of Runecloth]], {14341, 3} --[[Rune Thread]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46648, itemId = 83295, name = "Pillager's Grips", skillRequirement = 275, reagents = { {7077, 4} --[[Heart of Fire]], {14048, 2} --[[Bolt of Runecloth]], {14341, 1} --[[Rune Thread]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46645, itemId = 83292, name = "Pillager's Hood", skillRequirement = 280, reagents = { {7068, 2} --[[Elemental Fire]], {14048, 5} --[[Bolt of Runecloth]], {14341, 1} --[[Rune Thread]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46650, itemId = 83297, name = "Pillager's Pantaloons", skillRequirement = 280, reagents = { {4625, 1} --[[Firebloom]], {7077, 4} --[[Heart of Fire]], {14048, 4} --[[Bolt of Runecloth]], {14341, 2} --[[Rune Thread]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46647, itemId = 83294, name = "Pillager's Robe", skillRequirement = 290, reagents = { {4625, 4} --[[Firebloom]], {6037, 2} --[[Truesilver Bar]], {7068, 3} --[[Elemental Fire]], {7078, 2} --[[Essence of Fire]], {14048, 8} --[[Bolt of Runecloth]], {14341, 4} --[[Rune Thread]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46649, itemId = 83296, name = "Pillager's Shoes", skillRequirement = 275, reagents = { {6371, 1} --[[Fire Oil]], {8170, 2} --[[Rugged Leather]], {14048, 2} --[[Bolt of Runecloth]], {14341, 1} --[[Rune Thread]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 46656, itemId = 65003, name = "Robe of Sacrifice", skillRequirement = 300, reagents = { {7971, 4} --[[Black Pearl]], {10285, 8} --[[Shadow Silk]], {12662, 20} --[[Demonic Rune]], {14048, 12} --[[Bolt of Runecloth]], {14256, 20} --[[Felcloth]], {14341, 1} --[[Rune Thread]], {20520, 10} --[[Dark Rune]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 24902, itemId = 20539, name = "Runed Stygian Belt", skillRequirement = 315, reagents = { {12810, 2} --[[Enchanted Leather]], {14048, 2} --[[Bolt of Runecloth]], {14227, 2} --[[Ironweb Spider Silk]], {14256, 2} --[[Felcloth]], {20520, 6} --[[Dark Rune]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 24903, itemId = 20537, name = "Runed Stygian Boots", skillRequirement = 315, reagents = { {12810, 2} --[[Enchanted Leather]], {14048, 4} --[[Bolt of Runecloth]], {14227, 2} --[[Ironweb Spider Silk]], {14256, 4} --[[Felcloth]], {20520, 6} --[[Dark Rune]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 24901, itemId = 20538, name = "Runed Stygian Leggings", skillRequirement = 315, reagents = { {14048, 6} --[[Bolt of Runecloth]], {14227, 2} --[[Ironweb Spider Silk]], {14256, 6} --[[Felcloth]], {20520, 8} --[[Dark Rune]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 27725, itemId = 22252, name = "Satchel of Cenarius", skillRequirement = 315, reagents = { {13468, 1} --[[Black Lotus]], {14048, 6} --[[Bolt of Runecloth]], {14227, 4} --[[Ironweb Spider Silk]], {14342, 2} --[[Mooncloth]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 36915, itemId = 55056, name = "Spellwoven Nobility Drape", skillRequirement = 315, reagents = { {9210, 10} --[[Ghost Dye]], {14048, 8} --[[Bolt of Runecloth]], {14341, 4} --[[Rune Thread]], {14342, 3} --[[Mooncloth]], {16204, 40} --[[Illusion Dust]], {20725, 1} --[[Nexus Crystal]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 12090, itemId = 10039, name = "Stormcloth Boots", skillRequirement = 265, reagents = { {4304, 2} --[[Thick Leather]], {4339, 6} --[[Bolt of Mageweave]], {7079, 6} --[[Globe of Water]], {8343, 3} --[[Heavy Silken Thread]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 12063, itemId = 10011, name = "Stormcloth Gloves", skillRequirement = 235, reagents = { {4339, 3} --[[Bolt of Mageweave]], {7079, 2} --[[Globe of Water]], {8343, 2} --[[Heavy Silken Thread]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 12083, itemId = 10032, name = "Stormcloth Headband", skillRequirement = 255, reagents = { {4339, 4} --[[Bolt of Mageweave]], {7079, 4} --[[Globe of Water]], {8343, 2} --[[Heavy Silken Thread]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 12062, itemId = 10010, name = "Stormcloth Pants", skillRequirement = 235, reagents = { {4339, 4} --[[Bolt of Mageweave]], {7079, 2} --[[Globe of Water]], {8343, 2} --[[Heavy Silken Thread]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 12087, itemId = 10038, name = "Stormcloth Shoulders", skillRequirement = 260, reagents = { {4339, 5} --[[Bolt of Mageweave]], {7079, 6} --[[Globe of Water]], {8343, 3} --[[Heavy Silken Thread]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 12068, itemId = 10020, name = "Stormcloth Vest", skillRequirement = 240, reagents = { {4339, 5} --[[Bolt of Mageweave]], {7079, 3} --[[Globe of Water]], {8343, 2} --[[Heavy Silken Thread]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 83, itemId = 58134, name = "Stormreaver Gloves", skillRequirement = 185, reagents = { {3824, 3} --[[Shadow Oil]], {3864, 3} --[[Citrine]], {4291, 2} --[[Silken Thread]], {4305, 8} --[[Bolt of Silk Cloth]], {4342, 1} --[[Purple Dye]], {7068, 3} --[[Elemental Fire]] } }, -- custom=1
+  { profession = "Tailoring", spellId = 28481, itemId = 22757, name = "Sylvan Crown", skillRequirement = 315, reagents = { {12803, 2} --[[Living Essence]], {14048, 4} --[[Bolt of Runecloth]], {14227, 2} --[[Ironweb Spider Silk]], {14342, 2} --[[Mooncloth]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 28482, itemId = 22758, name = "Sylvan Shoulders", skillRequirement = 315, reagents = { {12803, 4} --[[Living Essence]], {14048, 2} --[[Bolt of Runecloth]], {14227, 2} --[[Ironweb Spider Silk]] } }, -- custom=0
+  { profession = "Tailoring", spellId = 28480, itemId = 22756, name = "Sylvan Vest", skillRequirement = 315, reagents = { {12803, 2} --[[Living Essence]], {14048, 4} --[[Bolt of Runecloth]], {14227, 2} --[[Ironweb Spider Silk]], {19726, 2} --[[Bloodvine]] } }, -- custom=0
+}
+
+function BuildWorkOrderMissingRecipe(entry)
+  if type(entry) ~= "table" then return nil end
+
+  local profession = entry.profession
+  local recipeName = Trim(tostring(entry.name or ""))
+  local spellId = tonumber(entry.spellId)
+  local itemId = tonumber(entry.itemId)
+  if not profession or recipeName == "" or (not spellId and not itemId) then
+    return nil
+  end
+
+  local iconPath = NormalizeIconPath(itemId and GetItemIcon and GetItemIcon(itemId))
+    or (WORK_ORDER_PROFESSION_META[profession] and WORK_ORDER_PROFESSION_META[profession].icon)
+    or LEAF_FALLBACK
+
+  local recipe = {
+    profession = profession,
+    name = recipeName,
+    itemId = itemId,
+    spellId = spellId,
+    icon = iconPath,
+    quality = 1,
+    skillRequirement = tonumber(entry.skillRequirement),
+    reagents = NormalizeWorkOrderReagents(entry.reagents),
+    sourceTable = "MissingRecipes",
+  }
+  recipe.uid = GetWorkOrderRecipeKey(recipe)
+  recipe.searchKey = BuildWorkOrderSearchKey(recipe)
+  return recipe
+end
+
+-- Appended after the main AtlasLootCrafting-driven loop below, so `seen`
+-- already reflects every recipe Crafting.lua produced -- this only adds the
+-- ones that pipeline has no row for at all (see WORK_ORDER_MISSING_RECIPES'
+-- header comment). Runs the same BoP exclusion as that main loop (a Work
+-- Order can't hand over an item the crafter can't trade).
+function LeafVE:AppendMissingWorkOrderCatalogRecipes(catalog, seen)
+  if type(catalog) ~= "table" or type(catalog.byProfession) ~= "table" then return end
+
+  for i = 1, table.getn(WORK_ORDER_MISSING_RECIPES or {}) do
+    local recipe = BuildWorkOrderMissingRecipe(WORK_ORDER_MISSING_RECIPES[i])
+    if recipe and catalog.byProfession[recipe.profession]
+      and not self:IsWorkOrderItemBindOnPickup(recipe.itemId) then
+      if not seen[recipe.uid] then
+        seen[recipe.uid] = true
+        table.insert(catalog.byProfession[recipe.profession], recipe)
+        catalog.totalRecipes = catalog.totalRecipes + 1
+      end
+    end
+  end
+end
+
 function LeafVE:EnsureWorkOrderCatalog()
   if self.workOrderCatalog then
     return self.workOrderCatalog
@@ -24689,6 +25685,24 @@ function LeafVE:EnsureWorkOrderCatalog()
             local itemId = itemIdRow3 or itemIdRow2
             local spellId = spellIdRow2 or spellIdRow3
             local profession = currentProfession
+
+            -- Survival/Jewelcrafting have no separate recipe item, so the
+            -- parsed "itemId" above is actually the real spell id reused as
+            -- a stand-in (see SURVIVAL_RECIPE_ITEM_IDS/
+            -- JEWELCRAFTING_RECIPE_ITEM_IDS) -- reinterpret both before
+            -- building the recipe so the rest of this pipeline (icons,
+            -- known-crafter spellId tokens, ApplyWorkOrderSpellInfo below)
+            -- sees real ids.
+            if itemId and not spellId then
+              local realItemIdMap = (profession == "Survival" and SURVIVAL_RECIPE_ITEM_IDS)
+                or (profession == "Jewelcrafting" and JEWELCRAFTING_RECIPE_ITEM_IDS)
+                or nil
+              if realItemIdMap then
+                spellId = itemId
+                itemId = realItemIdMap[spellId]
+              end
+            end
+
             if (itemId or spellId) and profession and catalog.byProfession[profession] then
               local recipeName = ExtractWorkOrderRecipeName(row[4]) or ExtractWorkOrderRecipeName(row[3]) or ExtractWorkOrderRecipeName(row[5])
               local recipe = {
@@ -24702,13 +25716,18 @@ function LeafVE:EnsureWorkOrderCatalog()
                 sourceTable = tableKey,
               }
               if recipe.name and recipe.name ~= "" then
-                -- Jewelcrafting/Survival/Gardening data has no real spellId (see the
-                -- Atlas-CFM transcription note above) -- letting ApplyWorkOrderSpellInfo's
-                -- itemId-based fallback run for these risks matching an unrelated vanilla
-                -- recipe that happens to reuse the same numeric itemId (its own fallback
-                -- returns candidates[1] even when no name matches), poisoning the recipe
-                -- with a bogus spellId/reagent list. Skip it for these three professions.
-                if profession ~= "Jewelcrafting" and profession ~= "Survival" and profession ~= "Gardening" then
+                -- Gardening data has no real spellId at all (it plants seeds
+                -- rather than casting a craft spell -- see the header comment
+                -- on WORK_ORDER_PROFESSION_ORDER) -- letting
+                -- ApplyWorkOrderSpellInfo's itemId-based fallback run for it
+                -- risks matching an unrelated vanilla recipe that happens to
+                -- reuse the same numeric itemId (its own fallback returns
+                -- candidates[1] even when no name matches), poisoning the
+                -- recipe with a bogus spellId/reagent list. Skip it for that
+                -- profession only -- Survival/Jewelcrafting's ids were
+                -- already corrected to real ones above, so it's safe to run
+                -- them through the same generic path as every other profession.
+                if profession ~= "Gardening" then
                   self:ApplyWorkOrderSpellInfo(recipe)
                 end
                 recipe.icon = self:GetWorkOrderResultIcon(recipe.itemId, recipe.spellId, recipe.icon)
@@ -24730,6 +25749,7 @@ function LeafVE:EnsureWorkOrderCatalog()
   end
 
   AppendGatheringWorkOrderCatalogRecipes(catalog, seen)
+  self:AppendMissingWorkOrderCatalogRecipes(catalog, seen)
 
   for i = 1, table.getn(catalog.order) do
     local profession = catalog.order[i]
@@ -27052,26 +28072,74 @@ function CreateWorkOrderRecipeButton(parent)
     end
     GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
     GameTooltip:ClearLines()
-    if this.recipe.itemId then
-      GameTooltip:SetHyperlink("item:" .. tostring(this.recipe.itemId))
-      GameTooltip:AddLine(" ")
-      GameTooltip:AddLine("Profession: " .. tostring(this.recipe.profession or "Unknown"), 0.75, 0.95, 0.75)
-      if this.recipe.spellId then
-        GameTooltip:AddLine("Spell ID: " .. tostring(this.recipe.spellId), 0.85, 0.85, 0.85)
+
+    -- The whole body is one pcall: an untraceable client-side error tied to
+    -- a specific Turtle-custom recipe (freshly added, essentially uncached
+    -- everywhere) was silently aborting this handler before it reached
+    -- GameTooltip:Show() below, leaving no tooltip at all rather than one
+    -- merely missing a line. Whatever the exact failure, this guarantees a
+    -- tooltip still appears -- worst case with just the recipe's name.
+    local ok, err = pcall(function()
+      if this.recipe.itemId then
+        local linkedOk = pcall(GameTooltip.SetHyperlink, GameTooltip, "item:" .. tostring(this.recipe.itemId))
+        if not linkedOk then
+          GameTooltip:ClearLines()
+          GameTooltip:SetText(this.recipe.name or "Recipe", THEME.gold[1], THEME.gold[2], THEME.gold[3], 1, true)
+        end
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Profession: " .. tostring(this.recipe.profession or "Unknown"), 0.75, 0.95, 0.75)
+        if this.recipe.spellId then
+          GameTooltip:AddLine("Spell ID: " .. tostring(this.recipe.spellId), 0.85, 0.85, 0.85)
+        end
+      else
+        GameTooltip:SetText(this.recipe.name or "Recipe", THEME.gold[1], THEME.gold[2], THEME.gold[3], 1, true)
+        GameTooltip:AddLine("Profession: " .. tostring(this.recipe.profession or "Unknown"), 0.75, 0.95, 0.75)
+        if this.recipe.spellId then
+          GameTooltip:AddLine("Spell ID: " .. tostring(this.recipe.spellId), 0.85, 0.85, 0.85)
+        end
       end
-    else
-      GameTooltip:SetText(this.recipe.name or "Recipe", THEME.gold[1], THEME.gold[2], THEME.gold[3], 1, true)
-      GameTooltip:AddLine("Profession: " .. tostring(this.recipe.profession or "Unknown"), 0.75, 0.95, 0.75)
-      if this.recipe.spellId then
-        GameTooltip:AddLine("Spell ID: " .. tostring(this.recipe.spellId), 0.85, 0.85, 0.85)
+      local reagentLines = LeafVE:GetWorkOrderReagentLines(this.recipe, 1)
+      if type(reagentLines) == "table" and table.getn(reagentLines) > 0 then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Reagents", 1, 0.82, 0.2)
+        for i = 1, table.getn(reagentLines) do
+          GameTooltip:AddLine(reagentLines[i], 0.85, 0.85, 0.85, 1)
+        end
       end
-    end
-    local reagentLines = LeafVE:GetWorkOrderReagentLines(this.recipe, 1)
-    if type(reagentLines) == "table" and table.getn(reagentLines) > 0 then
-      GameTooltip:AddLine(" ")
-      GameTooltip:AddLine("Reagents", 1, 0.82, 0.2)
-      for i = 1, table.getn(reagentLines) do
-        GameTooltip:AddLine(reagentLines[i], 0.85, 0.85, 0.85, 1)
+      local knownBy = this.knownByCrafters
+      local knownCount = type(knownBy) == "table" and table.getn(knownBy) or 0
+      if knownCount > 0 then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Known Crafters (" .. knownCount .. ")", 1, 0.82, 0.2)
+        local maxShown = 40
+        local perLine = 4
+        local shown = math.min(knownCount, maxShown)
+        local i = 1
+        while i <= shown do
+          local lineNames = {}
+          for j = i, math.min(i + perLine - 1, shown) do
+            table.insert(lineNames, knownBy[j])
+          end
+          GameTooltip:AddLine(table.concat(lineNames, ", "), 0.85, 0.85, 0.85, 1)
+          i = i + perLine
+        end
+        if knownCount > maxShown then
+          GameTooltip:AddLine("...and " .. (knownCount - maxShown) .. " more", 0.6, 0.6, 0.6, 1)
+        end
+      end
+    end)
+    if not ok then
+      GameTooltip:ClearLines()
+      GameTooltip:SetText(this.recipe.name or "Recipe", 1, 1, 1, 1, true)
+      GameTooltip:AddLine("|cFFFF6060(tooltip error -- see chat)|r", 1, 1, 1, 1)
+      -- Prints once per recipe per session (not once per hover) so this is
+      -- a real diagnostic rather than a spam source -- remove once the
+      -- underlying cause is found and fixed for real.
+      LeafVE.reportedRecipeTooltipErrors = LeafVE.reportedRecipeTooltipErrors or {}
+      local reportKey = this.recipe.uid or this.recipe.name
+      if reportKey and not LeafVE.reportedRecipeTooltipErrors[reportKey] then
+        LeafVE.reportedRecipeTooltipErrors[reportKey] = true
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF6060[LeafVE]|r Recipe tooltip error on \"" .. tostring(this.recipe.name) .. "\": " .. tostring(err))
       end
     end
     GameTooltip:Show()
@@ -27083,6 +28151,323 @@ function CreateWorkOrderRecipeButton(parent)
 
   UpdateWorkOrderRecipeButtonVisual(btn, false)
   return btn
+end
+
+local RECIPE_CRAFTERS_ROW_HEIGHT = 24
+local RECIPE_CRAFTERS_COLUMNS = 2
+local RECIPE_CRAFTERS_COLUMN_GAP = 12
+
+local function CreateRecipeCrafterRow(parent)
+  local row = CreateFrame("Frame", nil, parent)
+  row:SetHeight(RECIPE_CRAFTERS_ROW_HEIGHT)
+
+  local stripe = row:CreateTexture(nil, "BACKGROUND")
+  stripe:SetAllPoints()
+  stripe:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
+  stripe:SetVertexColor(1, 1, 1, 0)
+  row.stripe = stripe
+
+  local text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  text:SetPoint("LEFT", row, "LEFT", 8, 0)
+  text:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+  text:SetJustifyH("LEFT")
+  text:SetJustifyV("MIDDLE")
+  row.text = text
+
+  return row
+end
+
+-- Side popup for browsing a recipe's full known-crafters list. Recipes can
+-- have 100+ known crafters, far more than the recipe row itself has room
+-- for, so this pairs a search box with the same offset/slider virtualized
+-- list pattern the Recipe Browser's own recipe list uses.
+function LeafVE.UI:CreateRecipeCraftersPopup()
+  if self.recipeCraftersPopup then return end
+
+  local popup = CreateFrame("Frame", "LeafVE_RecipeCraftersPopup", UIParent)
+  popup:SetFrameStrata("DIALOG")
+  popup:EnableMouse(true)
+  LayoutAshenSidePopup(popup)
+  popup:SetBackdrop({
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile = true, tileSize = 32, edgeSize = 32,
+    insets = { left = 11, right = 12, top = 12, bottom = 11 }
+  })
+  popup:SetBackdropColor(0, 0, 0, 0)
+  ApplyAshenScrollPopupSkin(popup)
+  popup:Hide()
+  popup:SetScript("OnHide", function() GameTooltip:Hide() end)
+
+  if UISpecialFrames then
+    table.insert(UISpecialFrames, "LeafVE_RecipeCraftersPopup")
+  end
+
+  local closeBtn = CreateFrame("Button", nil, popup, "UIPanelCloseButton")
+  closeBtn:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -5, -5)
+  closeBtn:SetScript("OnClick", function() popup:Hide() end)
+
+  -- Icon sits immediately left of the title, and the pair is recentered as
+  -- a group every refresh (RefreshRecipeCraftersPopup) since the recipe
+  -- name's width varies -- a fixed anchor would leave the title looking
+  -- left-shifted instead of centered like the popup's other titles.
+  local headerIcon = popup:CreateTexture(nil, "ARTWORK")
+  headerIcon:SetWidth(32)
+  headerIcon:SetHeight(32)
+  headerIcon:SetPoint("TOP", popup, "TOP", 0, -24)
+  headerIcon:SetTexture(LEAF_FALLBACK)
+  popup.headerIcon = headerIcon
+
+  local titleText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  titleText:SetPoint("LEFT", headerIcon, "RIGHT", 10, 0)
+  titleText:SetJustifyH("LEFT")
+  titleText:SetTextColor(THEME.gold[1], THEME.gold[2], THEME.gold[3])
+  popup.titleText = titleText
+
+  -- A proper opaque inset (same as the Recipe Browser's own "Recipe Search"
+  -- box) instead of laying text straight over the popup's ashen background
+  -- art -- names were sitting on top of the decorative texture and padded
+  -- too close to the edges to read cleanly. Anchored straight off the
+  -- popup (not the icon) so it stays put while the header recenters.
+  local contentPanel = CreateInset(popup)
+  contentPanel:SetPoint("TOPLEFT", popup, "TOPLEFT", 32, -66)
+  contentPanel:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -32, 22)
+  popup.contentPanel = contentPanel
+
+  local searchLabel = contentPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  searchLabel:SetPoint("TOPLEFT", contentPanel, "TOPLEFT", 12, -12)
+  searchLabel:SetText("|cFFFFD700Filter by name|r")
+
+  local subtitleText = contentPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  subtitleText:SetPoint("TOPRIGHT", contentPanel, "TOPRIGHT", -12, -12)
+  subtitleText:SetJustifyH("RIGHT")
+  popup.subtitleText = subtitleText
+
+  local searchBG = CreateFrame("Frame", nil, contentPanel)
+  searchBG:SetPoint("TOPLEFT", searchLabel, "BOTTOMLEFT", 0, -6)
+  searchBG:SetPoint("RIGHT", contentPanel, "RIGHT", -12, 0)
+  searchBG:SetHeight(22)
+  searchBG:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 12,
+    insets = {left = 3, right = 3, top = 3, bottom = 3}
+  })
+  searchBG:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
+  searchBG:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.6)
+
+  local searchBox = CreateFrame("EditBox", nil, searchBG)
+  searchBox:SetPoint("TOPLEFT", searchBG, "TOPLEFT", 5, -4)
+  searchBox:SetPoint("BOTTOMRIGHT", searchBG, "BOTTOMRIGHT", -5, 4)
+  searchBox:SetFontObject(GameFontHighlightSmall)
+  searchBox:SetTextInsets(0, 0, 0, 0)
+  searchBox:SetAutoFocus(false)
+  searchBox:SetText("")
+  searchBox:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+  searchBox:SetScript("OnTextChanged", function()
+    local owner = LeafVE and LeafVE.UI and LeafVE.UI.recipeCraftersPopup
+    if owner and owner:IsVisible() then
+      owner.offset = 0
+      LeafVE.UI:RefreshRecipeCraftersPopup()
+    end
+  end)
+  popup.searchBox = searchBox
+
+  local listFrame = CreateFrame("Frame", nil, contentPanel)
+  listFrame:SetPoint("TOPLEFT", searchBG, "BOTTOMLEFT", 0, -10)
+  listFrame:SetPoint("BOTTOMRIGHT", contentPanel, "BOTTOMRIGHT", -26, 10)
+  listFrame:EnableMouse(true)
+  listFrame:EnableMouseWheel(true)
+  listFrame:SetScript("OnMouseWheel", function()
+    local owner = LeafVE and LeafVE.UI and LeafVE.UI.recipeCraftersPopup
+    if not owner then return end
+    -- offset counts LINES (not names) now that the list runs in columns.
+    local totalLines = math.ceil(table.getn(owner.filteredNames or {}) / RECIPE_CRAFTERS_COLUMNS)
+    local visibleRows = owner.visibleRows or 1
+    local maxOffset = math.max(0, totalLines - visibleRows)
+    local newOffset = (owner.offset or 0) - (arg1 or 0)
+    if newOffset < 0 then newOffset = 0 end
+    if newOffset > maxOffset then newOffset = maxOffset end
+    if newOffset == (owner.offset or 0) then return end
+    owner.offset = newOffset
+    LeafVE.UI:RefreshRecipeCraftersPopup()
+  end)
+  popup.listFrame = listFrame
+  popup.rows = {}
+  popup.offset = 0
+  popup.allNames = {}
+  popup.filteredNames = {}
+  popup.rowHeight = RECIPE_CRAFTERS_ROW_HEIGHT
+
+  local scrollBar = CreateFrame("Slider", nil, contentPanel)
+  scrollBar:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", 22, -8)
+  scrollBar:SetPoint("BOTTOMRIGHT", contentPanel, "BOTTOMRIGHT", -8, 10)
+  AddScrollBarArrows(scrollBar, contentPanel)
+  scrollBar:SetWidth(20)
+  scrollBar:SetOrientation("VERTICAL")
+  scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+  scrollBar:SetMinMaxValues(0, 0)
+  scrollBar:SetValue(0)
+  scrollBar:SetValueStep(1)
+  local thumb = scrollBar:GetThumbTexture()
+  thumb:SetWidth(20)
+  thumb:SetHeight(28)
+  scrollBar:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 8, edgeSize = 8,
+    insets = {left = 2, right = 2, top = 2, bottom = 2}
+  })
+  scrollBar:SetBackdropColor(0, 0, 0, 0.3)
+  scrollBar:SetBackdropBorderColor(THEME.gold[1], THEME.gold[2], THEME.gold[3], 0.8)
+  scrollBar:SetScript("OnValueChanged", function()
+    if this.ignoreUpdate then return end
+    local owner = LeafVE and LeafVE.UI and LeafVE.UI.recipeCraftersPopup
+    if not owner then return end
+    local value = math.floor((this:GetValue() or 0) + 0.5)
+    if value < 0 then value = 0 end
+    if value == (owner.offset or 0) then return end
+    owner.offset = value
+    LeafVE.UI:RefreshRecipeCraftersPopup()
+  end)
+  popup.scrollBar = scrollBar
+
+  local emptyText = listFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  emptyText:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 4, -6)
+  emptyText:SetPoint("RIGHT", listFrame, "RIGHT", -4, 0)
+  emptyText:SetJustifyH("LEFT")
+  emptyText:SetJustifyV("TOP")
+  emptyText:SetText("|cFF888888No known crafters yet.|r")
+  popup.emptyText = emptyText
+
+  if self.ApplyPopupScale then
+    self:ApplyPopupScale(popup)
+  end
+
+  self.recipeCraftersPopup = popup
+end
+
+function LeafVE.UI:ShowRecipeCraftersPopup(recipe, knownBy)
+  if not recipe then return end
+  self:CreateRecipeCraftersPopup()
+
+  local popup = self.recipeCraftersPopup
+  popup.recipe = recipe
+  popup.allNames = type(knownBy) == "table" and knownBy or {}
+  popup.offset = 0
+  if popup.searchBox then
+    popup.searchBox:SetText("")
+  end
+  if popup.headerIcon then
+    popup.headerIcon:SetTexture(recipe.icon or LEAF_FALLBACK)
+  end
+
+  LayoutAshenSidePopup(popup)
+  self:RefreshRecipeCraftersPopup()
+  popup:Show()
+end
+
+function LeafVE.UI:RefreshRecipeCraftersPopup()
+  local popup = self.recipeCraftersPopup
+  if not popup then return end
+
+  local recipe = popup.recipe
+  if popup.titleText then
+    local qualityColor = recipe and WORK_ORDER_QUALITY_COLORS[recipe.quality or 1] or "|cFFFFFFFF"
+    popup.titleText:SetText(qualityColor .. tostring(recipe and recipe.name or "Recipe") .. "|r")
+  end
+
+  -- Recenter the icon+title as a group: the recipe name's width varies, so
+  -- centering the title alone (without moving the icon along with it) would
+  -- leave the pair looking lopsided.
+  if popup.headerIcon and popup.titleText then
+    local iconWidth = popup.headerIcon:GetWidth() or 32
+    local gap = 10
+    local maxTitleWidth = (popup:GetWidth() or 430) - 120
+    local titleWidth = popup.titleText:GetStringWidth() or 0
+    if titleWidth > maxTitleWidth then titleWidth = maxTitleWidth end
+    popup.titleText:SetWidth(titleWidth > 0 and titleWidth or 1)
+    local totalWidth = iconWidth + gap + titleWidth
+    popup.headerIcon:ClearAllPoints()
+    popup.headerIcon:SetPoint("TOP", popup, "TOP", (iconWidth - totalWidth) / 2, -24)
+  end
+
+  local allNames = popup.allNames or {}
+  local totalKnown = table.getn(allNames)
+  local filterText = Lower(Trim(popup.searchBox and popup.searchBox:GetText() or ""))
+  local filtered = {}
+  for i = 1, totalKnown do
+    local name = allNames[i]
+    if filterText == "" or string.find(Lower(name or ""), filterText, 1, true) then
+      table.insert(filtered, name)
+    end
+  end
+  popup.filteredNames = filtered
+
+  if popup.subtitleText then
+    if filterText ~= "" then
+      popup.subtitleText:SetText(string.format("|cFF75D9FF%d of %d known crafters|r", table.getn(filtered), totalKnown))
+    else
+      popup.subtitleText:SetText(string.format("|cFF75D9FF%d known crafter%s|r", totalKnown, totalKnown == 1 and "" or "s"))
+    end
+  end
+
+  -- Two columns so a large roster needs far less scrolling to browse.
+  local numColumns = RECIPE_CRAFTERS_COLUMNS
+  local listWidth = popup.listFrame:GetWidth() or 0
+  if not listWidth or listWidth < 200 then
+    listWidth = 320
+  end
+  local columnWidth = (listWidth - RECIPE_CRAFTERS_COLUMN_GAP * (numColumns - 1)) / numColumns
+
+  local rowHeight = popup.rowHeight or RECIPE_CRAFTERS_ROW_HEIGHT
+  local visibleLines = math.max(6, GetWorkOrderVisibleRowCount(popup.listFrame, rowHeight, 6))
+  local visibleSlots = visibleLines * numColumns
+  local totalRows = table.getn(filtered)
+  local totalLines = math.ceil(totalRows / numColumns)
+  local maxOffset = math.max(0, totalLines - visibleLines)
+  if (popup.offset or 0) > maxOffset then
+    popup.offset = maxOffset
+  end
+  popup.visibleRows = visibleLines
+
+  while table.getn(popup.rows) < visibleSlots do
+    table.insert(popup.rows, CreateRecipeCrafterRow(popup.listFrame))
+  end
+
+  local startIndex = (popup.offset or 0) * numColumns + 1
+  for slot = 1, table.getn(popup.rows) do
+    local rowFrame = popup.rows[slot]
+    local lineIndex = math.floor((slot - 1) / numColumns)
+    local colIndex = slot - 1 - (lineIndex * numColumns)
+    local dataIndex = startIndex + slot - 1
+    if slot <= visibleSlots and dataIndex <= totalRows then
+      rowFrame:SetWidth(columnWidth)
+      rowFrame:ClearAllPoints()
+      rowFrame:SetPoint("TOPLEFT", popup.listFrame, "TOPLEFT", colIndex * (columnWidth + RECIPE_CRAFTERS_COLUMN_GAP), -(lineIndex * rowHeight))
+      rowFrame.text:SetText(filtered[dataIndex] or "")
+      -- Zebra-stripe by absolute LINE (not column/slot), so both columns in
+      -- a row share the same stripe and it alternates row-to-row instead of
+      -- column-to-column, staying stable as you scroll.
+      local absoluteLine = (popup.offset or 0) + lineIndex
+      local isEven = (absoluteLine - 2 * math.floor(absoluteLine / 2)) == 0
+      rowFrame.stripe:SetVertexColor(1, 1, 1, isEven and 0.05 or 0)
+      rowFrame:Show()
+    else
+      rowFrame:Hide()
+    end
+  end
+
+  SyncWorkOrderSlider(popup.scrollBar, popup.offset or 0, maxOffset)
+
+  if popup.emptyText then
+    if totalRows > 0 then
+      popup.emptyText:Hide()
+    else
+      popup.emptyText:Show()
+      popup.emptyText:SetText(filterText ~= "" and "|cFF888888No crafters match that search.|r" or "|cFF888888No known crafters yet.|r")
+    end
+  end
 end
 
 function CreateWorkOrderOrderButton(parent)
@@ -40989,6 +42374,23 @@ function LeafVE.UI:RefreshRecipeBrowserPanel()
     end)
     btn.requestBtn = requestBtn
 
+    -- Opens the full known-crafters list for this recipe (recipes can have
+    -- 100+ known crafters -- far more than fits in the row's reagentText).
+    local craftersBtn = CreateFrame("Button", nil, btn, "UIPanelButtonTemplate")
+    craftersBtn:SetWidth(70)
+    craftersBtn:SetHeight(20)
+    craftersBtn:SetPoint("TOP", requestBtn, "BOTTOM", 0, -4)
+    craftersBtn:SetText("Crafters")
+    SkinButtonAccent(craftersBtn)
+    craftersBtn:SetScript("OnClick", function()
+      local rowBtn = this:GetParent()
+      local recipe = rowBtn and rowBtn.recipe
+      if not recipe or not LeafVE or not LeafVE.UI then return end
+      LeafVE.UI:ShowRecipeCraftersPopup(recipe, rowBtn.knownByCrafters)
+      PlaySound("igMainMenuOptionCheckBoxOn")
+    end)
+    btn.craftersBtn = craftersBtn
+
     table.insert(panel.recipeButtons, btn)
   end
 
@@ -41018,10 +42420,21 @@ function LeafVE.UI:RefreshRecipeBrowserPanel()
       if btn.reagentText then
         local token = GetWorkOrderCrafterRecipeToken(recipe)
         local knownBy = token and panel.recipeKnowledgeIndex and panel.recipeKnowledgeIndex[token]
-        if type(knownBy) == "table" and table.getn(knownBy) > 0 then
-          btn.reagentText:SetText("|cFF66FF66Known by:|r " .. LeafVEEllipsizeText(table.concat(knownBy, ", "), 46))
+        local knownCount = type(knownBy) == "table" and table.getn(knownBy) or 0
+        btn.knownByCrafters = knownCount > 0 and knownBy or nil
+        if knownCount > 0 and knownCount <= 3 then
+          btn.reagentText:SetText("|cFF66FF66Known by:|r " .. table.concat(knownBy, ", "))
+        elseif knownCount > 3 then
+          btn.reagentText:SetText("|cFF66FF66Known by " .. knownCount .. " crafters|r")
         else
           btn.reagentText:SetText("|cFF888888No known crafters yet|r")
+        end
+        if btn.craftersBtn then
+          if knownCount > 0 then
+            btn.craftersBtn:Enable()
+          else
+            btn.craftersBtn:Disable()
+          end
         end
       end
       if btn.idText then
@@ -41035,6 +42448,7 @@ function LeafVE.UI:RefreshRecipeBrowserPanel()
       btn:Show()
     else
       btn.recipe = nil
+      btn.knownByCrafters = nil
       btn:Hide()
     end
   end
@@ -41049,8 +42463,27 @@ function LeafVE.UI:RefreshRecipeBrowserPanel()
   end
 
   if panel.summaryText then
+    -- Distinct crafters across the currently displayed (search-filtered)
+    -- recipe set, not the whole profession -- keeps this number in sync
+    -- with the recipe count next to it rather than a separate, wider scope.
+    local distinctCrafters = {}
+    local distinctCrafterCount = 0
+    for i = 1, table.getn(filtered) do
+      local token = GetWorkOrderCrafterRecipeToken(filtered[i])
+      local knownBy = token and panel.recipeKnowledgeIndex and panel.recipeKnowledgeIndex[token]
+      if type(knownBy) == "table" then
+        for j = 1, table.getn(knownBy) do
+          local name = knownBy[j]
+          if name and not distinctCrafters[name] then
+            distinctCrafters[name] = true
+            distinctCrafterCount = distinctCrafterCount + 1
+          end
+        end
+      end
+    end
+
     local apiNote = LeafVE:HasRecipeLinkAPI() and "" or "  |cFFFF6666(ClassicAPI not detected -- auto-detection disabled)|r"
-    panel.summaryText:SetText("|cFFAAAAAA" .. tostring(selectedProfession or "") .. ": " .. tostring(totalRows) .. " recipe(s)|r" .. apiNote)
+    panel.summaryText:SetText("|cFFAAAAAA" .. tostring(selectedProfession or "") .. ": " .. tostring(totalRows) .. " recipe(s)|r   |cFF555555|  |r|cFF88CCFFDistinct Crafters: " .. distinctCrafterCount .. "|r" .. apiNote)
   end
 end
 
@@ -42704,10 +44137,26 @@ function LeafVE.UI:RefreshAchievementsLeaderboard()
   for _, guildInfo in pairs(LeafVE.guildRosterCache) do
     allPlayers[Lower(guildInfo.name)] = { name = guildInfo.name, class = guildInfo.class or "Unknown" }
   end
+
+  -- True-up against the guild roster: a name from achievementCache that
+  -- ISN'T already in the roster loop above is someone who left/got kicked
+  -- (achievementCache is never pruned on its own, so a departed member's
+  -- last-cached points would otherwise keep showing up forever). Same
+  -- "absence from guildRosterCache means departed" convention as
+  -- PurgeWorkOrdersForDepartedRequesters, including its guard against
+  -- acting on an empty/not-yet-populated cache (e.g. right after login, or
+  -- when not currently in a guild) -- in that case fall back to showing
+  -- everyone cached, same as before this fix.
+  local hasRosterData = false
+  for _ in pairs(LeafVE.guildRosterCache or {}) do
+    hasRosterData = true
+    break
+  end
+
   if LeafVE_GlobalDB.achievementCache then
     for cachedName, _ in pairs(LeafVE_GlobalDB.achievementCache) do
       local lname = Lower(cachedName)
-      if not allPlayers[lname] then
+      if not allPlayers[lname] and not hasRosterData then
         allPlayers[lname] = { name = cachedName, class = "Unknown" }
       end
     end
@@ -43233,6 +44682,7 @@ function LeafVE.UI:Build()
       if LeafVE.UI.workOrderPopup then LeafVE.UI.workOrderPopup:Hide() end
       if LeafVE.UI.guildBankPopup then LeafVE.UI.guildBankPopup:Hide() end
       if LeafVE.UI.talentPopup then LeafVE.UI.talentPopup:Hide() end
+      if LeafVE.UI.recipeCraftersPopup then LeafVE.UI.recipeCraftersPopup:Hide() end
       LeafVE.UI:HideNativeTalentFrame()
     end)
   else
@@ -43255,6 +44705,7 @@ function LeafVE.UI:Build()
       if LeafVE.UI.workOrderPopup then LeafVE.UI.workOrderPopup:Hide() end
       if LeafVE.UI.guildBankPopup then LeafVE.UI.guildBankPopup:Hide() end
       if LeafVE.UI.talentPopup then LeafVE.UI.talentPopup:Hide() end
+      if LeafVE.UI.recipeCraftersPopup then LeafVE.UI.recipeCraftersPopup:Hide() end
       LeafVE.UI:HideNativeTalentFrame()
     end)
   end
