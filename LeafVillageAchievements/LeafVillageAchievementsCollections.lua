@@ -5623,6 +5623,38 @@ local function ABC_PopulateLeaderboardRow(row, rank, name, count)
   row:Show()
 end
 
+-- Lowercased set of every current guild member (online AND offline), used to
+-- drop departed members from the leaderboard -- guildCollections owner lists
+-- are never pruned, so anyone who ever synced would otherwise stay ranked
+-- forever. ShowOffline is forced on for the scan (and restored right after)
+-- so an ordinary offline guildmate isn't mistaken for a departed one. Returns
+-- nil when there's no usable roster yet (not in a guild, or the async
+-- GuildRoster() data hasn't arrived), so the caller can fall back to showing
+-- everyone rather than blanking the board.
+local function ABC_GetCurrentGuildMemberSet()
+  if not IsInGuild or not IsInGuild() then return nil end
+  if not GetNumGuildMembers or not GetGuildRosterInfo then return nil end
+
+  local previousShowOffline = GetGuildRosterShowOffline and GetGuildRosterShowOffline()
+  if SetGuildRosterShowOffline then SetGuildRosterShowOffline(true) end
+
+  local members = nil
+  local total = GetNumGuildMembers() or 0
+  for i = 1, total do
+    local fullName = GetGuildRosterInfo(i)
+    if fullName and fullName ~= "" then
+      local shortName = string.gsub(fullName, "%-.*$", "")
+      members = members or {}
+      members[Lower(shortName)] = true
+    end
+  end
+
+  if SetGuildRosterShowOffline and previousShowOffline ~= nil then
+    SetGuildRosterShowOffline(previousShowOffline)
+  end
+  return members
+end
+
 function ABC:BuildGuildLeaderboardView(ui)
   -- BuildGuildCollectionView hides the scroll chrome before dispatching
   -- here, on the assumption every guild view's content is capped to fit
@@ -5660,6 +5692,7 @@ function ABC:BuildGuildLeaderboardView(ui)
   ABC.lbRowPools = ABC.lbRowPools or {}
 
   local query = Lower(ABC_StableSearchText("guild") or "")
+  local guildMembers = ABC_GetCurrentGuildMemberSet()
 
   local columns = {
     {dbKey = "mounts", title = "Top Mount Collectors"},
@@ -5683,7 +5716,9 @@ function ABC:BuildGuildLeaderboardView(ui)
     local counts = {}
     for _, owners in pairs(bucket) do
       for playerName in pairs(owners) do
-        counts[playerName] = (counts[playerName] or 0) + 1
+        if not guildMembers or guildMembers[Lower(playerName)] then
+          counts[playerName] = (counts[playerName] or 0) + 1
+        end
       end
     end
 

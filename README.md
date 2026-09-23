@@ -25,6 +25,7 @@ World of Warcraft/
 
 1. Download or clone this repository.
 2. Copy `LeafVillageLegends/` and/or `LeafVillageAchievements/` into `Interface/AddOns/`, keeping each folder's name and internal structure exactly as-is (the folder name must match the `.toc` inside it).
+   - Alternatively, Windows users can run [`LeafVillageLegends/Tools/updater`](LeafVillageLegends/Tools/updater/README.md) (`AshenBannerUpdater.exe`) — a portable desktop app showing installed vs. latest version for each addon, with per-addon update buttons. No git required.
 3. Complete the ClassicAPI installation steps below — LeafVillageAchievements requires it (see [Required: ClassicAPI](#required-classicapi)).
 4. Launch the game (or `/reload` if it's already running) and confirm the addon(s) are checked at the AddOns list on the character-select screen.
 5. Log in. LeafVillageAchievements adds a minimap button (click to open/close); LeafVillageLegends' UI is reached through its own in-game commands — see that addon's own docs/comments for specifics.
