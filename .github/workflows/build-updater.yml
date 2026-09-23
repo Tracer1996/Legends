@@ -1,0 +1,72 @@
+name: Build updater
+
+# Builds AshenBannerUpdater.exe (LeafVillageLegends/Tools/updater) by
+# cross-compiling from Linux with the same build.sh used locally.
+#  - Any push/PR touching the updater: build + upload the exe as a workflow
+#    artifact (downloadable from the run's Summary page for 30 days).
+#  - Pushing a tag like `updater-v1.2.0`: also publish it as a GitHub Release,
+#    so guild members have a stable download link instead of asking for a copy.
+#  - Can also be started by hand from the Actions tab.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "LeafVillageLegends/Tools/updater/**"
+      - ".github/workflows/build-updater.yml"
+    tags:
+      - "updater-v*"
+  pull_request:
+    paths:
+      - "LeafVillageLegends/Tools/updater/**"
+      - ".github/workflows/build-updater.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: LeafVillageLegends/Tools/updater
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: LeafVillageLegends/Tools/updater/go.mod
+          cache-dependency-path: LeafVillageLegends/Tools/updater/go.sum
+
+      # rsrc isn't installed, so build.sh uses the committed rsrc.syso
+      # (manifest + icon) as-is -- same as a local build without rsrc.
+      - name: Build
+        run: bash build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AshenBannerUpdater
+          path: LeafVillageLegends/Tools/updater/AshenBannerUpdater.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/updater-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: AshenBannerUpdater
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" AshenBannerUpdater.exe \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Ashen Banner Updater ${GITHUB_REF_NAME#updater-}" \
+            --generate-notes
