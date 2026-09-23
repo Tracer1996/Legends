@@ -8680,7 +8680,10 @@ function LeafVE:UpdateGuildRosterCache()
   -- one that would make every ordinary offline guildmate look "missing".
   -- Restored right after reading so the player's own Guild-frame checkbox
   -- state isn't silently changed by this.
-  local previousShowOffline = GetGuildRosterShowOffline and GetGuildRosterShowOffline()
+  -- Normalized to true/false: the 1.12 API returns 1 or nil, and a raw nil
+  -- (box unchecked) would read as "API missing" to the ~= nil restore guards
+  -- below, leaving Show Offline stuck on.
+  local previousShowOffline = GetGuildRosterShowOffline and (GetGuildRosterShowOffline() and true or false)
   if SetGuildRosterShowOffline then SetGuildRosterShowOffline(true) end
 
   local n = GetNumGuildMembers and GetNumGuildMembers() or 0

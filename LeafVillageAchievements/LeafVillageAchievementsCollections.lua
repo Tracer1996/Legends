@@ -5635,7 +5635,10 @@ local function ABC_GetCurrentGuildMemberSet()
   if not IsInGuild or not IsInGuild() then return nil end
   if not GetNumGuildMembers or not GetGuildRosterInfo then return nil end
 
-  local previousShowOffline = GetGuildRosterShowOffline and GetGuildRosterShowOffline()
+  -- Normalized to true/false: the 1.12 API returns 1 or nil, and a raw nil
+  -- (box unchecked) would read as "API missing" to the ~= nil restore guards
+  -- below, leaving Show Offline stuck on.
+  local previousShowOffline = GetGuildRosterShowOffline and (GetGuildRosterShowOffline() and true or false)
   if SetGuildRosterShowOffline then SetGuildRosterShowOffline(true) end
 
   local members = nil
