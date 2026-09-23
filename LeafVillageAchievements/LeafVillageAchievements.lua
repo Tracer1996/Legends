@@ -186,6 +186,10 @@ local function EnsureDB()
   if not LeafVE_AchTest_DB.achievements then LeafVE_AchTest_DB.achievements = {} end
   if not LeafVE_AchTest_DB.exploredZones then LeafVE_AchTest_DB.exploredZones = {} end
   if not LeafVE_AchTest_DB.selectedTitles then LeafVE_AchTest_DB.selectedTitles = {} end
+  -- [playerName] = true once a character has had its guild-rank title
+  -- auto-equipped (or has worn any title at all) -- see
+  -- MaybeAutoEquipGuildRankTitle.
+  if type(LeafVE_AchTest_DB.rankTitleAutoEquipDone) ~= "table" then LeafVE_AchTest_DB.rankTitleAutoEquipDone = {} end
   if not LeafVE_AchTest_DB.dungeonProgress then LeafVE_AchTest_DB.dungeonProgress = {} end
   if not LeafVE_AchTest_DB.raidProgress then LeafVE_AchTest_DB.raidProgress = {} end
   if not LeafVE_AchTest_DB.progressCounters then LeafVE_AchTest_DB.progressCounters = {} end
@@ -1263,6 +1267,19 @@ local function MaybeAutoEquipGuildRankTitle(playerName, titleID)
     end
   end
 
+  -- The guild-rank title is only force-equipped the FIRST time for a
+  -- character, not on every login/roster update -- otherwise RemoveTitle
+  -- never sticks, since an empty slot looks identical to "never had a
+  -- title" and gets refilled on the next GUILD_ROSTER_UPDATE. Any character
+  -- that already has a title counts as done too, so existing characters
+  -- (from before this flag existed) keep a later Remove as well.
+  local autoEquipDone = LeafVE_AchTest_DB.rankTitleAutoEquipDone
+  if currentTitleID and currentTitleID ~= "" then
+    autoEquipDone[playerName] = true
+  elseif autoEquipDone[playerName] then
+    return false
+  end
+
   -- Only ever auto-promote a title the player never deliberately chose.
   -- Used to key off TRACKED_GUILD_RANK_TITLE_IDS instead (skip unless the
   -- currently-equipped title was some *other* tracked guild-rank title) --
@@ -1282,6 +1299,7 @@ local function MaybeAutoEquipGuildRankTitle(playerName, titleID)
   end
 
   LeafVE_AchTest_DB.selectedTitles[playerName] = {id = titleID, asPrefix = desiredPrefix, autoEquipped = true}
+  autoEquipDone[playerName] = true
   return true
 end
 
@@ -6570,6 +6588,7 @@ function LeafVE_AchTest.UI:Build()
     end
     LeafVE_AchTest_DB.achievements    = {}
     LeafVE_AchTest_DB.selectedTitles  = {}
+    LeafVE_AchTest_DB.rankTitleAutoEquipDone = {}
     LeafVE_AchTest_DB.progressCounters = {}
     LeafVE_AchTest_DB.progressCache    = {}
     LeafVE_AchTest_DB.exploredZones   = {}
