@@ -8844,6 +8844,17 @@ function LeafVE:PurgeDepartedPlayerData(name)
   EnsureDB()
   local lowerName = Lower(name)
 
+  -- Departure is confirmed at this point, so this is where the requester's
+  -- live work orders get cancelled (the absence record the sweep checks is
+  -- cleared just below).
+  local liveOrders = self:GetLiveWorkOrders()
+  for i = 1, table.getn(liveOrders) do
+    local order = liveOrders[i]
+    if order.requester and Lower(ShortName(order.requester) or "") == lowerName then
+      self:CancelWorkOrderForDepartedRequester(order.id)
+    end
+  end
+
   self.guildRosterCache[lowerName] = nil
   LeafVE_DB.persistentRoster[lowerName] = nil
   LeafVE_DB.rosterAbsenceTracking[lowerName] = nil
@@ -26472,7 +26483,7 @@ end
 -- their own order" check -- this is a system-initiated cancel (the
 -- requester left the guild and can't cancel it themselves), not a player
 -- action, so that identity check doesn't apply. Only ever called from
--- PurgeWorkOrdersForDepartedRequesters below.
+-- PurgeDepartedPlayerData and PurgeWorkOrdersForDepartedRequesters.
 function LeafVE:CancelWorkOrderForDepartedRequester(orderId)
   EnsureDB()
   local order = LeafVE_GlobalDB.workOrders and LeafVE_GlobalDB.workOrders[orderId]
@@ -26508,6 +26519,21 @@ function LeafVE:CancelWorkOrderForDepartedRequester(orderId)
   return order
 end
 
+-- A single roster snapshot is NOT proof of departure: on 1.12 a guildmate
+-- who just logged out can be missing from the scan GUILD_ROSTER_UPDATE
+-- triggers (Show Offline not yet applied, backfill option off), and that
+-- used to cancel their live orders guild-wide on logout. So require the
+-- same sustained-absence confirmation UpdateRosterAbsenceTracking uses
+-- before purging their data.
+function LeafVE:IsConfirmedDepartedRequester(requester)
+  local lowerName = Lower(requester)
+  if self.guildRosterCache[lowerName] then return false end
+  local record = LeafVE_DB.rosterAbsenceTracking and LeafVE_DB.rosterAbsenceTracking[lowerName]
+  if not record then return false end
+  return (record.missStreak or 0) >= ROSTER_DEPARTURE_MIN_MISS_STREAK
+    and (Now() - (record.firstMissedAt or Now())) >= ROSTER_DEPARTURE_MIN_ELAPSED
+end
+
 -- Scans live (open/pending) orders and cancels any whose requester is no
 -- longer in the guild roster -- otherwise those sit "live" forever, since
 -- CancelWorkOrder normally requires the requester to cancel their own
@@ -26536,7 +26562,7 @@ function LeafVE:PurgeWorkOrdersForDepartedRequesters()
   for i = 1, table.getn(orders) do
     local order = orders[i]
     local requester = ShortName(order.requester)
-    if requester and not self.guildRosterCache[Lower(requester)] then
+    if requester and self:IsConfirmedDepartedRequester(requester) then
       if self:CancelWorkOrderForDepartedRequester(order.id) then
         cancelledCount = cancelledCount + 1
       end
