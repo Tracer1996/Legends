@@ -17051,7 +17051,7 @@ function LeafVE.UI:EnsureTextPageHeaders()
   end
 end
 
-function LeafVE.UI:HideAllMainPanels()
+function LeafVE.UI:HideAllMainPanels(keepPanel)
   if not self.panels then
     return
   end
@@ -17064,7 +17064,7 @@ function LeafVE.UI:HideAllMainPanels()
 
   for i = 1, table.getn(panelNames) do
     local panel = self.panels[panelNames[i]]
-    if panel and panel.Hide then
+    if panel and panel ~= keepPanel and panel.Hide then
       panel:Hide()
     end
   end
@@ -42322,31 +42322,14 @@ function LeafVE.UI:RefreshRecipeBrowserPanel()
     end
   end
 
-  local recipes
-  if selectedProfession == "All" then
-    recipes = {}
-    for i = 1, table.getn(WORK_ORDER_PROFESSION_ORDER) do
-      local profRecipes = catalog.byProfession[WORK_ORDER_PROFESSION_ORDER[i]] or {}
-      for j = 1, table.getn(profRecipes) do
-        table.insert(recipes, profRecipes[j])
-      end
-    end
-  else
-    recipes = selectedProfession and catalog.byProfession[selectedProfession] or {}
-  end
-  local filterText = Lower(Trim(panel.searchBox and panel.searchBox:GetText() or ""))
-  local listKey = tostring(selectedProfession or "") .. "|" .. filterText .. "|" .. tostring(LeafVE.recipeKnowledgeVersion or 0)
-  if panel.lastListKey ~= listKey then
-    local filtered = {}
-    for i = 1, table.getn(recipes) do
-      local recipe = recipes[i]
-      if filterText == "" or string.find(recipe.searchKey or "", filterText, 1, true) then
-        table.insert(filtered, recipe)
-      end
-    end
-    panel.filteredRecipes = filtered
-    panel.lastListKey = listKey
-    panel.recipeOffset = 0
+  -- The knowledge index decodes every guildmate's trade-skill link for the
+  -- profession(s) and sorts every crafter list, which is far too slow to
+  -- redo per search keystroke. It doesn't depend on the search text, so
+  -- cache it on profession + recipeKnowledgeVersion separately from the
+  -- filtered list below.
+  local indexKey = tostring(selectedProfession or "") .. "|" .. tostring(LeafVE.recipeKnowledgeVersion or 0)
+  if panel.lastIndexKey ~= indexKey then
+    panel.lastIndexKey = indexKey
     if selectedProfession == "All" then
       -- Merge each profession's own index rather than a single lookup --
       -- BuildRecipeKnowledgeIndex is scoped to one profession's stored
@@ -42365,6 +42348,55 @@ function LeafVE.UI:RefreshRecipeBrowserPanel()
     else
       panel.recipeKnowledgeIndex = selectedProfession and LeafVE:BuildRecipeKnowledgeIndex(selectedProfession) or {}
     end
+  end
+
+  local filterText = Lower(Trim(panel.searchBox and panel.searchBox:GetText() or ""))
+  local listKey = indexKey .. "|" .. filterText
+  if panel.lastListKey ~= listKey then
+    local recipes
+    if selectedProfession == "All" then
+      recipes = {}
+      for i = 1, table.getn(WORK_ORDER_PROFESSION_ORDER) do
+        local profRecipes = catalog.byProfession[WORK_ORDER_PROFESSION_ORDER[i]] or {}
+        for j = 1, table.getn(profRecipes) do
+          table.insert(recipes, profRecipes[j])
+        end
+      end
+    else
+      recipes = selectedProfession and catalog.byProfession[selectedProfession] or {}
+    end
+    local filtered = {}
+    for i = 1, table.getn(recipes) do
+      local recipe = recipes[i]
+      if filterText == "" or string.find(recipe.searchKey or "", filterText, 1, true) then
+        table.insert(filtered, recipe)
+      end
+    end
+    panel.filteredRecipes = filtered
+    panel.lastListKey = listKey
+    panel.recipeOffset = 0
+
+    -- Distinct crafters across the currently displayed (search-filtered)
+    -- recipe set, not the whole profession -- keeps this number in sync
+    -- with the recipe count next to it rather than a separate, wider scope.
+    -- Only changes with the filtered list, so computed here rather than on
+    -- every scroll/refresh.
+    local distinctCrafters = {}
+    local distinctCrafterCount = 0
+    for i = 1, table.getn(filtered) do
+      local token = GetWorkOrderCrafterRecipeToken(filtered[i])
+      local knownBy = token and panel.recipeKnowledgeIndex[token]
+      if type(knownBy) == "table" then
+        for j = 1, table.getn(knownBy) do
+          local name = knownBy[j]
+          if name and not distinctCrafters[name] then
+            distinctCrafters[name] = true
+            distinctCrafterCount = distinctCrafterCount + 1
+          end
+        end
+      end
+    end
+    panel.distinctCrafterCount = distinctCrafterCount
   end
 
   local filtered = panel.filteredRecipes or {}
@@ -42492,25 +42524,7 @@ function LeafVE.UI:RefreshRecipeBrowserPanel()
   end
 
   if panel.summaryText then
-    -- Distinct crafters across the currently displayed (search-filtered)
-    -- recipe set, not the whole profession -- keeps this number in sync
-    -- with the recipe count next to it rather than a separate, wider scope.
-    local distinctCrafters = {}
-    local distinctCrafterCount = 0
-    for i = 1, table.getn(filtered) do
-      local token = GetWorkOrderCrafterRecipeToken(filtered[i])
-      local knownBy = token and panel.recipeKnowledgeIndex and panel.recipeKnowledgeIndex[token]
-      if type(knownBy) == "table" then
-        for j = 1, table.getn(knownBy) do
-          local name = knownBy[j]
-          if name and not distinctCrafters[name] then
-            distinctCrafters[name] = true
-            distinctCrafterCount = distinctCrafterCount + 1
-          end
-        end
-      end
-    end
-
+    local distinctCrafterCount = panel.distinctCrafterCount or 0
     local apiNote = LeafVE:HasRecipeLinkAPI() and "" or "  |cFFFF6666(ClassicAPI not detected -- auto-detection disabled)|r"
     panel.summaryText:SetText("|cFFAAAAAA" .. tostring(selectedProfession or "") .. ": " .. tostring(totalRows) .. " recipe(s)|r   |cFF555555|  |r|cFF88CCFFDistinct Crafters: " .. distinctCrafterCount .. "|r" .. apiNote)
   end
@@ -45214,10 +45228,6 @@ function LeafVE.UI:Refresh()
     return
   end
 
-  self:HideAllMainPanels()
-  if self.card then
-    self.card:Hide()
-  end
   if self.workOrderPopup and self.workOrderPopup.isEmbeddedWorkOrderView then
     self.workOrderPopup:Hide()
   end
@@ -45299,8 +45309,24 @@ function LeafVE.UI:Refresh()
     end
   end
 
+  -- Only hide panels that are going away. Background events (every
+  -- GUILD_ROSTER_UPDATE, most addon messages) call Refresh, and hiding the
+  -- panel that's still active just to re-show it drops keyboard focus from
+  -- whatever text box the player is typing in. The card is shown/hidden
+  -- by the check above for the same reason.
+  local keepPanel = self.panels[self.activeTab]
+  if not hasAccess then
+    keepPanel = self.panels.join
+  elseif string.find(self.activeTab or "", "^workorders") then
+    keepPanel = self.panels.workOrders
+  elseif self.activeTab == "admin" and not LeafVE:IsAdminRank() then
+    keepPanel = self.panels.me
+  end
+  self:HideAllMainPanels(keepPanel)
+
   local function ShowPanelWithTransition(panel)
     if not panel then return end
+    if panel:IsShown() then return end
     if LEAFVE_UI_MODERN and LEAFVE_UI_MODERN.AnimateTabTransition then
       LEAFVE_UI_MODERN:AnimateTabTransition(panel)
     else
