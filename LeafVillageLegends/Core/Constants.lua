@@ -1,6 +1,6 @@
 _G = _G or (getfenv and getfenv(0)) or {}
 
-LATEST_VERSION = "19.1.3"
+LATEST_VERSION = "19.2.0"
 LEAFVE_STYLE = _G.LeafVE_Styles or {}
 LEAFVE_UI_MODERN = _G.LeafVE_UIModernization or {}
 
@@ -12,6 +12,7 @@ GROUP_MIN_TIME = 300
 GROUP_COOLDOWN = 900
 GROUP_POINT_INTERVAL = 3600
 GUILD_ROSTER_CACHE_DURATION = 30
+GUILD_ROSTER_MIN_REBUILD_GAP = 15
 -- A guildmate is only treated as "confirmed departed" (and their Ashen
 -- Ember/banner data purged) after being absent from this many consecutive
 -- COMPLETE roster scans (see UpdateGuildRosterCache's SetGuildRosterShowOffline

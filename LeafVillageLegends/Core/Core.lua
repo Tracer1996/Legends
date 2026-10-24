@@ -5,7 +5,7 @@ AtlasLoot_Data = AtlasLoot_Data or {}
 LeafVE = LeafVE or {}
 LeafVE.name = "LeafVillageLegends"
 LeafVE.prefix = "LeafVE"
-LeafVE.version = "19.1.3"
+LeafVE.version = "19.2.0"
 LeafVE.allianceEnabled = false
 LeafVE.isAllianceStandalone = false
 LeafVE.guildBankOwner = "Methllyy"
@@ -1738,6 +1738,7 @@ end
 function LeafVE:InvalidateClientAchievementCatalog()
   self._clientAchievementCatalog = nil
   self._achievementCatalogScan = nil
+  self._achievementMetaMemo = nil
 end
 
 -- Scanning every native-achievement category/index in one synchronous burst
@@ -1879,6 +1880,24 @@ function LeafVE:GetAchievementMeta(achId)
     return catalog.byId[key]
   end
 
+  -- Perf: ACHSYNC re-totals every guildmate's achievement list on each chunk
+  -- received (~50 lookups/sec in a busy guild), and the paths below built a
+  -- brand-new table every time. Achievement definitions don't change during
+  -- a session, so remember the result; cleared with the client catalog.
+  local memo = self._achievementMetaMemo
+  if not memo then
+    memo = {}
+    self._achievementMetaMemo = memo
+  end
+  if memo[key] then
+    return memo[key]
+  end
+  local result = self:BuildAchievementMetaUncached(achId, key)
+  memo[key] = result
+  return result
+end
+
+function LeafVE:BuildAchievementMetaUncached(achId, key)
   local directMeta = NormalizeDirectAchievementInfo(achId)
   if directMeta then
     return directMeta
@@ -8625,6 +8644,36 @@ function LeafVE:AddPoints(playerName, pointType, amount, skipMultiplier)
   return amount
 end
 
+-- Ashen Embers from a Quartermaster donation (AshenKeeper, verified by Grizzwick's trade).
+-- Same buckets as AddPoints (day -> weekly leaderboard, alltime, season) as Guild Activity, but no
+-- daily cap, multiplier or rep. lifetimeOnly: back-fill of donations made before this existed, so
+-- they count toward the lifetime total without landing in this week's leaderboard.
+function LeafVE:AddDonationPoints(amount, reason, lifetimeOnly)
+  EnsureDB()
+  local me = ShortName(UnitName("player"))
+  amount = math.floor(tonumber(amount) or 0)
+  if not me or amount <= 0 then return 0 end
+  if not lifetimeOnly then
+    local day = DayKey(Now())
+    if not LeafVE_DB.global[day] then LeafVE_DB.global[day] = {} end
+    local dayEntry = EnsurePointEntryCurrentBucket(LeafVE_DB.global[day], me)
+    dayEntry.G = (dayEntry.G or 0) + amount
+    local seasonEntry = EnsurePointEntryCurrentBucket(LeafVE_DB.season, me)
+    seasonEntry.G = (seasonEntry.G or 0) + amount
+  end
+  local alltimeEntry = EnsurePointEntryCurrentBucket(LeafVE_DB.alltime, me)
+  alltimeEntry.G = (alltimeEntry.G or 0) + amount
+  self:CacheBadgeProgress(me)
+  self:AddToHistory(me, "G", amount, reason or "Quartermaster donation")
+  if LeafVE_DB.options.enableNotifications ~= false and LeafVE_DB.options.enablePointNotifications ~= false then
+    self:ShowNotification("Ashen Embers Earned!", string.format("%s from Quartermaster donation", self:FormatPointDisplay(amount, false, true)), LEAF_EMBLEM, THEME.gold)
+  end
+  self:CheckBadgeMilestones(me)
+  if LeafVE.UI and LeafVE.UI.Refresh then LeafVE.UI:Refresh() end
+  self:BroadcastLeaderboardData()
+  return amount
+end
+
 function LeafVE:CheckDailyLogin()
   EnsureDB()
   local me = ShortName(UnitName("player"))
@@ -8664,7 +8713,18 @@ function LeafVE:UpdateGuildRosterCache()
   local now = Now()
   if now - self.guildRosterCacheTime < GUILD_ROSTER_CACHE_DURATION then return end
   
-  self.guildRosterCache = {} 
+  -- Perf: the cache, its entries and the scratch tables below are reused
+  -- across rebuilds instead of being recreated. This runs on every debounced
+  -- GUILD_ROSTER_UPDATE and used to allocate a fresh table per guild member
+  -- (plus a full copy per offline member) each time, ~600 KB of garbage per
+  -- rebuild -- the single largest source of GC stutter from this addon.
+  self.guildRosterCache = self.guildRosterCache or {}
+  local cache = self.guildRosterCache
+  self.guildRosterOfflineCopies = self.guildRosterOfflineCopies or {}
+  local offlineCopies = self.guildRosterOfflineCopies
+  self.guildRosterSeenScratch = self.guildRosterSeenScratch or {}
+  local seen = self.guildRosterSeenScratch
+  for k in pairs(seen) do seen[k] = nil end
 
   if InGuild() then
   EnsureDB()
@@ -8684,18 +8744,27 @@ function LeafVE:UpdateGuildRosterCache()
   -- (box unchecked) would read as "API missing" to the ~= nil restore guards
   -- below, leaving Show Offline stuck on.
   local previousShowOffline = GetGuildRosterShowOffline and (GetGuildRosterShowOffline() and true or false)
-  if SetGuildRosterShowOffline then SetGuildRosterShowOffline(true) end
+  -- Perf: toggling Show Offline makes the client fire GUILD_ROSTER_UPDATE,
+  -- which re-triggered this rebuild ~1.5s later in an endless loop. Skip the
+  -- toggle when it's already on, and mark our own toggles so the event
+  -- handler ignores the echo.
+  if SetGuildRosterShowOffline and previousShowOffline ~= true then
+    LeafVE.rosterSelfToggleUntil = GetTime() + 3
+    SetGuildRosterShowOffline(true)
+  end
 
   local n = GetNumGuildMembers and GetNumGuildMembers() or 0
   -- GuildRoster() is async; if data hasn't arrived yet, don't stamp the cache as
   -- valid so that the GUILD_ROSTER_UPDATE handler can trigger a real rebuild.
   if n == 0 then
-    if SetGuildRosterShowOffline and previousShowOffline ~= nil then SetGuildRosterShowOffline(previousShowOffline) end
+    if SetGuildRosterShowOffline and previousShowOffline == false then SetGuildRosterShowOffline(false) end
     return
   end
 
   -- Get currently online members
-  local liveNames = {}
+  self.guildRosterLiveScratch = self.guildRosterLiveScratch or {}
+  local liveNames = self.guildRosterLiveScratch
+  for k in pairs(liveNames) do liveNames[k] = nil end
   for i = 1, n do
     local name, rank, rankIndex, level, class, zone, note, officernote, online, status = GetGuildRosterInfo(i)
     name = ShortName(name)
@@ -8709,29 +8778,34 @@ function LeafVE:UpdateGuildRosterCache()
         end
       end
 
-      local memberData = {
-        name = name,
-        rank = rank,
-        rankIndex = rankIndex,
-        level = level,
-        class = class,
-        zone = zone,
-        note = note,
-        officernote = officernote,
-        online = isOnline,
-        status = status,
-        lastSeen = now
-      }
+      local lowerName = Lower(name)
+      -- Update the persistent-roster record in place (same fields as before).
+      local memberData = LeafVE_DB.persistentRoster[lowerName]
+      if type(memberData) ~= "table" then
+        memberData = {}
+      end
+      memberData.name = name
+      memberData.rank = rank
+      memberData.rankIndex = rankIndex
+      memberData.level = level
+      memberData.class = class
+      memberData.zone = zone
+      memberData.note = note
+      memberData.officernote = officernote
+      memberData.online = isOnline
+      memberData.status = status
+      memberData.lastSeen = now
 
-      self.guildRosterCache[Lower(name)] = memberData
-      liveNames[Lower(name)] = true
+      cache[lowerName] = memberData
+      seen[lowerName] = true
+      liveNames[lowerName] = true
 
       -- Store in persistent roster
-      LeafVE_DB.persistentRoster[Lower(name)] = memberData
+      LeafVE_DB.persistentRoster[lowerName] = memberData
     end
   end
 
-  if SetGuildRosterShowOffline and previousShowOffline ~= nil then SetGuildRosterShowOffline(previousShowOffline) end
+  if SetGuildRosterShowOffline and previousShowOffline == false then SetGuildRosterShowOffline(false) end
 
   -- Add offline members from persistent roster -- with ShowOffline forced
   -- true above, every still-current member (online or not) is already in
@@ -8741,16 +8815,21 @@ function LeafVE:UpdateGuildRosterCache()
   -- where the live scan came back incomplete.
   if LeafVE_DB.options.showOfflineMembers then
     for lowerName, memberData in pairs(LeafVE_DB.persistentRoster) do
-      if not self.guildRosterCache[lowerName] then
+      if not seen[lowerName] then
         -- This member is offline, add them with offline flag
-        local offlineCopy = {}
+        local offlineCopy = offlineCopies[lowerName]
+        if not offlineCopy then
+          offlineCopy = {}
+          offlineCopies[lowerName] = offlineCopy
+        end
         for k, v in pairs(memberData) do
           offlineCopy[k] = v
         end
         offlineCopy.online = false
         offlineCopy.zone = "Offline"
 
-        self.guildRosterCache[lowerName] = offlineCopy
+        cache[lowerName] = offlineCopy
+        seen[lowerName] = true
       end
     end
   end
@@ -8768,6 +8847,13 @@ function LeafVE:UpdateGuildRosterCache()
   self:UpdateRosterAbsenceTracking(liveNames)
 
   end -- end if InGuild()
+
+  for k in pairs(cache) do
+    if not seen[k] then cache[k] = nil end
+  end
+  for k in pairs(offlineCopies) do
+    if not seen[k] or cache[k] ~= offlineCopies[k] then offlineCopies[k] = nil end
+  end
 
   self.guildRosterCacheTime = now
 end
@@ -8843,17 +8929,6 @@ function LeafVE:PurgeDepartedPlayerData(name)
 
   EnsureDB()
   local lowerName = Lower(name)
-
-  -- Departure is confirmed at this point, so this is where the requester's
-  -- live work orders get cancelled (the absence record the sweep checks is
-  -- cleared just below).
-  local liveOrders = self:GetLiveWorkOrders()
-  for i = 1, table.getn(liveOrders) do
-    local order = liveOrders[i]
-    if order.requester and Lower(ShortName(order.requester) or "") == lowerName then
-      self:CancelWorkOrderForDepartedRequester(order.id)
-    end
-  end
 
   self.guildRosterCache[lowerName] = nil
   LeafVE_DB.persistentRoster[lowerName] = nil
@@ -9245,6 +9320,9 @@ function LeafVE:HasLeafAccess()
 end
 
 function LeafVE:RefreshMinimapButtonAccess()
+  if self.notifyWidget then
+    self:RefreshNotifyWidget()
+  end
   if not self.minimapBtn then
     return
   end
@@ -9723,6 +9801,134 @@ local function IsGUIDInPlayerGroup(sourceGUID)
   return false
 end
 
+-- Raid boss AE limits (anti-abuse, AshenKeeper build 2026-10-23). A raid boss kill only pays when the boss is
+-- on the raid boss list, this character has not been paid for that boss today (server day), the raid is at
+-- least MinGuildShare guild members, and the day's boss AE stays under DailyCap (the last award is cut to fit).
+-- At most MaxGuildies guildies count, so one boss pays at most 25 + 20 x 5 = 125. Settings come from
+-- AshenKeeper's config (QuartermasterDailyBossAECap, QuartermasterBossAEMinGuildShare,
+-- QuartermasterBossAEMaxGuildies, QuartermasterBossAEBosses) when it is installed, else the defaults below.
+-- Kept in one table: no new file-level locals (this chunk is close to Lua's 200-local limit).
+LeafVE.BossAE = LeafVE.BossAE or {}
+LeafVE.BossAE.DEFAULT_DAILY_CAP = 1250          -- one Molten Core worth (10 bosses x 125)
+LeafVE.BossAE.DEFAULT_MIN_GUILD_SHARE = 0.70
+LeafVE.BossAE.DEFAULT_MAX_GUILDIES = 20
+LeafVE.BossAE.RAID_BOSSES = {
+  -- Zul'Gurub
+  ["High Priestess Jeklik"] = true, ["High Priest Venoxis"] = true, ["High Priestess Mar'li"] = true,
+  ["Bloodlord Mandokir"] = true, ["Gri'lek"] = true, ["Hazza'rah"] = true, ["Renataki"] = true, ["Wushoolay"] = true,
+  ["Gahz'ranka"] = true, ["High Priest Thekal"] = true, ["High Priestess Arlokk"] = true,
+  ["Jin'do the Hexxer"] = true, ["Hakkar"] = true,
+  -- Ruins of Ahn'Qiraj
+  ["Kurinnaxx"] = true, ["General Rajaxx"] = true, ["Moam"] = true, ["Buru the Gorger"] = true,
+  ["Ayamiss the Hunter"] = true, ["Ossirian the Unscarred"] = true,
+  -- Molten Core
+  ["Incindis"] = true, ["Lucifron"] = true, ["Magmadar"] = true, ["Garr"] = true, ["Shazzrah"] = true,
+  ["Baron Geddon"] = true, ["Golemagg the Incinerator"] = true, ["Basalthar & Smoldaris"] = true,
+  ["Sorcerer-Thane Thaurissan"] = true, ["Sulfuron Harbinger"] = true, ["Majordomo Executus"] = true, ["Ragnaros"] = true,
+  -- Onyxia's Lair
+  ["Onyxia"] = true,
+  -- Blackwing Lair
+  ["Razorgore the Untamed"] = true, ["Vaelastrasz the Corrupt"] = true, ["Broodlord Lashlayer"] = true,
+  ["Firemaw"] = true, ["Ebonroc"] = true, ["Flamegor"] = true, ["Chromaggus"] = true, ["Nefarian"] = true,
+  -- Emerald Sanctum
+  ["Erennius"] = true, ["Solnius the Awakener"] = true,
+  -- Temple of Ahn'Qiraj
+  ["The Prophet Skeram"] = true, ["The Bug Family"] = true, ["Battleguard Sartura"] = true,
+  ["Fankriss the Unyielding"] = true, ["Viscidus"] = true, ["Princess Huhuran"] = true,
+  ["The Twin Emperors"] = true, ["Ouro"] = true, ["C'Thun"] = true,
+  -- Naxxramas
+  ["Patchwerk"] = true, ["Grobbulus"] = true, ["Gluth"] = true, ["Thaddius"] = true, ["Anub'Rekhan"] = true,
+  ["Grand Widow Faerlina"] = true, ["Maexxna"] = true, ["Noth the Plaguebringer"] = true,
+  ["Heigan the Unclean"] = true, ["Loatheb"] = true, ["Instructor Razuvious"] = true,
+  ["Gothik the Harvester"] = true, ["The Four Horsemen"] = true, ["Sapphiron"] = true, ["Kel'Thuzad"] = true,
+  -- Lower / Upper Karazhan Halls
+  ["Master Blacksmith Rolfen"] = true, ["Brood Queen Araxxna"] = true, ["Grizikil"] = true,
+  ["Clawlord Howlfang"] = true, ["Lord Blackwald II"] = true, ["Moroes"] = true,
+  ["Keeper Gnarlmoon"] = true, ["Ley-Watcher Incantagos"] = true, ["Anomalus"] = true, ["Echo of Medivh"] = true,
+  ["King (Chess fight)"] = true, ["Sanv Tas'dal"] = true, ["Kruul"] = true, ["Rupturan the Broken"] = true,
+  ["Mephistroth"] = true,
+}
+
+-- cap, guild share, max guildies counted, boss set
+function LeafVE.BossAE.Config()
+  local B = LeafVE.BossAE
+  local list = B.RAID_BOSSES
+  if type(QuartermasterBossAEBosses) == "table" then
+    list = {}
+    for i = 1, table.getn(QuartermasterBossAEBosses) do list[QuartermasterBossAEBosses[i]] = true end
+  end
+  return tonumber(QuartermasterDailyBossAECap) or B.DEFAULT_DAILY_CAP,
+         tonumber(QuartermasterBossAEMinGuildShare) or B.DEFAULT_MIN_GUILD_SHARE,
+         tonumber(QuartermasterBossAEMaxGuildies) or B.DEFAULT_MAX_GUILDIES, list
+end
+
+-- The server's calendar day: GetGameTime() is the server clock, time()/date() are this PC's.
+function LeafVE.BossAE.DayKey()
+  local now = time()
+  if type(GetGameTime) == "function" then
+    local sh, sm = GetGameTime()
+    local lt = date("*t", now)
+    local diff = ((tonumber(sh) or lt.hour) * 60 + (tonumber(sm) or lt.min)) - (lt.hour * 60 + lt.min)
+    if diff > 720 then diff = diff - 1440 elseif diff < -720 then diff = diff + 1440 end
+    now = now + diff * 60
+  end
+  return date("%Y-%m-%d", now)
+end
+
+-- Today's boss AE for this character (LeafVE_DB is per character): { day, total, paid = { [boss] = true } }
+function LeafVE.BossAE.State()
+  local day = LeafVE.BossAE.DayKey()
+  local st = LeafVE_DB.bossAE
+  if type(st) ~= "table" or st.day ~= day then
+    st = { day = day, total = 0, paid = {} }
+    LeafVE_DB.bossAE = st
+  end
+  return st
+end
+
+function LeafVE.BossAE.IsRaidBoss(bossName)
+  local _, _, _, list = LeafVE.BossAE.Config()
+  return list[bossName] == true
+end
+
+-- Every paid / cut / refused raid boss award, newest last (last 100).
+function LeafVE.BossAE.Log(bossName, result, reason, amount)
+  if type(LeafVE_DB.bossAELog) ~= "table" then LeafVE_DB.bossAELog = {} end
+  table.insert(LeafVE_DB.bossAELog, { t = time(), boss = bossName, res = result, why = reason, ae = amount or 0 })
+  while table.getn(LeafVE_DB.bossAELog) > 100 do table.remove(LeafVE_DB.bossAELog, 1) end
+end
+
+-- AE a raid boss kill pays this character (before the weekend multiplier), or nil + why it pays nothing.
+-- Also returns a note when the award was cut to the daily cap.
+function LeafVE.BossAE.Award(bossName, numGuildies, basePoints, bonusEach)
+  local cap, share, maxG, list = LeafVE.BossAE.Config()
+  if not list[bossName] then return nil, "not on the raid boss list" end
+  local st = LeafVE.BossAE.State()
+  if st.paid[bossName] then return nil, "already paid for " .. bossName .. " today" end
+  -- guild share of the raid (online members; numGuildies does not include this character)
+  local members = 0
+  if type(GetNumRaidMembers) == "function" then
+    local n = GetNumRaidMembers() or 0
+    for i = 1, n do
+      local unit = "raid" .. i
+      if UnitExists(unit) and UnitIsConnected(unit) then members = members + 1 end
+    end
+  end
+  if members > 0 and (numGuildies + 1) / members < share then
+    return nil, "raid is only " .. math.floor((numGuildies + 1) * 100 / members) .. " percent guild members (needs " ..
+                math.floor(share * 100 + 0.5) .. ")"
+  end
+  if st.total >= cap then return nil, "daily boss AE cap of " .. cap .. " reached" end
+  if numGuildies > maxG then numGuildies = maxG end
+  local pts = basePoints + numGuildies * bonusEach
+  local note
+  if st.total + pts > cap then
+    pts = cap - st.total
+    note = "cut to the daily cap of " .. cap
+  end
+  return pts, nil, note
+end
+
 function LeafVE:HandleBossKillDetected(bossName, dedupToken)
   if not bossName then return end
   if not KNOWN_BOSSES[bossName] then return end
@@ -9743,13 +9949,33 @@ function LeafVE:HandleBossKillDetected(bossName, dedupToken)
   self.recentBossKills[bossName] = now
 
   self.instanceBossesKilledThisRun = self.instanceBossesKilledThisRun + 1
-  local bossPts = (self.instanceIsRaid and RAID_BOSS_POINTS or INSTANCE_BOSS_POINTS)
-    + (numGuildies * BOSS_GUILDIE_BONUS_POINTS)
+  local bossPts, raidNote
+  local raidKill = self.instanceIsRaid or LeafVE.BossAE.IsRaidBoss(bossName)
+  if raidKill then
+    -- raid bosses: daily cap, once per boss per day, boss list, guild share (LeafVE.BossAE)
+    local why
+    bossPts, why, raidNote = LeafVE.BossAE.Award(bossName, numGuildies, RAID_BOSS_POINTS, BOSS_GUILDIE_BONUS_POINTS)
+    if not bossPts or bossPts <= 0 then
+      why = why or "nothing left under the daily cap"
+      LeafVE.BossAE.Log(bossName, "REFUSED", why, 0)
+      Print("Boss slain: " .. bossName .. " - no Ashen Embers (" .. why .. ").")
+      return
+    end
+  else
+    bossPts = INSTANCE_BOSS_POINTS + (numGuildies * BOSS_GUILDIE_BONUS_POINTS)
+  end
   self.suppressPointNotification = true
   local awarded = self:AddPoints(me, "G", bossPts)
   self.suppressPointNotification = false
+  if raidKill then
+    local st = LeafVE.BossAE.State()
+    st.paid[bossName] = true
+    st.total = st.total + bossPts          -- counted before the weekend multiplier
+    LeafVE.BossAE.Log(bossName, raidNote and "CUT" or "PAID", raidNote, awarded)
+  end
   if awarded and awarded > 0 then
-    self:AddToHistory(me, "G", awarded, bossName.." slain with "..tostring(numGuildies).." guildie"..(numGuildies ~= 1 and "s" or ""))
+    self:AddToHistory(me, "G", awarded, bossName.." slain with "..tostring(numGuildies).." guildie"..(numGuildies ~= 1 and "s" or "") ..
+                      (raidNote and (" (" .. raidNote .. ")") or ""))
     if LeafVE_DB.options.enableNotifications ~= false and LeafVE_DB.options.enablePointNotifications ~= false then
       self:ShowNotification("Boss Slain!", string.format("%s  %s", bossName, self:FormatPointDisplay(awarded, true, true)), LEAF_EMBLEM, THEME.gold)
     end
@@ -14574,6 +14800,25 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
   end
 
+  -- Weekly recap sync: a returning client asks for last week's champions.
+  if string.sub(message, 1, 10) == "WRECAPREQ:" then
+    local me = ShortName(UnitName("player"))
+    if not me or SamePlayerName(sender, me) then return end
+    local _, _, reqWk, reqThrough = string.find(message, "^WRECAPREQ:(%d+):(%d+)")
+    if reqWk then
+      LeafVE:QueueWeeklyRecapReply(reqWk, tonumber(reqThrough) or 0)
+    end
+    return
+  end
+
+  if string.sub(message, 1, 7) == "WRECAP:" then
+    if not IsSenderCompatible(sender) then return end
+    local me = ShortName(UnitName("player"))
+    if not me or SamePlayerName(sender, me) then return end
+    LeafVE:ReceiveWeeklyRecapEntry(sender, string.sub(message, 8))
+    return
+  end
+
   -- Handle explicit request for each online player to rebroadcast only their
   -- own current point totals. This keeps Refresh lightweight and owner-authoritative.
   if message == "MYSTATSREQ" or message == "MYSTATSREQ_FORCE" then
@@ -16356,6 +16601,13 @@ function LeafVE:BuildWeeklyRecapPopupMessage(playerName, snapshot)
     "|cFFD8A24AAshen Banner Weekly Recap|r",
     "Last week's level-bracket champions:",
   }
+  if not self:IsWeeklyRecapSnapshotFinal(snapshot) then
+    if snapshot.syncedFrom then
+      table.insert(lines, "|cFF888888(Best guild data available for the end of the week.)|r")
+    else
+      table.insert(lines, "|cFFFF8844(Not yet synced with the guild. These results may be out of date.)|r")
+    end
+  end
 
   for i = 1, table.getn(snapshot.entries) do
     local entry = snapshot.entries[i]
@@ -16413,6 +16665,9 @@ function LeafVE:BuildWeeklyTopShinobisText(snapshot)
   if table.getn(lines) < 1 then
     return "|cFF888888No data available|r"
   end
+  if not self:IsWeeklyRecapSnapshotFinal(snapshot) and not snapshot.syncedFrom then
+    table.insert(lines, "|cFF888888(Unconfirmed, syncing with guild...)|r")
+  end
   return table.concat(lines, "\n")
 end
 
@@ -16442,10 +16697,19 @@ function LeafVE:MaybeShowWeeklyRecapPopup(force)
     local rebuilt = self:SnapshotWeeklyLeaderboardWinner(previousWeekKey, Now(), true)
     if rebuilt then snapshot = rebuilt end
   end
-  if type(snapshot) ~= "table" or type(snapshot.entries) ~= "table" or table.getn(snapshot.entries) < 1 then
+  local hasSnapshot = type(snapshot) == "table" and type(snapshot.entries) == "table" and table.getn(snapshot.entries) > 0
+  if not force and (not hasSnapshot or (not self:IsWeeklyRecapSnapshotFinal(snapshot) and not snapshot.syncedFrom)) then
+    -- This client was offline when the week closed, so its champions are
+    -- built from stale points. Hold the popup until a guildmate's snapshot
+    -- arrives (AdoptWeeklyRecapSnapshot shows it then).
+    self.weeklyRecapPopupPending = previousWeekKey
+    return false
+  end
+  if not hasSnapshot then
     return false
   end
 
+  self.weeklyRecapPopupPending = nil
   recap.noticeSeenByPlayer[Lower(me)] = currentWeekKey
   local message = self:BuildWeeklyRecapPopupMessage(me, snapshot)
   if Trim(message or "") == "" then
@@ -16478,6 +16742,16 @@ function LeafVE:SnapshotWeeklyLeaderboardWinner(wk, capturedAt, forceReplace)
       recap.lastWinner = existing
       recap.lastWinnerWeek = wk
     end
+    return existing
+  end
+
+  local dataThrough = self:GetWeekDataThrough(wk)
+  if type(existing) == "table"
+    and type(existing.entries) == "table"
+    and table.getn(existing.entries) > 0
+    and (tonumber(existing.dataThrough) or 0) > dataThrough then
+    -- Existing snapshot (often synced from a guildmate) covers more of the
+    -- week than this client saw; a local rebuild would only make it staler.
     return existing
   end
 
@@ -16520,6 +16794,7 @@ function LeafVE:SnapshotWeeklyLeaderboardWinner(wk, capturedAt, forceReplace)
     reward = tonumber(championReward) or 0,
     entries = entries,
     capturedAt = tonumber(capturedAt) or Now(),
+    dataThrough = dataThrough,
   }
 
   recap.byWeek[wk] = snapshot
@@ -16542,6 +16817,197 @@ function LeafVE:GetCachedWeeklyWinnerSnapshot(wk)
     snapshot = recap.lastWinner
   end
   return snapshot
+end
+
+-------------------------------------------------
+-- WEEKLY RECAP SYNC
+-- A client that was offline when a week ended only knows the points it saw
+-- before logging off, so the "last week's champions" it builds locally can
+-- be wrong (often crowning itself). Every snapshot records dataThrough: the
+-- last moment this client was online during that week. Returning clients ask
+-- online guildmates for their snapshot and adopt whichever covers more of
+-- the week, and the recap popup waits for that instead of announcing stale
+-- winners.
+-------------------------------------------------
+WEEKLY_RECAP_FINAL_GRACE = 30 * 60
+WEEKLY_RECAP_REPLY_MAX_JITTER = 4
+
+function LeafVE:GetWeekEndTS(wk)
+  local startTS = WeekStartTSFromKey(wk)
+  if not startTS then return nil end
+  -- Resolve next Wednesday midnight from mid-day so DST shifts can't skew it.
+  return WeekStartTS(startTS + 7 * SECONDS_PER_DAY + 12 * 3600)
+end
+
+-- Record that this client is online during the current week. Called from the
+-- 60s poll and on logout, so a client online at reset stamps the old week
+-- within a minute of its end.
+function LeafVE:MarkWeekSeen()
+  EnsureDB()
+  local recap = LeafVE_DB.weeklyRecap
+  if type(recap.weekSeenAt) ~= "table" then recap.weekSeenAt = {} end
+  recap.weekSeenAt[WeekKey()] = Now()
+  local cutoff = tonumber(WeekKey(Now() - 35 * SECONDS_PER_DAY)) or 0
+  for wk in pairs(recap.weekSeenAt) do
+    if (tonumber(wk) or 0) < cutoff then
+      recap.weekSeenAt[wk] = nil
+    end
+  end
+end
+
+function LeafVE:GetWeekDataThrough(wk)
+  EnsureDB()
+  local seenAt = LeafVE_DB.weeklyRecap.weekSeenAt
+  local through = type(seenAt) == "table" and tonumber(seenAt[tostring(wk)]) or 0
+  local weekEnd = self:GetWeekEndTS(wk)
+  if weekEnd and through > weekEnd then through = weekEnd end
+  return through
+end
+
+function LeafVE:IsWeeklyRecapSnapshotFinal(snapshot)
+  if type(snapshot) ~= "table" then return false end
+  local weekEnd = self:GetWeekEndTS(snapshot.weekKey)
+  if not weekEnd then return false end
+  return (tonumber(snapshot.dataThrough) or 0) >= weekEnd - WEEKLY_RECAP_FINAL_GRACE
+end
+
+function LeafVE:RequestWeeklyRecapSync(wk)
+  if not InGuild() then return end
+  wk = tostring(wk or PreviousWeekKey())
+  local snapshot = self:GetCachedWeeklyWinnerSnapshot(wk)
+  if self:IsWeeklyRecapSnapshotFinal(snapshot) then return end
+  local have = type(snapshot) == "table" and (tonumber(snapshot.dataThrough) or 0) or 0
+  SendAddonMessage("LeafVE", "WRECAPREQ:" .. wk .. ":" .. tostring(have), "GUILD")
+end
+
+-- One message per bracket champion to stay under the 255-byte limit:
+-- WRECAP:<wk>:<dataThrough>:<i>:<count>:<bracket>:<name>:<L>:<G>:<S>:<level>
+function LeafVE:BroadcastWeeklyRecapSnapshot(wk)
+  if not InGuild() then return end
+  local snapshot = self:GetCachedWeeklyWinnerSnapshot(wk)
+  if type(snapshot) ~= "table" or type(snapshot.entries) ~= "table" then return end
+  local count = table.getn(snapshot.entries)
+  local dataThrough = tonumber(snapshot.dataThrough) or 0
+  if count < 1 or dataThrough <= 0 then return end
+  for i = 1, count do
+    local e = snapshot.entries[i]
+    if type(e) ~= "table" or not e.name then return end
+    SendAddonMessage("LeafVE", "WRECAP:" .. tostring(wk) .. ":" .. tostring(dataThrough) .. ":" .. i .. ":" .. count .. ":"
+      .. tostring(e.bracket or "") .. ":" .. tostring(e.name) .. ":"
+      .. LeafVE:FormatPointAmount(e.L or 0) .. ":" .. LeafVE:FormatPointAmount(e.G or 0) .. ":" .. LeafVE:FormatPointAmount(e.S or 0) .. ":"
+      .. tostring(tonumber(e.level) or 0), "GUILD")
+  end
+end
+
+-- Reply only when our snapshot covers more of the week than the requester's.
+-- Replies are jittered (final snapshots first) and suppressed once someone
+-- else has answered with data at least as good, so one request doesn't make
+-- the whole guild answer.
+function LeafVE:QueueWeeklyRecapReply(wk, requesterThrough)
+  local snapshot = self:GetCachedWeeklyWinnerSnapshot(wk)
+  if type(snapshot) ~= "table" or type(snapshot.entries) ~= "table" or table.getn(snapshot.entries) < 1 then return end
+  local mine = tonumber(snapshot.dataThrough) or 0
+  if mine <= (tonumber(requesterThrough) or 0) then return end
+  if type(self.weeklyRecapReplyHeard) ~= "table" then self.weeklyRecapReplyHeard = {} end
+  self.weeklyRecapReplyHeard[wk] = 0
+  local delay = math.random() * WEEKLY_RECAP_REPLY_MAX_JITTER
+  if not self:IsWeeklyRecapSnapshotFinal(snapshot) then
+    delay = delay + WEEKLY_RECAP_REPLY_MAX_JITTER
+  end
+  self:ScheduleDeferred("weekly_recap_reply_" .. wk, delay, function()
+    local heard = LeafVE.weeklyRecapReplyHeard and LeafVE.weeklyRecapReplyHeard[wk] or 0
+    if heard >= mine then return end
+    LeafVE:BroadcastWeeklyRecapSnapshot(wk)
+  end)
+end
+
+function LeafVE:ReceiveWeeklyRecapEntry(sender, payload)
+  local _, _, wk, through, idx, count, bracket, name, l, g, s, level =
+    string.find(payload or "", "^(%d+):(%d+):(%d+):(%d+):([^:]*):([^:]+):([^:]*):([^:]*):([^:]*):([^:]*)$")
+  if not wk then return end
+  through, idx, count = tonumber(through), tonumber(idx), tonumber(count)
+  if not through or not idx or not count or count < 1 or count > 20 or idx < 1 or idx > count then return end
+
+  if type(self.weeklyRecapReplyHeard) ~= "table" then self.weeklyRecapReplyHeard = {} end
+  if through > (self.weeklyRecapReplyHeard[wk] or 0) then
+    self.weeklyRecapReplyHeard[wk] = through
+  end
+
+  local weekEnd = self:GetWeekEndTS(wk)
+  if not weekEnd then return end
+  if through > weekEnd then through = weekEnd end
+
+  EnsureDB()
+  local existing = self:GetCachedWeeklyWinnerSnapshot(wk)
+  local have = type(existing) == "table" and (tonumber(existing.dataThrough) or 0) or 0
+  if through <= have then return end
+
+  if type(self.weeklyRecapIncoming) ~= "table" then self.weeklyRecapIncoming = {} end
+  local key = sender .. ":" .. wk .. ":" .. tostring(through)
+  local buf = self.weeklyRecapIncoming[key]
+  if not buf or buf.count ~= count then
+    buf = {count = count, got = 0, entries = {}}
+    self.weeklyRecapIncoming[key] = buf
+  end
+  if not buf.entries[idx] then buf.got = buf.got + 1 end
+  local pl, pg, ps = tonumber(l) or 0, tonumber(g) or 0, tonumber(s) or 0
+  buf.entries[idx] = {
+    rank = 1,
+    bracket = (bracket ~= "") and bracket or nil,
+    name = name,
+    L = pl, G = pg, S = ps,
+    total = pl + pg + ps,
+    level = tonumber(level),
+  }
+  if buf.got < count then return end
+
+  self.weeklyRecapIncoming[key] = nil
+  self:AdoptWeeklyRecapSnapshot(wk, through, buf.entries, sender)
+end
+
+function LeafVE:AdoptWeeklyRecapSnapshot(wk, through, entries, sender)
+  EnsureDB()
+  local reward = tonumber(self:GetWeeklyBracketChampionReward()) or 0
+  local overall = nil
+  for i = 1, table.getn(entries) do
+    local e = entries[i]
+    e.reward = reward
+    e.message = self:BuildWeeklyRecapPersonalMessage(e, wk)
+    if not overall or (e.total or 0) > (overall.total or 0) then
+      overall = e
+    end
+  end
+
+  local snapshot = {
+    weekKey = wk,
+    format = "level_brackets_v1",
+    name = overall and overall.name or nil,
+    total = overall and overall.total or 0,
+    L = overall and (overall.L or 0) or 0,
+    G = overall and (overall.G or 0) or 0,
+    S = overall and (overall.S or 0) or 0,
+    reward = reward,
+    entries = entries,
+    capturedAt = Now(),
+    dataThrough = through,
+    syncedFrom = sender,
+  }
+
+  local recap = LeafVE_DB.weeklyRecap
+  recap.byWeek[wk] = snapshot
+  if (tonumber(wk) or 0) >= (tonumber(recap.lastWinnerWeek) or 0) then
+    recap.lastWinner = snapshot
+    recap.lastWinnerWeek = wk
+  end
+
+  if wk == PreviousWeekKey() and LeafVE.UI and LeafVE.UI.panels and LeafVE.UI.panels.me
+    and LeafVE.UI.panels.me.lastWeekWinner then
+    LeafVE.UI.panels.me.lastWeekWinner:SetText(self:BuildWeeklyTopShinobisText(snapshot))
+  end
+
+  if self.weeklyRecapPopupPending == wk then
+    self:MaybeShowWeeklyRecapPopup(false)
+  end
 end
 
 
@@ -17051,7 +17517,7 @@ function LeafVE.UI:EnsureTextPageHeaders()
   end
 end
 
-function LeafVE.UI:HideAllMainPanels(keepPanel)
+function LeafVE.UI:HideAllMainPanels()
   if not self.panels then
     return
   end
@@ -17064,7 +17530,7 @@ function LeafVE.UI:HideAllMainPanels(keepPanel)
 
   for i = 1, table.getn(panelNames) do
     local panel = self.panels[panelNames[i]]
-    if panel and panel ~= keepPanel and panel.Hide then
+    if panel and panel.Hide then
       panel:Hide()
     end
   end
@@ -26303,6 +26769,9 @@ function LeafVE:StoreWorkOrderRecord(order)
       self:CheckBadgeMilestones(record.fulfiller)
     end
   end
+  if changed or not existing then
+    self:QueueNotificationScan()
+  end
   return record, changed
 end
 
@@ -26483,7 +26952,7 @@ end
 -- their own order" check -- this is a system-initiated cancel (the
 -- requester left the guild and can't cancel it themselves), not a player
 -- action, so that identity check doesn't apply. Only ever called from
--- PurgeDepartedPlayerData and PurgeWorkOrdersForDepartedRequesters.
+-- PurgeWorkOrdersForDepartedRequesters below.
 function LeafVE:CancelWorkOrderForDepartedRequester(orderId)
   EnsureDB()
   local order = LeafVE_GlobalDB.workOrders and LeafVE_GlobalDB.workOrders[orderId]
@@ -26519,21 +26988,6 @@ function LeafVE:CancelWorkOrderForDepartedRequester(orderId)
   return order
 end
 
--- A single roster snapshot is NOT proof of departure: on 1.12 a guildmate
--- who just logged out can be missing from the scan GUILD_ROSTER_UPDATE
--- triggers (Show Offline not yet applied, backfill option off), and that
--- used to cancel their live orders guild-wide on logout. So require the
--- same sustained-absence confirmation UpdateRosterAbsenceTracking uses
--- before purging their data.
-function LeafVE:IsConfirmedDepartedRequester(requester)
-  local lowerName = Lower(requester)
-  if self.guildRosterCache[lowerName] then return false end
-  local record = LeafVE_DB.rosterAbsenceTracking and LeafVE_DB.rosterAbsenceTracking[lowerName]
-  if not record then return false end
-  return (record.missStreak or 0) >= ROSTER_DEPARTURE_MIN_MISS_STREAK
-    and (Now() - (record.firstMissedAt or Now())) >= ROSTER_DEPARTURE_MIN_ELAPSED
-end
-
 -- Scans live (open/pending) orders and cancels any whose requester is no
 -- longer in the guild roster -- otherwise those sit "live" forever, since
 -- CancelWorkOrder normally requires the requester to cancel their own
@@ -26562,7 +27016,7 @@ function LeafVE:PurgeWorkOrdersForDepartedRequesters()
   for i = 1, table.getn(orders) do
     local order = orders[i]
     local requester = ShortName(order.requester)
-    if requester and self:IsConfirmedDepartedRequester(requester) then
+    if requester and not self.guildRosterCache[Lower(requester)] then
       if self:CancelWorkOrderForDepartedRequester(order.id) then
         cancelledCount = cancelledCount + 1
       end
@@ -31706,6 +32160,7 @@ function LeafVE:StoreBannerDuty(entry, fromSync)
   entry.leaderBonus = math.max(0, math.floor(tonumber(entry.leaderBonus) or BannerDutyGetLeaderBonus()))
   board[id] = entry
   LeafVE_GlobalDB.bannerDutyMeta.updatedAt = Now()
+  self:QueueNotificationScan()
 
   if entry.lastEventType and entry.lastEventType ~= "" then
     local evId = tostring(entry.id) .. ":" .. tostring(entry.lastEventAt or entry.updatedAt or updatedAt) .. ":" .. tostring(entry.lastEventType)
@@ -40208,6 +40663,11 @@ function MakeToggleButton(parent, label, yPos, getOpt, setOpt, btnX, btnWidth, l
     setOpt(not getOpt())
     Sync()
   end)
+  -- Re-read on show so settings changed by slash command (e.g. /lve notify)
+  -- aren't displayed stale.
+  btn:SetScript("OnShow", function()
+    Sync()
+  end)
 
   return btn, lbl
 end
@@ -40328,10 +40788,16 @@ function BuildOptionsPanel(panel)
     col2BtnX, col2BtnWidth, col2LblX)
   col2Base = col2Base - gap
 
-  MakeToggleButton(subFrame, "Work Order Login Alerts",
+  -- Replaces the old "Work Order Login Alerts" toggle; the bell now covers
+  -- those alerts.
+  MakeToggleButton(subFrame, "Show Notification Bell",
     col2Base,
-    function() return LeafVE_DB.options.enableWorkOrderLoginAlerts ~= false end,
-    function(v) LeafVE_DB.options.enableWorkOrderLoginAlerts = v end,
+    function() return not LeafVE:GetNotifyDB().hidden end,
+    function(v)
+      LeafVE:GetNotifyDB().hidden = not v
+      LeafVE:CreateNotifyWidget()
+      LeafVE:RefreshNotifyWidget()
+    end,
     col2BtnX, col2BtnWidth, col2LblX)
   col2Base = col2Base - gap
 
@@ -42322,14 +42788,31 @@ function LeafVE.UI:RefreshRecipeBrowserPanel()
     end
   end
 
-  -- The knowledge index decodes every guildmate's trade-skill link for the
-  -- profession(s) and sorts every crafter list, which is far too slow to
-  -- redo per search keystroke. It doesn't depend on the search text, so
-  -- cache it on profession + recipeKnowledgeVersion separately from the
-  -- filtered list below.
-  local indexKey = tostring(selectedProfession or "") .. "|" .. tostring(LeafVE.recipeKnowledgeVersion or 0)
-  if panel.lastIndexKey ~= indexKey then
-    panel.lastIndexKey = indexKey
+  local recipes
+  if selectedProfession == "All" then
+    recipes = {}
+    for i = 1, table.getn(WORK_ORDER_PROFESSION_ORDER) do
+      local profRecipes = catalog.byProfession[WORK_ORDER_PROFESSION_ORDER[i]] or {}
+      for j = 1, table.getn(profRecipes) do
+        table.insert(recipes, profRecipes[j])
+      end
+    end
+  else
+    recipes = selectedProfession and catalog.byProfession[selectedProfession] or {}
+  end
+  local filterText = Lower(Trim(panel.searchBox and panel.searchBox:GetText() or ""))
+  local listKey = tostring(selectedProfession or "") .. "|" .. filterText .. "|" .. tostring(LeafVE.recipeKnowledgeVersion or 0)
+  if panel.lastListKey ~= listKey then
+    local filtered = {}
+    for i = 1, table.getn(recipes) do
+      local recipe = recipes[i]
+      if filterText == "" or string.find(recipe.searchKey or "", filterText, 1, true) then
+        table.insert(filtered, recipe)
+      end
+    end
+    panel.filteredRecipes = filtered
+    panel.lastListKey = listKey
+    panel.recipeOffset = 0
     if selectedProfession == "All" then
       -- Merge each profession's own index rather than a single lookup --
       -- BuildRecipeKnowledgeIndex is scoped to one profession's stored
@@ -42348,55 +42831,6 @@ function LeafVE.UI:RefreshRecipeBrowserPanel()
     else
       panel.recipeKnowledgeIndex = selectedProfession and LeafVE:BuildRecipeKnowledgeIndex(selectedProfession) or {}
     end
-  end
-
-  local filterText = Lower(Trim(panel.searchBox and panel.searchBox:GetText() or ""))
-  local listKey = indexKey .. "|" .. filterText
-  if panel.lastListKey ~= listKey then
-    local recipes
-    if selectedProfession == "All" then
-      recipes = {}
-      for i = 1, table.getn(WORK_ORDER_PROFESSION_ORDER) do
-        local profRecipes = catalog.byProfession[WORK_ORDER_PROFESSION_ORDER[i]] or {}
-        for j = 1, table.getn(profRecipes) do
-          table.insert(recipes, profRecipes[j])
-        end
-      end
-    else
-      recipes = selectedProfession and catalog.byProfession[selectedProfession] or {}
-    end
-    local filtered = {}
-    for i = 1, table.getn(recipes) do
-      local recipe = recipes[i]
-      if filterText == "" or string.find(recipe.searchKey or "", filterText, 1, true) then
-        table.insert(filtered, recipe)
-      end
-    end
-    panel.filteredRecipes = filtered
-    panel.lastListKey = listKey
-    panel.recipeOffset = 0
-
-    -- Distinct crafters across the currently displayed (search-filtered)
-    -- recipe set, not the whole profession -- keeps this number in sync
-    -- with the recipe count next to it rather than a separate, wider scope.
-    -- Only changes with the filtered list, so computed here rather than on
-    -- every scroll/refresh.
-    local distinctCrafters = {}
-    local distinctCrafterCount = 0
-    for i = 1, table.getn(filtered) do
-      local token = GetWorkOrderCrafterRecipeToken(filtered[i])
-      local knownBy = token and panel.recipeKnowledgeIndex[token]
-      if type(knownBy) == "table" then
-        for j = 1, table.getn(knownBy) do
-          local name = knownBy[j]
-          if name and not distinctCrafters[name] then
-            distinctCrafters[name] = true
-            distinctCrafterCount = distinctCrafterCount + 1
-          end
-        end
-      end
-    end
-    panel.distinctCrafterCount = distinctCrafterCount
   end
 
   local filtered = panel.filteredRecipes or {}
@@ -42524,7 +42958,25 @@ function LeafVE.UI:RefreshRecipeBrowserPanel()
   end
 
   if panel.summaryText then
-    local distinctCrafterCount = panel.distinctCrafterCount or 0
+    -- Distinct crafters across the currently displayed (search-filtered)
+    -- recipe set, not the whole profession -- keeps this number in sync
+    -- with the recipe count next to it rather than a separate, wider scope.
+    local distinctCrafters = {}
+    local distinctCrafterCount = 0
+    for i = 1, table.getn(filtered) do
+      local token = GetWorkOrderCrafterRecipeToken(filtered[i])
+      local knownBy = token and panel.recipeKnowledgeIndex and panel.recipeKnowledgeIndex[token]
+      if type(knownBy) == "table" then
+        for j = 1, table.getn(knownBy) do
+          local name = knownBy[j]
+          if name and not distinctCrafters[name] then
+            distinctCrafters[name] = true
+            distinctCrafterCount = distinctCrafterCount + 1
+          end
+        end
+      end
+    end
+
     local apiNote = LeafVE:HasRecipeLinkAPI() and "" or "  |cFFFF6666(ClassicAPI not detected -- auto-detection disabled)|r"
     panel.summaryText:SetText("|cFFAAAAAA" .. tostring(selectedProfession or "") .. ": " .. tostring(totalRows) .. " recipe(s)|r   |cFF555555|  |r|cFF88CCFFDistinct Crafters: " .. distinctCrafterCount .. "|r" .. apiNote)
   end
@@ -45206,7 +45658,26 @@ function LeafVE.UI:Build()
   f:Hide()
 end
 
+-- Errors inside Refresh used to abort it silently (many clients hide Lua
+-- errors), leaving panels stuck on "Loading...". Report each distinct error
+-- once in chat so it can be fixed.
+function LeafVE:ReportCaughtError(source, err)
+  local text = tostring(err or "unknown error")
+  LogError(text, source)
+  self.reportedErrors = self.reportedErrors or {}
+  if self.reportedErrors[source .. text] then return end
+  self.reportedErrors[source .. text] = true
+  Print("|cFFFF6666Error in " .. tostring(source) .. ":|r " .. text)
+end
+
 function LeafVE.UI:Refresh()
+  local ok, err = pcall(self.RefreshUnsafe, self)
+  if not ok then
+    LeafVE:ReportCaughtError("UI refresh", err)
+  end
+end
+
+function LeafVE.UI:RefreshUnsafe()
   EnsureDB()
   LeafVE:PurgeStaleWeeklyData()
   
@@ -45228,6 +45699,10 @@ function LeafVE.UI:Refresh()
     return
   end
 
+  self:HideAllMainPanels()
+  if self.card then
+    self.card:Hide()
+  end
   if self.workOrderPopup and self.workOrderPopup.isEmbeddedWorkOrderView then
     self.workOrderPopup:Hide()
   end
@@ -45309,24 +45784,8 @@ function LeafVE.UI:Refresh()
     end
   end
 
-  -- Only hide panels that are going away. Background events (every
-  -- GUILD_ROSTER_UPDATE, most addon messages) call Refresh, and hiding the
-  -- panel that's still active just to re-show it drops keyboard focus from
-  -- whatever text box the player is typing in. The card is shown/hidden
-  -- by the check above for the same reason.
-  local keepPanel = self.panels[self.activeTab]
-  if not hasAccess then
-    keepPanel = self.panels.join
-  elseif string.find(self.activeTab or "", "^workorders") then
-    keepPanel = self.panels.workOrders
-  elseif self.activeTab == "admin" and not LeafVE:IsAdminRank() then
-    keepPanel = self.panels.me
-  end
-  self:HideAllMainPanels(keepPanel)
-
   local function ShowPanelWithTransition(panel)
     if not panel then return end
-    if panel:IsShown() then return end
     if LEAFVE_UI_MODERN and LEAFVE_UI_MODERN.AnimateTabTransition then
       LEAFVE_UI_MODERN:AnimateTabTransition(panel)
     else
@@ -46581,6 +47040,400 @@ end
 
 
 -------------------------------------------------
+-- NOTIFICATION BELL
+-- A movable widget with an unread count badge, like Facebook's bell. New
+-- Bulletin Board posts and new open work orders this character can craft add
+-- a notification. Detection compares the synced boards against a
+-- per-character "seen" list instead of reacting to live messages, so posts
+-- made while you were offline still notify once the login sync brings them
+-- in. Opening the list marks everything read and clears the badge.
+-------------------------------------------------
+LEAFVE_NOTIFY_MAX_ITEMS = 30
+LEAFVE_NOTIFY_LIST_ROWS = 8
+
+function LeafVE:GetNotifyDB()
+  EnsureDB()
+  local db = LeafVE_DB.notifyWidget
+  if type(db) ~= "table" then
+    db = {}
+    LeafVE_DB.notifyWidget = db
+  end
+  if type(db.items) ~= "table" then db.items = {} end
+  if type(db.seen) ~= "table" then db.seen = {} end
+  return db
+end
+
+function LeafVE:GetUnreadNotificationCount()
+  local db = self:GetNotifyDB()
+  local count = 0
+  for i = 1, table.getn(db.items) do
+    if not db.items[i].read then count = count + 1 end
+  end
+  return count
+end
+
+function LeafVE:AddNotification(key, kind, text, at)
+  local db = self:GetNotifyDB()
+  table.insert(db.items, 1, {key = key, kind = kind, text = text, at = tonumber(at) or Now(), read = false})
+  while table.getn(db.items) > LEAFVE_NOTIFY_MAX_ITEMS do
+    table.remove(db.items)
+  end
+end
+
+function LeafVE:IsBannerDutyOpenForNotify(entry)
+  if type(entry) ~= "table" or entry.closed then return false end
+  if (tonumber(entry.deletedAt) or 0) > 0 then return false end
+  return Now() < (tonumber(BannerDutyExpiresAt(entry)) or 0)
+end
+
+function LeafVE:ScanNotifications()
+  local me = ShortName(UnitName("player"))
+  if not me then return end
+  local db = self:GetNotifyDB()
+  -- The first scan after installing only records what already exists, so
+  -- nobody gets a pile of notifications for old posts.
+  local baseline = not db.initialized
+  local present = {}
+  local added = 0
+
+  local liveOrders = self:GetLiveWorkOrders() or {}
+  for i = 1, table.getn(liveOrders) do
+    local order = liveOrders[i]
+    local key = "wo:" .. tostring(order.id)
+    present[key] = true
+    if not db.seen[key]
+      and self:GetEffectiveWorkOrderStatus(order) == "open"
+      and Lower(order.requester or "") ~= Lower(me)
+      and self:CanPlayerFulfillWorkOrder(me, order) then
+      db.seen[key] = true
+      if not baseline then
+        local qty = tonumber(order.quantity) or 1
+        self:AddNotification(key, "workorder",
+          "Work order you can craft: " .. (qty > 1 and (tostring(qty) .. "x ") or "")
+            .. tostring(order.recipeName or "item") .. " for " .. tostring(order.requester or "?"),
+          order.createdAt)
+        added = added + 1
+      end
+    end
+  end
+
+  local board = self:EnsureBannerDutyDB()
+  for id, entry in pairs(board) do
+    local key = "bd:" .. tostring(id)
+    if type(entry) == "table" then present[key] = true end
+    if not db.seen[key]
+      and self:IsBannerDutyOpenForNotify(entry)
+      and Lower(entry.author or "") ~= Lower(me) then
+      db.seen[key] = true
+      if not baseline then
+        local text = Trim(tostring(entry.text or ""))
+        if string.len(text) > 60 then text = string.sub(text, 1, 57) .. "..." end
+        self:AddNotification(key, "bulletin",
+          tostring(entry.author or "?") .. " posted on the Bulletin Board: " .. text,
+          entry.createdAt)
+        added = added + 1
+      end
+    end
+  end
+
+  for key in pairs(db.seen) do
+    if not present[key] then db.seen[key] = nil end
+  end
+
+  db.initialized = true
+  if added > 0 then
+    pcall(PlaySound, "TellMessage")
+  end
+  self:RefreshNotifyWidget()
+end
+
+-- Debounced so a login sync burst of work orders/posts scans once.
+function LeafVE:QueueNotificationScan()
+  self:ScheduleDeferred("notify_scan", 2, function()
+    LeafVE:ScanNotifications()
+  end)
+end
+
+function LeafVE:FormatNotificationAge(at)
+  local secs = Now() - (tonumber(at) or Now())
+  if secs < 60 then return "just now" end
+  if secs < 3600 then return tostring(math.floor(secs / 60)) .. "m ago" end
+  if secs < SECONDS_PER_DAY then return tostring(math.floor(secs / 3600)) .. "h ago" end
+  return tostring(math.floor(secs / SECONDS_PER_DAY)) .. "d ago"
+end
+
+function LeafVE:CreateNotifyWidget()
+  if self.notifyWidget then return self.notifyWidget end
+  local db = self:GetNotifyDB()
+
+  local w = CreateFrame("Button", "LeafVENotifyWidget", UIParent)
+  w:SetWidth(36)
+  w:SetHeight(36)
+  w:SetFrameStrata("MEDIUM")
+  w:SetClampedToScreen(true)
+  w:SetMovable(true)
+  w:EnableMouse(true)
+  w:RegisterForDrag("LeftButton")
+  w:RegisterForClicks("LeftButtonUp")
+  w:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 12,
+    insets = {left = 3, right = 3, top = 3, bottom = 3},
+  })
+  w:SetBackdropColor(0, 0, 0, 0.8)
+  w:SetBackdropBorderColor(0.85, 0.64, 0.29, 1)
+
+  local icon = w:CreateTexture(nil, "ARTWORK")
+  icon:SetPoint("TOPLEFT", w, "TOPLEFT", 4, -4)
+  icon:SetPoint("BOTTOMRIGHT", w, "BOTTOMRIGHT", -4, 4)
+  icon:SetTexture("Interface\\Icons\\INV_Misc_Note_01")
+  icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+  w.icon = icon
+
+  local hl = w:CreateTexture(nil, "HIGHLIGHT")
+  hl:SetAllPoints(icon)
+  hl:SetTexture(1, 1, 1, 0.15)
+
+  local badge = CreateFrame("Frame", nil, w)
+  badge:SetHeight(16)
+  badge:SetWidth(16)
+  badge:SetPoint("CENTER", w, "TOPRIGHT", -3, -3)
+  badge:SetFrameLevel(w:GetFrameLevel() + 3)
+  local dot = badge:CreateTexture(nil, "ARTWORK")
+  dot:SetAllPoints(badge)
+  dot:SetTexture(0.86, 0.1, 0.1, 1)
+  local countText = badge:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  countText:SetPoint("CENTER", badge, "CENTER", 0, 0)
+  badge.text = countText
+  badge:Hide()
+  w.badge = badge
+
+  local pos = db.pos
+  if type(pos) == "table" and pos.point then
+    w:SetPoint(pos.point, UIParent, pos.relPoint or pos.point, tonumber(pos.x) or 0, tonumber(pos.y) or 0)
+  else
+    w:SetPoint("TOP", UIParent, "TOP", 220, -110)
+  end
+
+  w:SetScript("OnDragStart", function()
+    if LeafVE.notifyList then LeafVE.notifyList:Hide() end
+    this:StartMoving()
+  end)
+  w:SetScript("OnDragStop", function()
+    this:StopMovingOrSizing()
+    local point, _, relPoint, x, y = this:GetPoint()
+    LeafVE:GetNotifyDB().pos = {point = point, relPoint = relPoint, x = x, y = y}
+  end)
+  w:SetScript("OnClick", function()
+    LeafVE:ToggleNotifyList()
+  end)
+  w:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_LEFT")
+    GameTooltip:AddLine("Ashen Banner Notifications")
+    local unread = LeafVE:GetUnreadNotificationCount()
+    GameTooltip:AddLine(unread > 0 and (tostring(unread) .. " new") or "Nothing new", 0.88, 0.88, 0.88)
+    GameTooltip:AddLine("Click to open. Drag to move.", 0.6, 0.6, 0.6)
+    GameTooltip:Show()
+  end)
+  w:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+  end)
+
+  self.notifyWidget = w
+  self:RefreshNotifyWidget()
+  return w
+end
+
+function LeafVE:RefreshNotifyWidget()
+  local w = self.notifyWidget
+  if not w then return end
+  local db = self:GetNotifyDB()
+  if db.hidden or not self:HasLeafAccess() then
+    w:Hide()
+    if self.notifyList then self.notifyList:Hide() end
+    return
+  end
+  w:Show()
+
+  local unread = self:GetUnreadNotificationCount()
+  if unread > 0 then
+    local label = unread > 99 and "99+" or tostring(unread)
+    w.badge.text:SetText(label)
+    w.badge:SetWidth(math.max(16, (w.badge.text:GetStringWidth() or 8) + 8))
+    w.badge:Show()
+  else
+    w.badge:Hide()
+  end
+end
+
+function LeafVE:CreateNotifyList()
+  if self.notifyList then return self.notifyList end
+  local rows = LEAFVE_NOTIFY_LIST_ROWS
+
+  local f = CreateFrame("Frame", "LeafVENotifyList", UIParent)
+  f:SetWidth(320)
+  f:SetHeight(58 + rows * 30)
+  f:SetFrameStrata("DIALOG")
+  f:SetClampedToScreen(true)
+  f:EnableMouse(true)
+  f:SetBackdrop({
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 16,
+    insets = {left = 4, right = 4, top = 4, bottom = 4},
+  })
+  f:SetBackdropColor(0.05, 0.04, 0.03, 0.95)
+  f:SetBackdropBorderColor(0.85, 0.64, 0.29, 1)
+
+  local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  title:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -10)
+  title:SetText("|cFFD8A24ANotifications|r")
+
+  local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+  close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -2)
+
+  local clear = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  clear:SetWidth(70)
+  clear:SetHeight(18)
+  clear:SetPoint("RIGHT", close, "LEFT", -2, 0)
+  clear:SetText("Clear all")
+  clear:SetScript("OnClick", function()
+    LeafVE:GetNotifyDB().items = {}
+    LeafVE:RefreshNotifyList()
+    LeafVE:RefreshNotifyWidget()
+  end)
+
+  f.rows = {}
+  for i = 1, rows do
+    local row = CreateFrame("Button", nil, f)
+    row:SetHeight(28)
+    row:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -30 - (i - 1) * 30)
+    row:SetPoint("RIGHT", f, "RIGHT", -8, 0)
+    local rhl = row:CreateTexture(nil, "HIGHLIGHT")
+    rhl:SetAllPoints(row)
+    rhl:SetTexture(1, 1, 1, 0.08)
+    local text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    text:SetPoint("TOPLEFT", row, "TOPLEFT", 4, -2)
+    text:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    text:SetJustifyH("LEFT")
+    text:SetHeight(14)
+    local age = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    age:SetTextColor(0.6, 0.6, 0.6)
+    age:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 4, 1)
+    age:SetJustifyH("LEFT")
+    row.text = text
+    row.age = age
+    row:SetScript("OnClick", function()
+      if LeafVE.notifyList then LeafVE.notifyList:Hide() end
+      LeafVE:OpenNotificationTarget(this.kind)
+    end)
+    row:Hide()
+    f.rows[i] = row
+  end
+
+  local empty = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  empty:SetTextColor(0.6, 0.6, 0.6)
+  empty:SetPoint("TOP", f, "TOP", 0, -50)
+  empty:SetText("No notifications yet.")
+  f.empty = empty
+
+  local footer = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  footer:SetTextColor(0.6, 0.6, 0.6)
+  footer:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 8)
+  f.footer = footer
+
+  f:Hide()
+  if type(UISpecialFrames) == "table" then
+    table.insert(UISpecialFrames, "LeafVENotifyList")
+  end
+  self.notifyList = f
+  return f
+end
+
+function LeafVE:RefreshNotifyList()
+  local f = self.notifyList
+  if not f then return end
+  local items = self:GetNotifyDB().items
+  local total = table.getn(items)
+  for i = 1, table.getn(f.rows) do
+    local row = f.rows[i]
+    local item = items[i]
+    if item then
+      local color = (f.unreadSnapshot and f.unreadSnapshot[i]) and "|cFFFFD100" or "|cFFE0E0E0"
+      row.text:SetText(color .. tostring(item.text or "") .. "|r")
+      row.age:SetText((item.kind == "workorder" and "Work Order" or "Bulletin Board") .. "  -  " .. self:FormatNotificationAge(item.at))
+      row.kind = item.kind
+      row:Show()
+    else
+      row:Hide()
+    end
+  end
+  if total < 1 then f.empty:Show() else f.empty:Hide() end
+  if total > table.getn(f.rows) then
+    f.footer:SetText("Showing the newest " .. tostring(table.getn(f.rows)) .. " of " .. tostring(total))
+  else
+    f.footer:SetText("")
+  end
+end
+
+function LeafVE:ToggleNotifyList()
+  local f = self:CreateNotifyList()
+  if f:IsVisible() then
+    f:Hide()
+    return
+  end
+
+  -- Remember which rows were unread so they show highlighted this time,
+  -- then mark everything read so the badge clears.
+  local items = self:GetNotifyDB().items
+  f.unreadSnapshot = {}
+  for i = 1, table.getn(items) do
+    f.unreadSnapshot[i] = not items[i].read
+    items[i].read = true
+  end
+
+  f:ClearAllPoints()
+  local w = self.notifyWidget
+  if w then
+    local top = w:GetTop() or 0
+    local screenH = UIParent:GetHeight() or 768
+    if top > screenH / 2 then
+      f:SetPoint("TOPRIGHT", w, "BOTTOMRIGHT", 0, -4)
+    else
+      f:SetPoint("BOTTOMRIGHT", w, "TOPRIGHT", 0, 4)
+    end
+  else
+    f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  end
+
+  self:RefreshNotifyList()
+  f:Show()
+  self:RefreshNotifyWidget()
+end
+
+function LeafVE:OpenNotificationTarget(kind)
+  if not LeafVE.UI then return end
+  if not LeafVE.UI.frame or not LeafVE.UI.frame:IsVisible() then
+    LeafVE:ToggleUI()
+  end
+  if not LeafVE.UI.frame or not LeafVE.UI.frame:IsVisible() then return end
+  local category, tab = "orders", "bannerDutyBoard"
+  if kind == "workorder" then
+    category, tab = "recipes", "workordersLive"
+  end
+  LeafVE.UI.activeCategory = category
+  LeafVE.UI.activeNavSubTab = nil
+  LeafVE.UI.activeTab = tab
+  if LeafVE.UI.navLastTabByCategory then
+    LeafVE.UI.navLastTabByCategory[category] = tab
+  end
+  if LeafVE.UI.Refresh then
+    LeafVE.UI:Refresh()
+  end
+end
+
+-------------------------------------------------
 -- EVENT HANDLERS
 -------------------------------------------------
 LeafVE_eventFrame = CreateFrame("Frame")
@@ -46630,6 +47483,13 @@ LeafVE_updateTimers = {
 }
 
 LeafVE_eventFrame:SetScript("OnEvent", function()
+  local ok, err = pcall(LeafVE_OnEventBody)
+  if not ok then
+    LeafVE:ReportCaughtError("event " .. tostring(event), err)
+  end
+end)
+
+function LeafVE_OnEventBody()
   local event = _G.event
   local arg1 = _G.arg1
   local arg2 = _G.arg2
@@ -46712,6 +47572,8 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
     LeafVE:CheckDailyLogin()
     LeafVE:PurgeStaleWeeklyData()
     LeafVE:PurgeInvalidWorkOrders()
+    LeafVE:CreateNotifyWidget()
+    LeafVE:ScanNotifications()
     LeafVE:SchedulePeriodicWorkOrderExpiryCheck()
     LeafVE:HookRecipeScanFrames()
     LeafVE:RequestRecipeLinkSync(false)
@@ -46766,6 +47628,10 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
         SendAddonMessage("LeafVE", "VERSIONREQ", "GUILD")
         LeafVE:BroadcastFullWipeVersion()
         LeafVE:BroadcastLeaderboardData()
+        -- Pull current totals from everyone online instead of showing this
+        -- client's cached (possibly days-old) numbers until the 5-min timer.
+        LeafVE:SendResyncRequest(false)
+        LeafVE:RequestWeeklyRecapSync(PreviousWeekKey())
       end
     end)
     if LeafVE.allianceEnabled == true then
@@ -46820,19 +47686,13 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
       end
     end)
     LeafVE:ScheduleDeferred("weekly_recap_popup", 24, function()
-      LeafVE:MaybeShowWeeklyRecapPopup(false)
-    end)
-    LeafVE:ScheduleDeferred("login_briefing_popup", 15, function()
-      if LeafVE and LeafVE.UI and LeafVE.UI.ShowLoginBriefingPopup then
-        LeafVE.UI:ShowLoginBriefingPopup(false)
+      if not LeafVE:MaybeShowWeeklyRecapPopup(false) and LeafVE.weeklyRecapPopupPending then
+        -- Still unconfirmed; ask again in case guildmates came online since.
+        LeafVE:RequestWeeklyRecapSync(LeafVE.weeklyRecapPopupPending)
       end
     end)
-    LeafVE:ScheduleDeferred("work_order_login_alert_1", 30, function()
-      LeafVE:MaybeShowWorkOrderLoginAlert(false)
-    end)
-    LeafVE:ScheduleDeferred("work_order_login_alert_2", 40, function()
-      LeafVE:MaybeShowWorkOrderLoginAlert(false)
-    end)
+    -- The daily login briefing and work-order login popups are replaced by
+    -- the notification bell (still available manually via /lve briefing).
     return
   end
 
@@ -46865,6 +47725,7 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
   if event == "PLAYER_LOGOUT" then
     EnsureDB()
     LeafVE_DB.lastLogoutAt = Now()
+    LeafVE:MarkWeekSeen()
     return
   end
   
@@ -46874,6 +47735,10 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
   end
   
   if event == "GUILD_ROSTER_UPDATE" then
+    -- Ignore the echo of our own Show Offline toggle in UpdateGuildRosterCache.
+    if LeafVE.rosterSelfToggleUntil and GetTime() < LeafVE.rosterSelfToggleUntil then
+      return
+    end
     -- Debounced: GUILD_ROSTER_UPDATE can fire repeatedly in a burst (mass
     -- login/logout, rank/note edits), and this used to invalidate the
     -- roster cache and immediately call RefreshMinimapButtonAccess ->
@@ -46887,7 +47752,18 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
     LeafVE:ScheduleDeferred("guild_roster_cache_invalidate", 1.5, function()
       -- Invalidate the roster cache so the next GetGroupGuildies() call rebuilds it
       -- from the fresh server data (without triggering another GuildRoster() request).
-      LeafVE.guildRosterCacheTime = 0
+      -- Perf: other addons call GuildRoster() constantly, so this event can
+      -- arrive every second or two all session. Allow at most one forced
+      -- rebuild per GUILD_ROSTER_MIN_REBUILD_GAP seconds; inside that window
+      -- the cache simply expires on its normal schedule.
+      local minGap = GUILD_ROSTER_MIN_REBUILD_GAP or 15
+      local forcedAge = time() - (LeafVE.guildRosterCacheTime or 0)
+      if forcedAge >= minGap then
+        LeafVE.guildRosterCacheTime = 0
+      else
+        LeafVE.guildRosterCacheTime = math.min(LeafVE.guildRosterCacheTime,
+          time() - GUILD_ROSTER_CACHE_DURATION + (minGap - forcedAge))
+      end
       LeafVE:RefreshMinimapButtonAccess()
       -- Direct call (not relying on RefreshMinimapButtonAccess's chain,
       -- which no-ops entirely if the minimap button doesn't exist) so the
@@ -47025,7 +47901,7 @@ LeafVE_eventFrame:SetScript("OnEvent", function()
     end
     return
   end
-end)
+end
 
 LeafVE_updateFrame = CreateFrame("Frame")
 LeafVE_updateFrame:SetScript("OnUpdate", function(_, elapsed)
@@ -47067,11 +47943,10 @@ LeafVE_updateFrame:SetScript("OnUpdate", function(_, elapsed)
     LeafVE_updateTimers.achievementLeaderboard = 0
     -- Request a leaderboard resync from the guild (respects cooldown)
     if InGuild() then
-      local now = Now()
-      if (now - LeafVE.lastResyncRequestAt) >= LBOARD_RESYNC_COOLDOWN then
-        LeafVE.lastResyncRequestAt = now
-        LeafVE:SendResyncRequest()
-      end
+      -- SendResyncRequest applies the cooldown and stamps lastResyncRequestAt
+      -- itself; stamping it here first made it return without sending.
+      LeafVE:SendResyncRequest()
+      LeafVE:RequestWeeklyRecapSync(PreviousWeekKey())
     end
     -- Refresh the achievement leaderboard panel if it is currently open
     if LeafVE.UI and LeafVE.UI.panels and
@@ -47085,6 +47960,8 @@ LeafVE_updateFrame:SetScript("OnUpdate", function(_, elapsed)
   if LeafVE_updateTimers.wipeMarkerPoll >= 60 then
     LeafVE_updateTimers.wipeMarkerPoll = 0
     LeafVE:PurgeStaleWeeklyData()
+    LeafVE:MarkWeekSeen()
+    LeafVE:ScanNotifications()
     if InGuild() then
       LeafVE:ApplyGuildWipeMarkerIfNeeded()
     end
@@ -47428,6 +48305,20 @@ SlashCmdList["LEAFDEBUG"] = function(msg)
     if LeafVE.UI and LeafVE.UI.RefreshRoster then
       LeafVE.UI:RefreshRoster()
     end
+
+  elseif trimmedMsg == "notify" then
+    local db = LeafVE:GetNotifyDB()
+    db.hidden = not db.hidden
+    LeafVE:CreateNotifyWidget()
+    LeafVE:RefreshNotifyWidget()
+    Print("Notification bell " .. (db.hidden and "hidden. Type /lve notify to show it again." or "shown."))
+
+  elseif trimmedMsg == "notifyreset" then
+    LeafVE:GetNotifyDB().pos = nil
+    local w = LeafVE:CreateNotifyWidget()
+    w:ClearAllPoints()
+    w:SetPoint("TOP", UIParent, "TOP", 220, -110)
+    Print("Notification bell moved back to its default spot.")
 
   elseif msg == "briefing" then
     local leaders = LeafVE:GetWeeklyLeaderboardLeadersForWeek(WeekKey()) or {}
@@ -47909,11 +48800,17 @@ function LeafVE:RegisterBadgeHyperlinkHandler()
   if type(SetItemRef) ~= "function" then
     return false
   end
-  if self.badgeHyperlinkWrappedRef and SetItemRef == self.badgeHyperlinkWrappedRef then
+  -- Wrap SetItemRef only once per session. This used to re-wrap whenever
+  -- another addon had hooked SetItemRef after us; the new wrapper then
+  -- called that addon's hook, which called our older wrapper, which saw the
+  -- shared re-entry guard and returned without ever reaching Blizzard's
+  -- SetItemRef -- so clicking item/player/quest links in chat did nothing.
+  if self.badgeHyperlinkWrappedRef then
     return true
   end
 
-  self.badgeHyperlinkOriginalSetItemRef = SetItemRef
+  local originalSetItemRef = SetItemRef
+  self.badgeHyperlinkOriginalSetItemRef = originalSetItemRef
   self.badgeHyperlinkWrappedRef = function(link, text, button, chatFrame)
     local safeLink = tostring(link or "")
     local isLeafLink = string.sub(safeLink, 1, 13) == "leafve_badge:"
@@ -47930,34 +48827,8 @@ function LeafVE:RegisterBadgeHyperlinkHandler()
       return
     end
 
-    -- Handle achievement hyperlinks ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â same panel, populated with achievement data
-    local originalSetItemRef = LeafVE.badgeHyperlinkOriginalSetItemRef
-    if type(originalSetItemRef) ~= "function" or originalSetItemRef == LeafVE.badgeHyperlinkWrappedRef then
-      return
-    end
-
-    if LeafVE.badgeHyperlinkSetItemRefGuard then
-      return
-    end
-
-    LeafVE.badgeHyperlinkSetItemRefGuard = true
-    local ok, err = pcall(originalSetItemRef, link, text, button, chatFrame)
-    LeafVE.badgeHyperlinkSetItemRefGuard = false
-    if not ok then
-      local errText = tostring(err or "")
-      local lowerErr = string.lower(errText)
-      local safeText = tostring(text or "")
-      local safeLinkText = tostring(link or "")
-      local unknownLinkType = string.find(lowerErr, "unknown link type", 1, true) ~= nil
-      local looksLikeExternalUrl = string.find(string.lower(safeText), "http://", 1, true) ~= nil
-        or string.find(string.lower(safeText), "https://", 1, true) ~= nil
-        or string.find(string.lower(safeLinkText), "http://", 1, true) ~= nil
-        or string.find(string.lower(safeLinkText), "https://", 1, true) ~= nil
-
-      if not (unknownLinkType or looksLikeExternalUrl) then
-        Print("|cFFFF6666LeafVE SetItemRef fallback failed:|r " .. errText)
-      end
-    end
+    -- Everything else goes straight to whatever SetItemRef was before us.
+    return originalSetItemRef(link, text, button, chatFrame)
   end
   SetItemRef = self.badgeHyperlinkWrappedRef
   return true

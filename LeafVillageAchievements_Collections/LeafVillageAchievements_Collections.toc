@@ -1,0 +1,9 @@
+## Interface: 11200
+## Title: Ashen Banner Achievements - Collections UI
+## Notes: Load-on-demand mount and companion collection interface
+## Version: 4.2.0-Memory-Patch
+## LoadOnDemand: 1
+## Dependencies: LeafVillageAchievements
+
+LeafVillageAchievementsCollectionsPortraits.lua
+LeafVillageAchievementsCollections.lua

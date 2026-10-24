@@ -10,7 +10,7 @@ LeafVE_AchTest.DEBUG = false -- Set to true for debug messages
 LeafVE_AchTest.initialized = false -- Set to true after PLAYER_ENTERING_WORLD backlog scan
 
 local ADDON_COMM_PREFIX = "LeafVEAch"
-local LEAFVE_RELEASE_VERSION = "4.1.9"
+local LEAFVE_RELEASE_VERSION = "4.1.8"
 local VERSION_REMINDER_INTERVAL = 24 * 60 * 60
 local LEAFVE_ANNOUNCEMENT_ITEM_ID = 6948
 
@@ -2109,6 +2109,14 @@ function LeafVE_AchTest:CheckGuildRankAchievements(silent)
   local tier = TRACKED_GUILD_RANK_INDEX[normalizedRank]
   local titleChanged = false
 
+  -- Perf: GUILD_ROSTER_UPDATE fires every second or so while other addons
+  -- poll the roster. Once this session has been seeded, only re-run the
+  -- award/title pass when the player's rank actually changes.
+  if LeafVE_AchTest.guildRankSeeded and guildName and guildName ~= ""
+     and LeafVE_AchTest.lastCheckedGuildRank == normalizedRank then
+    return false
+  end
+
   -- GetGuildInfo("player") frequently returns nil for a beat after
   -- PLAYER_ENTERING_WORLD, before the real roster data arrives via
   -- GUILD_ROSTER_UPDATE. Don't burn the "first scan of the session is
@@ -2133,6 +2141,9 @@ function LeafVE_AchTest:CheckGuildRankAchievements(silent)
   end
 
   LeafVE_AchTest_DB.guildRankState[me] = normalizedRank
+  if guildName and guildName ~= "" then
+    LeafVE_AchTest.lastCheckedGuildRank = normalizedRank
+  end
 
   if titleChanged and LeafVE_AchTest.UI and LeafVE_AchTest.UI.Refresh then
     LeafVE_AchTest.UI:Refresh()
@@ -9794,7 +9805,8 @@ LeafVE_AchTest.guildPollElapsed = 0
 LeafVE_AchTest.guildPollFrame:SetScript("OnUpdate", function()
   if not LeafVE_AchTest.initialized then return end
   LeafVE_AchTest.guildPollElapsed = LeafVE_AchTest.guildPollElapsed + arg1
-  if LeafVE_AchTest.guildPollElapsed >= 15 then
+  -- 60s, not 15s: every GuildRoster() makes all guild addons re-scan the roster.
+  if LeafVE_AchTest.guildPollElapsed >= 60 then
     LeafVE_AchTest.guildPollElapsed = 0
     if IsInGuild and IsInGuild() and GuildRoster then GuildRoster() end
   end
