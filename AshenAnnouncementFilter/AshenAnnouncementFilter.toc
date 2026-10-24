@@ -1,0 +1,8 @@
+## Interface: 11200
+## Title: Ashen Announcement Filter
+## Notes: Locally hides Ashen Banner achievement and badge guild announcements.
+## Author: The Ashen Banner
+## Version: 1.0.0
+## SavedVariables: AshenAnnouncementFilterDB
+
+AshenAnnouncementFilter.lua

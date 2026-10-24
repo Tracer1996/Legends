@@ -1,0 +1,7 @@
+## Interface: 11200
+## Title: Ashen Consumes
+## Notes: Vanilla 1.12 consumable duration tracker and one-at-a-time refresh button
+## Author: The Ashen Banner
+## Version: 1.0.0
+## SavedVariablesPerCharacter: AshenConsumesDB
+AshenConsumes.lua

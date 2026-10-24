@@ -1,0 +1,5 @@
+## Interface: 11200
+## Title: Ashen Raid Mode
+## Notes: /raidmode switches heavy addons and render settings off for raids, and back again.
+## SavedVariablesPerCharacter: AshenRaidModeDB
+AshenRaidMode.lua
