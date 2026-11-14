@@ -229,12 +229,5 @@ end
 
 RegisterToyAchievements()
 
-local toyFrame=CreateFrame("Frame")
-toyFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-toyFrame:RegisterEvent("SPELLS_CHANGED")
-local toyReady=false
-toyFrame:SetScript("OnEvent",function()
-  if event=="PLAYER_ENTERING_WORLD" then toyReady=true; ScanToys(true); return end
-  if not toyReady then return end
-  if event=="SPELLS_CHANGED" then ScanToys(false) end
-end)
+-- v4.2.0: driven by the shared spellbook scan (see LeafVE_Ach_Companions.lua).
+LeafVE_AchTest:RegisterSpellScanner("toys",function(first) ScanToys(first) end)

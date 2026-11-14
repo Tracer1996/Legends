@@ -457,6 +457,65 @@ end
 -- burst.
 local BACKFILL_ZONES_PER_TICK = 2
 
+-- Records newly explored areas of one live zone achievement; true if any.
+local function ProcessLiveZoneId(id, discovered)
+  local changed = false
+  local def = id and LeafVE_AchTest:GetAchievementDef(id)
+  if def and def.criteria_zoneAreaID then
+    local ok, explored = pcall(C_MapExplorationInfo.GetExploredMapTextures, def.criteria_zoneAreaID)
+    if ok and explored then
+      for _, ov in ipairs(explored) do
+        local ids = ov.areaIDs
+        if not ids or table.getn(ids) == 0 then ids = { ov.areaID } end
+        for _, aid in ipairs(ids) do
+          if aid and aid > 0 and aid ~= def.criteria_zoneAreaID then
+            local name = C_Map.GetAreaInfo(aid)
+            if name and name ~= "" and not discovered[name] then
+              discovered[name] = true
+              changed = true
+            end
+          end
+        end
+      end
+    end
+  end
+  return changed
+end
+
+local function AfterLiveDiscovery(silent)
+  if LeafVE_AchTest.CheckExplorationAchievements then
+    LeafVE_AchTest:CheckExplorationAchievements(silent)
+  end
+  if LeafVE_AchTest.CheckExploreCountAchievements then
+    LeafVE_AchTest:CheckExploreCountAchievements(silent)
+  end
+end
+
+local function GetMyDiscoveredAreas()
+  local me = LeafVE_AchTest.ShortName(UnitName("player") or "")
+  if not me or me == "" or not LeafVE_AchTest_DB then return nil end
+  if not LeafVE_AchTest_DB.exploredZones then LeafVE_AchTest_DB.exploredZones = {} end
+  if not LeafVE_AchTest_DB.exploredZones[me] then LeafVE_AchTest_DB.exploredZones[me] = {} end
+  return LeafVE_AchTest_DB.exploredZones[me]
+end
+
+-- v4.2.0: check only the zone the player is in (called on zone/subzone change).
+function LeafVE_AchTest:CheckCurrentZoneExplorationLive(zoneName)
+  if not C_MapExplorationInfo or not C_MapExplorationInfo.GetExploredMapTextures then return end
+  if scanState ~= "done" then return end
+  zoneName = zoneName or (GetRealZoneText and GetRealZoneText()) or nil
+  if not zoneName or zoneName == "" then return end
+  local discovered = GetMyDiscoveredAreas()
+  if not discovered then return end
+  local id = REUSE_ZONE_ACHIEVEMENT_ID[NormalizeMapName(zoneName)]
+  if not (id and LeafVE_AchTest:GetAchievementDef(id)) then
+    id = "explore_zone_" .. Slugify(zoneName)
+  end
+  if ProcessLiveZoneId(id, discovered) then
+    AfterLiveDiscovery(not hasCompletedFirstSweep)
+  end
+end
+
 function LeafVE_AchTest:CheckZoneExplorationLive()
   if not C_MapExplorationInfo or not C_MapExplorationInfo.GetExploredMapTextures then return end
   local total = table.getn(liveZoneAchievementIds)
@@ -479,35 +538,13 @@ function LeafVE_AchTest:CheckZoneExplorationLive()
     backfillIndex = backfillIndex + 1
     processed = processed + 1
 
-    local def = LeafVE_AchTest:GetAchievementDef(id)
-    if def and def.criteria_zoneAreaID then
-      local ok, explored = pcall(C_MapExplorationInfo.GetExploredMapTextures, def.criteria_zoneAreaID)
-      if ok and explored then
-        for _, ov in ipairs(explored) do
-          local ids = ov.areaIDs
-          if not ids or table.getn(ids) == 0 then ids = { ov.areaID } end
-          for _, aid in ipairs(ids) do
-            if aid and aid > 0 and aid ~= def.criteria_zoneAreaID then
-              local name = C_Map.GetAreaInfo(aid)
-              if name and name ~= "" and not discovered[name] then
-                discovered[name] = true
-                changed = true
-              end
-            end
-          end
-        end
-      end
+    if ProcessLiveZoneId(id, discovered) then
+      changed = true
     end
   end
 
   if changed then
-    local silent = not hasCompletedFirstSweep
-    if LeafVE_AchTest.CheckExplorationAchievements then
-      LeafVE_AchTest:CheckExplorationAchievements(silent)
-    end
-    if LeafVE_AchTest.CheckExploreCountAchievements then
-      LeafVE_AchTest:CheckExploreCountAchievements(silent)
-    end
+    AfterLiveDiscovery(not hasCompletedFirstSweep)
   end
 end
 
@@ -554,6 +591,26 @@ end
 local liveExploreFrame = CreateFrame("Frame", "LeafVE_ExplorationLiveFrame")
 liveExploreFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 liveExploreFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+-- v4.2.0: new areas are discovered on (sub)zone changes, so that is when the
+-- current zone gets checked -- instead of polling map data every 5 seconds forever.
+liveExploreFrame:RegisterEvent("ZONE_CHANGED")
+liveExploreFrame:RegisterEvent("ZONE_CHANGED_INDOORS")
+local zoneCheckFrame = CreateFrame("Frame")
+zoneCheckFrame:Hide()
+local zoneCheckDue = 0
+zoneCheckFrame:SetScript("OnUpdate", function()
+  if GetTime() < zoneCheckDue then return end
+  if UnitAffectingCombat and UnitAffectingCombat("player") then
+    zoneCheckDue = GetTime() + 2
+    return
+  end
+  this:Hide()
+  LeafVE_AchTest:CheckCurrentZoneExplorationLive()
+end)
+local function QueueCurrentZoneCheck()
+  zoneCheckDue = GetTime() + 1
+  zoneCheckFrame:Show()
+end
 
 -- INIT_DELAY: seconds after entering world before the registration scan
 -- starts, giving other addons' login-time init a head start.
@@ -570,6 +627,9 @@ liveExploreFrame:SetScript("OnEvent", function()
     end
   elseif event == "ZONE_CHANGED_NEW_AREA" then
     LeafVE_AchTest:CheckZonesVisitedLive()
+    QueueCurrentZoneCheck()
+  elseif event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" then
+    QueueCurrentZoneCheck()
   end
 end)
 
@@ -588,13 +648,20 @@ liveExploreFrame:SetScript("OnUpdate", function()
     return
   end
 
-  -- scanState == "done": safe to run the backfill sweep and count/visited
-  -- checks on a normal interval.
+  -- scanState == "done": one throttled backfill sweep over every zone (to
+  -- catch exploration done while the addon wasn't tracking), then stop.
+  -- v4.2.0: this used to keep sweeping forever, every 5 seconds.
+  if hasCompletedFirstSweep then
+    LeafVE_AchTest:CheckExploreCountAchievements(false)
+    LeafVE_AchTest:CheckZonesVisitedLive()
+    this:Hide() -- events still arrive; zone changes are handled above
+    return
+  end
   pollElapsed = pollElapsed + arg1
   if pollElapsed >= POLL_INTERVAL then
     pollElapsed = 0
     LeafVE_AchTest:CheckZoneExplorationLive()
-    LeafVE_AchTest:CheckExploreCountAchievements(not hasCompletedFirstSweep)
+    LeafVE_AchTest:CheckExploreCountAchievements(true)
     LeafVE_AchTest:CheckZonesVisitedLive()
   end
 end)

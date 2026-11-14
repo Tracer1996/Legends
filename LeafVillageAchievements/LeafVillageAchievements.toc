@@ -1,10 +1,11 @@
 ## Interface: 11200
 ## Title: Ashen Banner Achievements
 ## Notes: Standalone achievements, titles, mount collections, and companion collections
-## Version: 4.1.9
+## Version: 4.2.0
 ## SavedVariablesPerCharacter: LeafVE_AchTest_DB
 data\LeafVE_ConsumablesDB.lua
 LeafVillageAchievements.lua
+data\LeafVE_Ach_Perf.lua
 data\LeafVE_Ach_Kills.lua
 data\LeafVE_Ach_Skills.lua
 data\LeafVE_Ach_Identity.lua

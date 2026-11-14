@@ -10,7 +10,7 @@ LeafVE_AchTest.DEBUG = false -- Set to true for debug messages
 LeafVE_AchTest.initialized = false -- Set to true after PLAYER_ENTERING_WORLD backlog scan
 
 local ADDON_COMM_PREFIX = "LeafVEAch"
-local LEAFVE_RELEASE_VERSION = "4.1.9"
+local LEAFVE_RELEASE_VERSION = "4.2.0"
 local VERSION_REMINDER_INTERVAL = 24 * 60 * 60
 local LEAFVE_ANNOUNCEMENT_ITEM_ID = 6948
 
@@ -1559,7 +1559,31 @@ end
 
 local function ResolveBossName(bossName)
   if not bossName or bossName == "" then return nil end
+  -- v4.2.0: every kill message used to run the fuzzy / one-typo search below
+  -- for ordinary mobs too. Remember the answer per name (bounded).
+  local cache = LeafVE_AchTest._bossNameCache
+  if not cache then
+    cache = {}
+    LeafVE_AchTest._bossNameCache = cache
+    LeafVE_AchTest._bossNameCacheSize = 0
+  end
+  local hit = cache[bossName]
+  if hit ~= nil then
+    if hit == false then return nil end
+    return hit
+  end
+  local resolved = LeafVE_AchTest._ResolveBossNameUncached(bossName)
+  if LeafVE_AchTest._bossNameCacheSize >= 400 then
+    cache = {}
+    LeafVE_AchTest._bossNameCache = cache
+    LeafVE_AchTest._bossNameCacheSize = 0
+  end
+  cache[bossName] = resolved or false
+  LeafVE_AchTest._bossNameCacheSize = LeafVE_AchTest._bossNameCacheSize + 1
+  return resolved
+end
 
+LeafVE_AchTest._ResolveBossNameUncached = function(bossName)
   local alias = BOSS_NAME_ALIASES[bossName]
   if alias then
     bossName = alias
@@ -1685,15 +1709,18 @@ LeafVE_AchTest.API = {
     
     local achievements = {}
     for achId, achData in pairs(LeafVE_AchTest_DB.achievements[playerName]) do
-      if type(achData) == "table" and achData.points and achData.timestamp then
-        local achievement = ACHIEVEMENTS[achId]
+      -- table {timestamp, points} for this character; plain timestamp for others (v4.2.0)
+      local achTimestamp = (type(achData) == "table" and achData.timestamp) or (type(achData) == "number" and achData) or nil
+      local achievement = ACHIEVEMENTS[achId]
+      local achPoints = (type(achData) == "table" and achData.points) or (achievement and achievement.points) or nil
+      if achTimestamp and achPoints then
         if achievement then
           table.insert(achievements, {
             id = achId,
             name = achievement.name,
             icon = LeafVE_AchTest.ResolveMissingCollectionIcon(achievement) or GetAchievementIcon(achId),
-            points = achData.points,
-            timestamp = achData.timestamp,
+            points = achPoints,
+            timestamp = achTimestamp,
             criteria_type = achievement.criteria_type,
             criteria_overlays = achievement.criteria_overlays,
             criteria_bounds = achievement.criteria_bounds,
@@ -2472,6 +2499,10 @@ end
 -- Broadcast your achievements to guild
 function LeafVE_AchTest:BroadcastAchievements()
   if not IsInGuild() then return end
+  if self:IsQuiet() then
+    self.perf.pending.ach = true -- sent after leaving combat/instance
+    return
+  end
   
   local me = ShortName(UnitName("player"))
   if not me then return end
@@ -2533,7 +2564,12 @@ end
 -- additively (see OnAddonMessage below) -- no reset-on-first-chunk needed.
 function LeafVE_AchTest:BroadcastMyCollections()
   if not IsInGuild() then return end
+  if self:IsQuiet() then
+    self.perf.pending.col = true
+    return
+  end
   EnsureDB()
+  self:NoteOwnCollectionsSignature()
   if not LeafVE_AchTest_DB.collections then return end
 
   local me = ShortName(UnitName("player"))
@@ -2592,7 +2628,10 @@ end
 -- sitting in everyone else's saved variables.
 function LeafVE_AchTest:RequestGuildCollections()
   if not IsInGuild() then return end
-  SendAddonMessage(ADDON_COMM_PREFIX, "COLREQ", "GUILD")
+  -- v4.2.0: ask only for what changed since this character was last online
+  -- (members with nothing new stay silent). Pre-4.2.0 clients ignore COLREQ2
+  -- and still answer their own login broadcast as before.
+  self:RequestGuildCollectionsSince(self:GetLastSeenOnline())
 end
 
 -- Receive other players' achievements (FIXED for Vanilla WoW)
@@ -2609,6 +2648,23 @@ function LeafVE_AchTest:OnAddonMessage(prefix, message, channel, sender)
   if sender == me then return end
 
   Debug("Received addon message from "..sender)
+
+  -- v4.2.0: background sync is ignored in combat / instances / raid groups.
+  if self:PerfShouldDropMessage(message) then return end
+
+  -- "COLREQ2:<since>": someone logged in; answer only if our own
+  -- achievements or collections changed after they were last online.
+  if string.sub(message, 1, 8) == "COLREQ2:" then
+    local since = tonumber(string.sub(message, 9)) or 0
+    if self:GetMyLastChangeAt() > since then
+      self._colReqIncludeAch = true
+      if not self._colReqResponsePending then
+        self._colReqResponsePending = true
+        self._colReqResponseDelay = math.random() * 6 + 1
+      end
+    end
+    return
+  end
 
   if message == "VERREQ" then
     self:BroadcastVersion()
@@ -2671,10 +2727,9 @@ function LeafVE_AchTest:OnAddonMessage(prefix, message, channel, sender)
           local timestamp = string.sub(achEntry, colonPos1 + 1, colonPos2 - 1)
           local points = string.sub(achEntry, colonPos2 + 1)
           
-          achievements[achID] = {
-            timestamp = tonumber(timestamp),
-            points = tonumber(points)
-          }
+          -- v4.2.0: other players' entries are stored as just the
+          -- timestamp (points come from the achievement definition).
+          achievements[achID] = tonumber(timestamp) or 0
         end
       end
     end
@@ -2792,12 +2847,19 @@ broadcastFrame:SetScript("OnUpdate", function()
     LeafVE_AchTest._colReqResponseDelay = LeafVE_AchTest._colReqResponseDelay - arg1
     if LeafVE_AchTest._colReqResponseDelay <= 0 then
       LeafVE_AchTest._colReqResponsePending = false
+      if LeafVE_AchTest._colReqIncludeAch then
+        LeafVE_AchTest._colReqIncludeAch = false
+        LeafVE_AchTest:BroadcastAchievements()
+      end
       LeafVE_AchTest:BroadcastMyCollections()
     end
   end
 
+  -- v4.2.0: was every 5 minutes for every member (everything, changed or
+  -- not). Changes are sent the moment they happen and logins ask for what
+  -- they missed (COLREQ2), so this is only an hourly safety net.
   broadcastTimer = broadcastTimer + arg1
-  if broadcastTimer >= 300 then -- 5 minutes
+  if broadcastTimer >= 3600 and not LeafVE_AchTest:IsQuiet() then
     broadcastTimer = 0
     LeafVE_AchTest:BroadcastAchievements()
     LeafVE_AchTest:BroadcastMyCollections()
@@ -2821,8 +2883,10 @@ loginBroadcast:SetScript("OnEvent", function()
         -- runs once a player opens the Mounts/Companions tab, which would
         -- leave this login broadcast sending stale or empty data for
         -- anyone who hasn't visited those tabs yet this session.
-        if LeafVE_AchTest.Collections and LeafVE_AchTest.Collections.ScanSpellbook then
-          LeafVE_AchTest.Collections:ScanSpellbook(false)
+        -- v4.2.0: the shared scan (data\LeafVE_Ach_Perf.lua) normally ran ~2s
+        -- after PLAYER_ENTERING_WORLD already; only scans now if it hasn't.
+        if not LeafVE_AchTest:HasRunSpellScan() then
+          LeafVE_AchTest:RunSpellScanNow(false)
         end
         LeafVE_AchTest:BroadcastAchievements()
         LeafVE_AchTest:BroadcastMyCollections()
@@ -4470,6 +4534,13 @@ function LeafVE_AchTest:CheckAchievementMetaAchievements(silent)
       end
     end
   end
+end
+
+-- v4.2.0: cheap "would CheckBossKill do anything for this name?" test.
+function LeafVE_AchTest:IsTrackedBossName(name)
+  if not name or name == "" then return false end
+  if BOSS_GROUP_ALIASES[name] then return true end
+  return ResolveBossName(name) ~= nil
 end
 
 function LeafVE_AchTest:CheckBossKill(bossName, silent)
@@ -9474,7 +9545,12 @@ ef:SetScript("OnEvent", function()
   end
   if event == "PLAYER_TARGET_CHANGED" then
     local tname = UnitName("target")
-    if tname then recentTargets[string.lower(tname)] = time() end
+    if tname then
+      -- v4.2.0: only bosses are ever looked up here; keep the table small.
+      if LeafVE_AchTest:IsTrackedBossName(tname) then
+        recentTargets[string.lower(tname)] = time()
+      end
+    end
   end
   if event == "PLAYER_LEVEL_UP" and LeafVE_AchTest.initialized then
     local me = ShortName(UnitName("player"))
@@ -9505,7 +9581,8 @@ ef:SetScript("OnEvent", function()
     LeafVE_AchTest:CaptureReputationSnapshot(true)
     LeafVE_AchTest:CheckReputationAchievements()
   end
-  if event == "UNIT_INVENTORY_CHANGED" and arg1 == "player" and LeafVE_AchTest.initialized then
+  if event == "UNIT_INVENTORY_CHANGED" and arg1 == "player" and LeafVE_AchTest.initialized
+     and LeafVE_AchTest:GearChangedFor("equipAch") then
     LeafVE_AchTest:CheckEquipmentAchievements()
   end
   if (event == "CHAT_MSG_BG_SYSTEM_ALLIANCE" or event == "CHAT_MSG_BG_SYSTEM_HORDE" or event == "CHAT_MSG_BG_SYSTEM_NEUTRAL")
@@ -9541,6 +9618,11 @@ ef:SetScript("OnEvent", function()
     if not mobName then
       local fallbackName = smatch(msg, "^(.+) dies%.$")
         or smatch(msg, "^(.+) has been slain%.$")
+      -- v4.2.0: only tracked bosses matter below, so skip the per-raid-member
+      -- target loop for every ordinary mob death (dozens per pull in a raid).
+      if fallbackName and not LeafVE_AchTest:IsTrackedBossName(fallbackName) then
+        fallbackName = nil
+      end
       if fallbackName then
         local lname = string.lower(fallbackName)
         local recentlyTargeted = recentTargets[lname]
@@ -9806,7 +9888,9 @@ LeafVE_AchTest.guildPollFrame:SetScript("OnUpdate", function()
   if not LeafVE_AchTest.initialized then return end
   LeafVE_AchTest.guildPollElapsed = LeafVE_AchTest.guildPollElapsed + arg1
   -- 60s, not 15s: every GuildRoster() makes all guild addons re-scan the roster.
-  if LeafVE_AchTest.guildPollElapsed >= 60 then
+  -- v4.2.0: 5 minutes (each GuildRoster() makes every guild addon rescan the
+  -- whole roster), and never in combat/instances.
+  if LeafVE_AchTest.guildPollElapsed >= 300 and not LeafVE_AchTest:IsQuiet() then
     LeafVE_AchTest.guildPollElapsed = 0
     if IsInGuild and IsInGuild() and GuildRoster then GuildRoster() end
   end

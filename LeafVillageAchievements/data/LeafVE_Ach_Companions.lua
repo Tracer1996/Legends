@@ -367,12 +367,7 @@ end
 
 RegisterCompanionAchievements()
 
-local companionFrame=CreateFrame("Frame")
-companionFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-companionFrame:RegisterEvent("SPELLS_CHANGED")
-local companionReady=false
-companionFrame:SetScript("OnEvent",function()
-  if event=="PLAYER_ENTERING_WORLD" then companionReady=true; ScanCompanions(true); return end
-  if not companionReady then return end
-  if event=="SPELLS_CHANGED" then ScanCompanions(false) end
-end)
+-- v4.2.0: driven by the shared spellbook scan (data\LeafVE_Ach_Perf.lua), which
+-- runs once after login (first=true: silent seed, as before) and afterwards
+-- only when the spellbook really changed -- not on every loading screen.
+LeafVE_AchTest:RegisterSpellScanner("companions",function(first) ScanCompanions(first) end)

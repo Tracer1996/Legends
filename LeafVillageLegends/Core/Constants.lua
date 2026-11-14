@@ -1,6 +1,6 @@
 _G = _G or (getfenv and getfenv(0)) or {}
 
-LATEST_VERSION = "19.2.1"
+LATEST_VERSION = "19.3.1"
 LEAFVE_STYLE = _G.LeafVE_Styles or {}
 LEAFVE_UI_MODERN = _G.LeafVE_UIModernization or {}
 
@@ -28,6 +28,13 @@ LBOARD_RESPOND_COOLDOWN = 30
 MYSTATS_RESPOND_COOLDOWN = 5
 MAX_FUTURE_EPOCH_OFFSET = 7 * SECONDS_PER_DAY
 SHOUT_SYNC_RESPOND_COOLDOWN = 30
+-- v19.3.0 sync limits (see the PERFORMANCE section in Core.lua)
+ACH_SYNC_RESPOND_COOLDOWN = 120      -- own achievements re-sent on request at most this often
+SHOUT_BROADCAST_MIN_GAP = 240        -- full shoutout table sent by one client at most this often
+SHOUT_DIGEST_INTERVAL = 900          -- shoutout digest (one short message) sent this often
+TALENT_FULL_BROADCAST_MIN_GAP = 60   -- full (template-carrying) talent payload at most this often
+SYNC_STALE_CACHE_SECONDS = 90 * SECONDS_PER_DAY
+OTHER_PLAYER_HISTORY_KEEP_SECONDS = 60 * SECONDS_PER_DAY
 DEFAULT_ACHIEVEMENT_POINTS = 10
 FULL_WIPE_GUILD_MARKER = "LVLFW"
 FULL_WIPE_GUILD_MARKER_PATTERN = "%[" .. FULL_WIPE_GUILD_MARKER .. ":(%d+)%]"

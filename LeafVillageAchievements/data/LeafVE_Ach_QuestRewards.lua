@@ -285,7 +285,10 @@ rewardFrame:SetScript("OnEvent", function()
     InstallQuestRewardUseHooks()
   elseif event == "PLAYER_ENTERING_WORLD" then
     ScanQuestRewardEquipment(true)
-  elseif event == "UNIT_INVENTORY_CHANGED" and arg1 == "player" and LeafVE_AchTest and LeafVE_AchTest.initialized then
+  elseif event == "UNIT_INVENTORY_CHANGED" and arg1 == "player" and LeafVE_AchTest and LeafVE_AchTest.initialized
+     and LeafVE_AchTest:GearChangedFor("questRewardAch") then
+    -- v4.2.0: only when equipped items changed (this event also fires for
+    -- bag and durability changes, constantly in combat)
     ScanQuestRewardEquipment(false)
   end
 end)

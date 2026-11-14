@@ -648,6 +648,7 @@ function ABC:ScanSpellbook(verbose)
   ABC.scanCount = ABC.scanCount + 1
 
   local scannedTabs = false
+  local lastTabIndex = 0
   if GetNumSpellTabs and GetSpellTabInfo then
     local nTabs = GetNumSpellTabs() or 0
     for tabIndex = 1, nTabs do
@@ -661,13 +662,17 @@ function ABC:ScanSpellbook(verbose)
         for i = firstIndex, lastIndex do
           ScanSpellByIndex(i, BOOK_SPELL, tabName)
         end
+        if lastIndex > lastTabIndex then lastTabIndex = lastIndex end
       end
     end
   end
 
   -- Fallback: scan the main spell book linearly. This is also useful if Turtle exposes the collection
   -- spells without giving them normal spell tabs.
-  local i = 1
+  -- v4.2.0: start after the spells the tab pass already covered (it used to
+  -- walk the whole book a second time; with a tab name a spell is always
+  -- classified at least as well as without one).
+  local i = lastTabIndex + 1
   while i <= 600 do
     local ok = ScanSpellByIndex(i, BOOK_SPELL, nil)
     if not ok then break end
@@ -3823,19 +3828,27 @@ SlashCmdList["ASHENBANNERCOLLECTIONS"] = function(msg)
   else ABC:Help() end
 end
 
+-- v4.2.0: the spellbook scan used to run here on PLAYER_LOGIN, every
+-- PLAYER_ENTERING_WORLD (loading screens), every SPELLS_CHANGED and on
+-- ADDON_LOADED -- which fires once for EVERY addon (~80 full scans at login).
+-- It now runs through the shared, debounced scheduler in data\LeafVE_Ach_Perf.lua,
+-- only when the spellbook actually changed.
+if LeafVE_AchTest and LeafVE_AchTest.RegisterSpellScanner then
+  LeafVE_AchTest:RegisterSpellScanner("collections", function()
+    ABC:ScanSpellbook(false)
+  end)
+end
+
 local evt = CreateFrame("Frame")
 evt:RegisterEvent("PLAYER_LOGIN")
 evt:RegisterEvent("PLAYER_ENTERING_WORLD")
-evt:RegisterEvent("SPELLS_CHANGED")
-evt:RegisterEvent("LEARNED_SPELL_IN_TAB")
 evt:RegisterEvent("ADDON_LOADED")
 evt:SetScript("OnEvent", function()
-  if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" or event == "ADDON_LOADED" then
-    ABC:InstallHooks()
-    ABC:ScanSpellbook(false)
-  elseif event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_TAB" then
-    ABC:ScanSpellbook(false)
+  if ABC.installedHooks then
+    this:UnregisterAllEvents()
+    return
   end
+  ABC:InstallHooks()
 end)
 
 -- Retry hook install briefly in case the base addon initializes its UI table late.
@@ -4152,7 +4165,10 @@ function ABC:PurgeRejectedMountData()
       end
     end
   end
-  if LeafVE_AchTest_DB and LeafVE_AchTest_DB.achievements then
+  -- v4.2.0: walking every guild member's achievements (1000+) only needs to
+  -- happen once per session, not on every scan.
+  if LeafVE_AchTest_DB and LeafVE_AchTest_DB.achievements and not ABC._purgedAllPlayersRejected then
+    ABC._purgedAllPlayersRejected = true
     for _, playerAchievements in pairs(LeafVE_AchTest_DB.achievements) do
       if type(playerAchievements) == "table" then
         for rejectedId in pairs(rejectedAchievementIds) do

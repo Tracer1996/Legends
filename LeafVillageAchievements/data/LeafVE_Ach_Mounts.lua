@@ -482,6 +482,26 @@ local function LooksLikeMountSpell(name,tooltip)
   return false
 end
 
+-- v4.2.0: the mount scan rendered a full tooltip for EVERY spell in the
+-- spellbook on every scan. Known names are decided without a tooltip, and the
+-- answer per spell name is remembered for the session.
+local mountSpellDecision={}
+local function IsMountSpellCached(spellName,index,book)
+  local cached=mountSpellDecision[spellName]
+  if cached~=nil then return cached end
+  local normalizedName=MountNormalize(spellName)
+  local result
+  if MOUNT_REJECTED_SPELL_NAMES[normalizedName] then
+    result=false
+  elseif MOUNT_BY_KEY[normalizedName] then
+    result=true
+  else
+    result=LooksLikeMountSpell(spellName,GetMountTooltipText(index,book))
+  end
+  mountSpellDecision[spellName]=result
+  return result
+end
+
 local function CopyDynamicEntries(state)
   local out={}
   local _,entry
@@ -587,8 +607,7 @@ function LeafVE_AchTest:ScanMountCollection(silent)
   while true do
     local spellName=GetSpellName(index,book)
     if not spellName then break end
-    local tooltip=GetMountTooltipText(index,book)
-    if LooksLikeMountSpell(spellName,tooltip) then
+    if IsMountSpellCached(spellName,index,book) then
       local entry=MOUNT_BY_KEY[MountNormalize(spellName)]
       local spellIcon=GetSpellTexture and GetSpellTexture(index,book) or nil
       if entry then
@@ -660,18 +679,5 @@ LeafVE_AchTest.MountModelPresets=MOUNT_MODEL_PRESETS
 -- once (mirrors companionReady/toyReady in the companion/toy scanners) --
 -- it can otherwise fire while the spellbook is still settling during
 -- login, racing ahead of the initial silent scan.
-local mountCollectionEvents=CreateFrame("Frame")
-mountCollectionEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
-mountCollectionEvents:RegisterEvent("SPELLS_CHANGED")
-local mountReady=false
-mountCollectionEvents:SetScript("OnEvent",function()
-  if event=="PLAYER_ENTERING_WORLD" then
-    mountReady=true
-    LeafVE_AchTest:ScanMountCollection(true)
-    return
-  end
-  if not mountReady then return end
-  if event=="SPELLS_CHANGED" then
-    LeafVE_AchTest:ScanMountCollection(false)
-  end
-end)
+-- v4.2.0: driven by the shared spellbook scan (see LeafVE_Ach_Companions.lua).
+LeafVE_AchTest:RegisterSpellScanner("mounts",function(first) LeafVE_AchTest:ScanMountCollection(first) end)

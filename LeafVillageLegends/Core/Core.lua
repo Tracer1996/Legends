@@ -5,7 +5,7 @@ AtlasLoot_Data = AtlasLoot_Data or {}
 LeafVE = LeafVE or {}
 LeafVE.name = "LeafVillageLegends"
 LeafVE.prefix = "LeafVE"
-LeafVE.version = "19.2.1"
+LeafVE.version = "19.3.1"
 LeafVE.allianceEnabled = false
 LeafVE.isAllianceStandalone = false
 LeafVE.guildBankOwner = "Methllyy"
@@ -3942,10 +3942,13 @@ local function LayoutPlayerCardStatusBadges(ui)
   end
 end
 
-local function EnsureDB()
+function LeafVE_EnsureDBFull()
   if not LeafVE_DB then LeafVE_DB = {} end
   if not LeafVE_GlobalDB then LeafVE_GlobalDB = {} end
   PurgeDisabledFeatureData()
+  -- Perf (v19.3.0): the loops below walk every player's leaderboard/badge
+  -- rows. They only need to run once per loaded saved-variables table.
+  local sweepNeeded = (LeafVE.ensureDBSweepRef ~= LeafVE_DB)
   -- Detect version upgrade and notify the player once per session.
   if LeafVE_DB.addonVersion ~= LeafVE.version then
     if LeafVE_DB.addonVersion then
@@ -4015,6 +4018,7 @@ local function EnsureDB()
   if not LeafVE_DB.lboard.season then LeafVE_DB.lboard.season = {} end
   if not LeafVE_DB.lboard.updatedAt then LeafVE_DB.lboard.updatedAt = {} end
   if not LeafVE_DB.lboard.weeklyVersion then LeafVE_DB.lboard.weeklyVersion = {} end
+  if sweepNeeded then
   -- Migrate: older code stored updatedAt[name] as a plain timestamp number; now it must be a table
   for k, v in pairs(LeafVE_DB.lboard.updatedAt) do
     if type(v) == "number" then LeafVE_DB.lboard.updatedAt[k] = { lifetime = v } end
@@ -4025,6 +4029,7 @@ local function EnsureDB()
     if type(LeafVE_DB.lboard.weeklyVersion[wk]) ~= "table" then
       LeafVE_DB.lboard.weeklyVersion[wk] = {}
     end
+  end
   end
   if LeafVE_DB.ui.w == nil then LeafVE_DB.ui.w = LeafVE.uiDefaultWidth end
   if LeafVE_DB.ui.h == nil then LeafVE_DB.ui.h = LeafVE.uiDefaultHeight end
@@ -4173,6 +4178,7 @@ local function EnsureDB()
     LeafVE_DB.badgesAnnounced = {}
     LeafVE_DB.badgeBucketVersion = currentBadgeBucket
   end
+  if sweepNeeded or LeafVE.ensureDBSweepBadges ~= LeafVE_DB.badges then
   -- Migration/safety: "__fw" is a transport marker, never a real badge entry.
   for _, badgeMap in pairs(LeafVE_DB.badges or {}) do
     if type(badgeMap) == "table" then
@@ -4188,10 +4194,40 @@ local function EnsureDB()
       LeafVE_DB.badgesAnnounced[announcedKey] = nil
     end
   end
+  LeafVE.ensureDBSweepBadges = LeafVE_DB.badges
+  end
+  LeafVE.ensureDBSweepRef = LeafVE_DB
   if LeafVE_DB.options.groupPoints == nil then LeafVE_DB.options.groupPoints = GROUP_POINTS end
   if LeafVE_DB.options.loginPoints == nil then LeafVE_DB.options.loginPoints = 20 end
   if not LeafVE_DB.raidProfile then LeafVE_DB.raidProfile = {} end
   if LeafVE_DB.raidProfile.defaultRole == nil then LeafVE_DB.raidProfile.defaultRole = "" end
+end
+
+-- Perf (v19.3.0): EnsureDB() is called from ~200 places, many of them once per
+-- incoming guild message or per list row. The full pass above is ~200 table
+-- checks plus sweeps, so it now only re-runs when the saved tables were
+-- replaced (login, wipe), the wipe version changed, a core table is missing,
+-- or 30 seconds have passed. Nothing in the addon clears the tables it
+-- creates (checked for v19.3.0), so the fast path is equivalent.
+local function EnsureDB()
+  local st = LeafVE.ensureDBState
+  if st and LeafVE_DB and LeafVE_GlobalDB
+     and st.db == LeafVE_DB and st.gdb == LeafVE_GlobalDB
+     and st.wipe == LeafVE_GlobalDB.fullWipeVersion
+     and LeafVE_DB.options and LeafVE_DB.lboard and LeafVE_DB.badges and LeafVE_DB.pointHistory
+     and LeafVE_DB.shoutouts and LeafVE_GlobalDB.lboardCache
+     and (GetTime() - st.at) < 30 then
+    return
+  end
+  LeafVE_EnsureDBFull()
+  if not st then
+    st = {}
+    LeafVE.ensureDBState = st
+  end
+  st.db = LeafVE_DB
+  st.gdb = LeafVE_GlobalDB
+  st.wipe = LeafVE_GlobalDB.fullWipeVersion
+  st.at = GetTime()
 end
 
 local function LboardEntryTotal(entry)
@@ -10099,12 +10135,13 @@ function LeafVE:GiveShoutout(targetName, reason)
   local count = 0
   for tname, timestamp in pairs(LeafVE_DB.shoutouts[giverName]) do
     local shoutTs = tonumber(timestamp) or 0
-    local shoutoutDay = DayKeyFromTS(shoutTs)
-    if (bucket <= 0 or shoutTs >= bucket) and shoutoutDay == today then 
-      count = count + 1 
-    else 
-      LeafVE_DB.shoutouts[giverName][tname] = nil 
+    if shoutTs <= 0 or (bucket > 0 and shoutTs < bucket) then
+      LeafVE_DB.shoutouts[giverName][tname] = nil
+    elseif DayKeyFromTS(shoutTs) == today then
+      count = count + 1
     end
+    -- v19.3.0: earlier days are kept (they used to be deleted here), so this
+    -- client's shoutout history matches everyone else's and no resync is needed.
   end
   
   local maxDaily = self:GetShoutoutDailyLimitForPlayer(giverName)
@@ -10449,7 +10486,9 @@ function LeafVE:SendResyncRequest(force)
   self.lastResyncRequestAt = now
   if InGuild() then
     SendAddonMessage("LeafVE", force and "LBOARDREQ_FORCE" or "LBOARDREQ", "GUILD")
-    SendAddonMessage("LeafVE", force and "SHOUTSYNCREQ_FORCE" or "SHOUTSYNCREQ", "GUILD")
+    -- v19.3.0: one short digest instead of SHOUTSYNCREQ (which made every
+    -- online member re-send their whole shoutout table).
+    self:SendShoutoutDigest()
   end
 end
 
@@ -10458,9 +10497,11 @@ function LeafVE:BroadcastShoutoutHistory()
   EnsureDB()
 
   local entries = {}
+  local bucket = CurrentWipeVersion()
   for giver, targets in pairs(LeafVE_DB.shoutouts) do
     for target, timestamp in pairs(targets) do
-      if type(timestamp) == "number" and timestamp > 0 then
+      -- Pre-wipe rows are ignored by every receiver, so don't send them.
+      if type(timestamp) == "number" and timestamp > 0 and (bucket <= 0 or timestamp >= bucket) then
         table.insert(entries, giver..SEP..target..SEP..tostring(timestamp))
       end
     end
@@ -10505,6 +10546,10 @@ function LeafVE:MergeShoutoutHistory(payload)
   local bucket = CurrentWipeVersion()
   local updated = false
   local startPos = 1
+  -- v19.3.0: digest of the incoming set (same rules as GetShoutoutDigest) so
+  -- the caller can tell whether we hold rows the sender lacks.
+  local inCount, inDays = 0, 0
+  local today = DayKey()
 
   while startPos <= string.len(payload) do
     local commaPos = string.find(payload, ",", startPos)
@@ -10527,11 +10572,27 @@ function LeafVE:MergeShoutoutHistory(payload)
         local target = string.sub(rest, 1, sep2 - 1)
         local timestamp = tonumber(string.sub(rest, sep2 + 1))
         if giver ~= "" and target ~= "" and timestamp then
+          if timestamp > 0 and (bucket <= 0 or timestamp >= bucket) then
+            inCount = inCount + 1
+            inDays = inDays + math.floor(timestamp / 86400)
+          end
           -- Ignore stale shoutout history from pre-wipe seasons.
           if bucket > 0 and timestamp < bucket then
             -- no-op
-          -- Skip entries where we are the giver (already recorded locally)
-          elseif not (me and Lower(me) == Lower(giver)) then
+          elseif me and Lower(me) == Lower(giver) then
+            -- Our own shoutout: its points were already applied locally when we
+            -- gave it, so never award here. Older clients deleted their own
+            -- past rows; restore those (not today's, so /resetshoutouts still
+            -- resets today's limit) so every client converges on the same set.
+            if not LeafVE_DB.shoutouts[giver] then
+              LeafVE_DB.shoutouts[giver] = {}
+            end
+            local ownExisting = LeafVE_DB.shoutouts[giver][target]
+            if (not ownExisting and DayKeyFromTS(timestamp) ~= today)
+               or (ownExisting and timestamp > ownExisting) then
+              LeafVE_DB.shoutouts[giver][target] = timestamp
+            end
+          else
             if not LeafVE_DB.shoutouts[giver] then
               LeafVE_DB.shoutouts[giver] = {}
             end
@@ -10573,6 +10634,7 @@ function LeafVE:MergeShoutoutHistory(payload)
       LeafVE.UI:RefreshLeaderboard("leaderWeek")
     end
   end
+  return inCount, inDays
 end
 
 function LeafVE:BroadcastPlayerNote(noteText)
@@ -10614,6 +10676,250 @@ local function TalentKeySort(a, b)
   return aTab < bTab
 end
 
+-------------------------------------------------
+-- TALENTS (v19.3.0: compact storage)
+-- Each player's entry used to carry the full name, icon, position and
+-- tooltip text of every talent (~25 KB per player, 2.6 MB for the guild) and
+-- was sent as ~150 addon messages. Now:
+--   talentCache[name] = { updatedAt, receivedAt, class, activeTab,
+--                         tabs = { {index, name, icon, points}, ... },
+--                         ranks = "05230000...0.31020...0.000..." }
+-- (one digit per talent, tabs separated by '.'), and the static per-class
+-- data (position, name, icon, tooltip text per rank) is stored ONCE per class
+-- in LeafVE_GlobalDB.talentTemplates[CLASS]. A normal broadcast is a single
+-- "GTAL2:" message. The old full "GTALSYNC:" format is still sent to
+-- pre-19.3.0 clients and to clients that don't have that class's template yet,
+-- and is still accepted from everyone.
+-------------------------------------------------
+function LeafVE:GetTalentTemplate(classTag, create)
+  if not classTag or classTag == "" or classTag == "UNKNOWN" then return nil end
+  classTag = string.upper(classTag)
+  if type(LeafVE_GlobalDB.talentTemplates) ~= "table" then
+    if not create then return nil end
+    LeafVE_GlobalDB.talentTemplates = {}
+  end
+  local tpl = LeafVE_GlobalDB.talentTemplates[classTag]
+  if type(tpl) ~= "table" then
+    if not create then return nil end
+    tpl = { tabs = {}, talents = {}, maxIndex = {} }
+    LeafVE_GlobalDB.talentTemplates[classTag] = tpl
+  end
+  if type(tpl.tabs) ~= "table" then tpl.tabs = {} end
+  if type(tpl.talents) ~= "table" then tpl.talents = {} end
+  if type(tpl.maxIndex) ~= "table" then tpl.maxIndex = {} end
+  return tpl
+end
+
+function LeafVE:TemplateHasTalents(tpl)
+  return type(tpl) == "table" and type(tpl.talents) == "table" and next(tpl.talents) ~= nil
+end
+
+-- Static data of one talent; tooltip text is kept per rank seen.
+function LeafVE:StoreTalentTemplateEntry(tpl, tabIndex, talentIndex, tier, column, maxRank, name, icon, rank, desc)
+  tabIndex = tonumber(tabIndex) or 0
+  talentIndex = tonumber(talentIndex) or 0
+  if not tpl or tabIndex < 1 or talentIndex < 1 then return end
+  local key = tostring(tabIndex) .. "_" .. tostring(talentIndex)
+  local t = tpl.talents[key]
+  if type(t) ~= "table" then
+    t = {}
+    tpl.talents[key] = t
+  end
+  t.tab = tabIndex
+  t.index = talentIndex
+  t.tier = tonumber(tier) or t.tier or 1
+  t.column = tonumber(column) or t.column or 1
+  t.maxRank = tonumber(maxRank) or t.maxRank or 0
+  if name and name ~= "" then t.name = name end
+  if icon and icon ~= "" then t.icon = icon end
+  if desc and desc ~= "" then
+    if type(t.desc) ~= "table" then t.desc = {} end
+    t.desc[tostring(tonumber(rank) or 0)] = desc
+  end
+  if (tpl.maxIndex[tabIndex] or 0) < talentIndex then
+    tpl.maxIndex[tabIndex] = talentIndex
+  end
+end
+
+function LeafVE:GetTemplateTabCount(tpl, fallback)
+  local count = tonumber(fallback) or 0
+  if tpl and type(tpl.maxIndex) == "table" then
+    for tabIndex in pairs(tpl.maxIndex) do
+      tabIndex = tonumber(tabIndex) or 0
+      if tabIndex > count then count = tabIndex end
+    end
+  end
+  return count
+end
+
+-- rankByKey: "tab_index" -> rank. One digit per talent, tabs joined by '.'.
+function LeafVE:EncodeTalentRanks(rankByKey, maxIndexByTab, tabCount)
+  local parts = {}
+  for tabIndex = 1, (tonumber(tabCount) or 0) do
+    local digits = {}
+    local maxIdx = tonumber(maxIndexByTab and maxIndexByTab[tabIndex]) or 0
+    for idx = 1, maxIdx do
+      local r = tonumber(rankByKey[tostring(tabIndex) .. "_" .. tostring(idx)]) or 0
+      if r < 0 then r = 0 elseif r > 9 then r = 9 end
+      digits[idx] = tostring(r)
+    end
+    parts[tabIndex] = table.concat(digits, "")
+  end
+  return table.concat(parts, ".")
+end
+
+-- Rebuild the old per-talent table (tab, index, tier, column, rank, maxRank,
+-- name, icon, desc) from ranks + class template. Only the talent popup needs it.
+function LeafVE:ExpandTalentSnapshot(snapshot)
+  local talents = {}
+  if type(snapshot) ~= "table" then return talents end
+  if type(snapshot.talents) == "table" then return snapshot.talents end -- not migrated yet
+  local tpl = self:GetTalentTemplate(snapshot.class, false)
+  if not tpl then return talents end
+  local ranks = tostring(snapshot.ranks or "")
+  local len = string.len(ranks)
+  local tabIndex = 1
+  local startPos = 1
+  while startPos <= len + 1 do
+    local dot = string.find(ranks, ".", startPos, true)
+    local seg
+    if dot then
+      seg = string.sub(ranks, startPos, dot - 1)
+    else
+      seg = string.sub(ranks, startPos)
+    end
+    for idx = 1, string.len(seg) do
+      local key = tostring(tabIndex) .. "_" .. tostring(idx)
+      local meta = tpl.talents[key]
+      if type(meta) == "table" then
+        local rank = tonumber(string.sub(seg, idx, idx)) or 0
+        local desc = ""
+        if type(meta.desc) == "table" then
+          desc = meta.desc[tostring(rank)]
+          if not desc then
+            -- closest rank we have tooltip text for
+            local bestDist = 99
+            for rk, text in pairs(meta.desc) do
+              local dist = math.abs((tonumber(rk) or 0) - rank)
+              if dist < bestDist then
+                bestDist = dist
+                desc = text
+              end
+            end
+          end
+        elseif type(meta.desc) == "string" then
+          desc = meta.desc
+        end
+        talents[key] = {
+          tab = tabIndex,
+          index = idx,
+          tier = tonumber(meta.tier) or 1,
+          column = tonumber(meta.column) or 1,
+          rank = rank,
+          maxRank = tonumber(meta.maxRank) or 0,
+          name = meta.name or "",
+          icon = meta.icon or "Interface\\Icons\\INV_Misc_QuestionMark",
+          desc = desc or "",
+        }
+      end
+    end
+    if not dot then break end
+    startPos = dot + 1
+    tabIndex = tabIndex + 1
+  end
+  return talents
+end
+
+-- Read-only view for callers: .talents is built on first access only.
+function LeafVE:MakeTalentSnapshotView(snapshot)
+  local view = {
+    updatedAt = snapshot.updatedAt,
+    receivedAt = snapshot.receivedAt,
+    class = snapshot.class,
+    activeTab = snapshot.activeTab,
+    tabs = snapshot.tabs or {},
+    ranks = snapshot.ranks,
+  }
+  setmetatable(view, {
+    __index = function(t, k)
+      if k == "talents" then
+        local talents = LeafVE:ExpandTalentSnapshot(snapshot)
+        rawset(t, "talents", talents)
+        return talents
+      end
+      return nil
+    end,
+  })
+  return view
+end
+
+-- Convert a full (legacy-format) snapshot into template + compact ranks.
+function LeafVE:CompactTalentSnapshot(snapshot)
+  if type(snapshot) ~= "table" or type(snapshot.talents) ~= "table" then return snapshot end
+  local tpl = self:GetTalentTemplate(snapshot.class, true)
+  if not tpl then return nil end -- class unknown: cannot be stored compactly
+  local rankByKey = {}
+  for key, t in pairs(snapshot.talents) do
+    if type(t) == "table" then
+      self:StoreTalentTemplateEntry(tpl, t.tab, t.index, t.tier, t.column, t.maxRank, t.name, t.icon, t.rank, t.desc)
+      rankByKey[tostring(tonumber(t.tab) or 0) .. "_" .. tostring(tonumber(t.index) or 0)] = tonumber(t.rank) or 0
+    end
+  end
+  local tabCount = 0
+  for tabIndex, tab in pairs(snapshot.tabs or {}) do
+    tabIndex = tonumber(tabIndex) or 0
+    if tabIndex > tabCount then tabCount = tabIndex end
+    if type(tab) == "table" and tabIndex > 0 then
+      local tplTab = tpl.tabs[tabIndex]
+      if type(tplTab) ~= "table" then
+        tplTab = {}
+        tpl.tabs[tabIndex] = tplTab
+      end
+      if tab.name and tab.name ~= "" then tplTab.name = tab.name end
+      if tab.icon and tab.icon ~= "" then tplTab.icon = tab.icon end
+    end
+  end
+  tabCount = self:GetTemplateTabCount(tpl, tabCount)
+  snapshot.ranks = self:EncodeTalentRanks(rankByKey, tpl.maxIndex, tabCount)
+  snapshot.talents = nil
+  return snapshot
+end
+
+-- One-time conversion of the saved talent cache (runs once per session; a
+-- no-op once everything is compact).
+function LeafVE:MigrateTalentCacheToCompact()
+  local cache = LeafVE_GlobalDB and LeafVE_GlobalDB.talentCache
+  if type(cache) ~= "table" then return 0 end
+  local converted = 0
+  -- Pass 1: build every class template first so all players of a class share
+  -- the same talent positions when their ranks are encoded.
+  for _, snap in pairs(cache) do
+    if type(snap) == "table" and type(snap.talents) == "table" then
+      local tpl = self:GetTalentTemplate(snap.class, true)
+      if tpl then
+        for _, t in pairs(snap.talents) do
+          if type(t) == "table" then
+            self:StoreTalentTemplateEntry(tpl, t.tab, t.index, t.tier, t.column, t.maxRank, t.name, t.icon, t.rank, t.desc)
+          end
+        end
+      end
+    end
+  end
+  -- Pass 2: encode ranks, drop the per-player copies.
+  for nameLower, snap in pairs(cache) do
+    if type(snap) ~= "table" then
+      cache[nameLower] = nil
+    elseif type(snap.talents) == "table" then
+      if self:CompactTalentSnapshot(snap) then
+        converted = converted + 1
+      else
+        cache[nameLower] = nil -- unknown class; re-requested when viewed
+      end
+    end
+  end
+  return converted
+end
+
 function LeafVE:CaptureAndCacheMyTalents(force)
   EnsureDB()
   local me = ShortName(UnitName("player"))
@@ -10625,7 +10931,7 @@ function LeafVE:CaptureAndCacheMyTalents(force)
   end
   local now = Now()
   local existing = LeafVE_GlobalDB.talentCache[nameLower]
-  if not force and existing and (now - (self.lastTalentCaptureAt or 0)) < 3 then
+  if not force and existing and existing.ranks and (now - (self.lastTalentCaptureAt or 0)) < 3 then
     return existing
   end
 
@@ -10639,17 +10945,23 @@ function LeafVE:CaptureAndCacheMyTalents(force)
   end
 
   local classTag = self:GetClassTagForPlayer(me)
+  if not classTag or classTag == "" or classTag == "UNKNOWN" then
+    local _, englishClass = UnitClass("player")
+    if englishClass then classTag = string.upper(englishClass) end
+  end
+  local tpl = self:GetTalentTemplate(classTag, true)
   local snapshot = {
     updatedAt = now,
     receivedAt = now,
     class = classTag,
     activeTab = 1,
     tabs = {},
-    talents = {},
   }
 
+  local rankByKey = {}
+  local maxIndexByTab = {}
   local maxPoints = -1
-  local talentTip = GetOrCreateTalentScanTip()
+  local talentTip = nil
 
   for tabIndex = 1, tabCount do
     local tabName, tabIcon, pointsSpent = GetTalentTabInfo(tabIndex)
@@ -10661,51 +10973,57 @@ function LeafVE:CaptureAndCacheMyTalents(force)
       icon = normalizedTabIcon,
       points = pointsSpent,
     }
+    if tpl then
+      tpl.tabs[tabIndex] = { name = tabName or ("Tree " .. tostring(tabIndex)), icon = normalizedTabIcon }
+    end
     if pointsSpent > maxPoints then
       maxPoints = pointsSpent
       snapshot.activeTab = tabIndex
     end
 
     local talentCount = (GetNumTalents and GetNumTalents(tabIndex)) or 0
+    maxIndexByTab[tabIndex] = talentCount
     for talentIndex = 1, talentCount do
       local talentName, talentIcon, tier, column, rank, maxRank = GetTalentInfo(tabIndex, talentIndex)
       if talentName and tier and column then
-        local descLines = {}
-        if talentTip and talentTip.SetTalent then
-          local ok = pcall(function()
-            talentTip:ClearLines()
-            talentTip:SetTalent(tabIndex, talentIndex)
-          end)
-          if ok and talentTip.NumLines then
-            local lines = talentTip:NumLines() or 0
-            for lineIndex = 2, lines do
-              local leftFS = getglobal("LeafVE_TalentScanTipTextLeft" .. tostring(lineIndex))
-              local textLine = leftFS and leftFS:GetText()
-              if textLine and textLine ~= "" then
-                if not (lineIndex == 2 and string.find(string.lower(textLine), "rank", 1, true)) then
-                  table.insert(descLines, textLine)
+        rank = tonumber(rank) or 0
+        rankByKey[tostring(tabIndex) .. "_" .. tostring(talentIndex)] = rank
+        if tpl then
+          -- Tooltip text only needs scanning the first time we see this rank
+          -- (the scan used to run for every talent on every capture).
+          local meta = tpl.talents[tostring(tabIndex) .. "_" .. tostring(talentIndex)]
+          local desc = nil
+          if type(meta) ~= "table" or type(meta.desc) ~= "table" or not meta.desc[tostring(rank)] then
+            if not talentTip then talentTip = GetOrCreateTalentScanTip() end
+            local descLines = {}
+            if talentTip and talentTip.SetTalent then
+              local ok = pcall(function()
+                talentTip:ClearLines()
+                talentTip:SetTalent(tabIndex, talentIndex)
+              end)
+              if ok and talentTip.NumLines then
+                local lines = talentTip:NumLines() or 0
+                for lineIndex = 2, lines do
+                  local leftFS = getglobal("LeafVE_TalentScanTipTextLeft" .. tostring(lineIndex))
+                  local textLine = leftFS and leftFS:GetText()
+                  if textLine and textLine ~= "" then
+                    if not (lineIndex == 2 and string.find(string.lower(textLine), "rank", 1, true)) then
+                      table.insert(descLines, textLine)
+                    end
+                  end
                 end
               end
             end
+            desc = table.concat(descLines, "\n")
           end
+          self:StoreTalentTemplateEntry(tpl, tabIndex, talentIndex, tier, column, maxRank, talentName,
+            NormalizeIconPath(talentIcon) or "Interface\\Icons\\INV_Misc_QuestionMark", rank, desc)
         end
-
-        local key = tostring(tabIndex) .. "_" .. tostring(talentIndex)
-        snapshot.talents[key] = {
-          tab = tabIndex,
-          index = talentIndex,
-          tier = tonumber(tier) or 1,
-          column = tonumber(column) or 1,
-          rank = tonumber(rank) or 0,
-          maxRank = tonumber(maxRank) or 0,
-          name = talentName,
-          icon = NormalizeIconPath(talentIcon) or "Interface\\Icons\\INV_Misc_QuestionMark",
-          desc = table.concat(descLines, "\n"),
-        }
       end
     end
   end
 
+  snapshot.ranks = self:EncodeTalentRanks(rankByKey, maxIndexByTab, tabCount)
   LeafVE_GlobalDB.talentCache[nameLower] = snapshot
   self.lastTalentCaptureAt = now
   return snapshot
@@ -10720,7 +11038,7 @@ function LeafVE:GetTalentTreeSnapshotForPlayer(playerName, classTag, forceRefres
 
   if me and Lower(me) == nameLower then
     local existing = LeafVE_GlobalDB.talentCache and LeafVE_GlobalDB.talentCache[nameLower]
-    if forceRefresh or not existing or (Now() - (existing.updatedAt or 0)) > 30 then
+    if forceRefresh or not existing or not existing.ranks or (Now() - (existing.updatedAt or 0)) > 30 then
       self:CaptureAndCacheMyTalents(forceRefresh)
     end
   end
@@ -10730,11 +11048,17 @@ function LeafVE:GetTalentTreeSnapshotForPlayer(playerName, classTag, forceRefres
   if classTag and classTag ~= "" and classTag ~= "UNKNOWN" and (not snapshot.class or snapshot.class == "UNKNOWN") then
     snapshot.class = string.upper(classTag)
   end
-  return snapshot
+  if type(snapshot.talents) == "table" then
+    -- Saved before v19.3.0 and not migrated yet: convert now.
+    self:CompactTalentSnapshot(snapshot)
+  end
+  return self:MakeTalentSnapshotView(snapshot)
 end
 
+-- Legacy full payload (H/B/T records), built from ranks + template.
 function LeafVE:SerializeTalentSnapshot(snapshot)
   if not snapshot then return "" end
+  local talentsByKey = self:ExpandTalentSnapshot(snapshot)
 
   local records = {}
   table.insert(records,
@@ -10765,7 +11089,7 @@ function LeafVE:SerializeTalentSnapshot(snapshot)
   end
 
   local keys = {}
-  for key, talent in pairs(snapshot.talents or {}) do
+  for key, talent in pairs(talentsByKey) do
     if type(talent) == "table" then
       table.insert(keys, key)
     end
@@ -10773,7 +11097,7 @@ function LeafVE:SerializeTalentSnapshot(snapshot)
   table.sort(keys, TalentKeySort)
 
   for i = 1, table.getn(keys) do
-    local talent = snapshot.talents[keys[i]]
+    local talent = talentsByKey[keys[i]]
     table.insert(records,
       "T" .. SEP ..
       tostring(tonumber(talent.tab) or 1) .. SEP ..
@@ -10791,6 +11115,7 @@ function LeafVE:SerializeTalentSnapshot(snapshot)
   return table.concat(records, TALENT_RECORD_SEP)
 end
 
+-- Receive a legacy full payload: feeds the class template, stores compactly.
 function LeafVE:ApplyTalentPayload(playerName, updatedAt, payload)
   EnsureDB()
   playerName = ShortName(playerName)
@@ -10852,7 +11177,101 @@ function LeafVE:ApplyTalentPayload(playerName, updatedAt, payload)
   if not LeafVE_GlobalDB.talentCache then
     LeafVE_GlobalDB.talentCache = {}
   end
+  local compact = self:CompactTalentSnapshot(snapshot)
+  if compact then
+    LeafVE_GlobalDB.talentCache[nameLower] = compact
+  end
+end
+
+-- Receive "GTAL2:<name>:<updatedAt>:<CLASS>:<activeTab>:<p1,p2,p3>:<ranks>".
+function LeafVE:ApplyCompactTalentMessage(playerName, updatedAt, classTag, activeTab, pointsList, ranks)
+  EnsureDB()
+  playerName = ShortName(playerName)
+  if not playerName then return false end
+  local nameLower = Lower(playerName)
+  if not LeafVE_GlobalDB.talentCache then
+    LeafVE_GlobalDB.talentCache = {}
+  end
+  local existing = LeafVE_GlobalDB.talentCache[nameLower]
+  updatedAt = tonumber(updatedAt) or Now()
+  if type(existing) == "table" and updatedAt < (tonumber(existing.updatedAt) or 0) then
+    return false
+  end
+  classTag = string.upper(classTag or "")
+  if classTag == "" or classTag == "UNKNOWN" then
+    classTag = self:GetClassTagForPlayer(playerName)
+  end
+  local tpl = self:GetTalentTemplate(classTag, false)
+  local snapshot = {
+    updatedAt = updatedAt,
+    receivedAt = Now(),
+    class = classTag,
+    activeTab = tonumber(activeTab) or 1,
+    tabs = {},
+    ranks = ranks or "",
+  }
+  local tabIndex = 0
+  local startPos = 1
+  pointsList = pointsList or ""
+  local len = string.len(pointsList)
+  while startPos <= len do
+    local comma = string.find(pointsList, ",", startPos, true)
+    local value
+    if comma then
+      value = string.sub(pointsList, startPos, comma - 1)
+      startPos = comma + 1
+    else
+      value = string.sub(pointsList, startPos)
+      startPos = len + 1
+    end
+    tabIndex = tabIndex + 1
+    local tplTab = tpl and tpl.tabs[tabIndex]
+    local oldTab = type(existing) == "table" and type(existing.tabs) == "table" and existing.tabs[tabIndex] or nil
+    snapshot.tabs[tabIndex] = {
+      index = tabIndex,
+      name = (type(tplTab) == "table" and tplTab.name) or (oldTab and oldTab.name) or ("Tree " .. tostring(tabIndex)),
+      icon = (type(tplTab) == "table" and tplTab.icon) or (oldTab and oldTab.icon) or CLASS_ICONS[classTag] or "Interface\\Icons\\INV_Misc_QuestionMark",
+      points = tonumber(value) or 0,
+    }
+  end
   LeafVE_GlobalDB.talentCache[nameLower] = snapshot
+  return true
+end
+
+function LeafVE:BuildCompactTalentMessage(me, snapshot)
+  if not me or type(snapshot) ~= "table" or not snapshot.ranks then return nil end
+  local maxTab = 0
+  for tabIndex in pairs(snapshot.tabs or {}) do
+    tabIndex = tonumber(tabIndex) or 0
+    if tabIndex > maxTab then maxTab = tabIndex end
+  end
+  local points = {}
+  for tabIndex = 1, maxTab do
+    local tab = snapshot.tabs[tabIndex]
+    points[tabIndex] = tostring(tonumber(tab and tab.points) or 0)
+  end
+  return "GTAL2:" .. me .. ":" .. tostring(snapshot.updatedAt or Now()) .. ":" ..
+    tostring(snapshot.class or "UNKNOWN") .. ":" .. tostring(tonumber(snapshot.activeTab) or 1) .. ":" ..
+    table.concat(points, ",") .. ":" .. snapshot.ranks
+end
+
+-- "19.2.0" < "19.3.0" (numeric, part by part). Self-contained because the
+-- file's VersionLessThan is a local defined further down.
+function LeafVE:VersionBelow(a, b)
+  a = tostring(a or "")
+  b = tostring(b or "")
+  local pa, pb = 1, 1
+  for _ = 1, 6 do
+    local sa, ea = string.find(a, "%d+", pa)
+    local sb, eb = string.find(b, "%d+", pb)
+    local na = sa and tonumber(string.sub(a, sa, ea)) or 0
+    local nb = sb and tonumber(string.sub(b, sb, eb)) or 0
+    if na ~= nb then return na < nb end
+    if not sa and not sb then return false end
+    pa = (ea or string.len(a)) + 1
+    pb = (eb or string.len(b)) + 1
+  end
+  return false
 end
 
 function LeafVE:RequestTalentData(playerName, force)
@@ -10872,11 +11291,26 @@ function LeafVE:RequestTalentData(playerName, force)
     return
   end
   self.lastTalentRequestAt[lname] = now
-  SendAddonMessage("LeafVE", "TALREQ:" .. playerName, "GUILD")
+  -- Pre-19.3.0 clients only understand TALREQ (they answer with the full payload).
+  local theirVersion = self.versionResponses and self.versionResponses[playerName]
+  if theirVersion and self:VersionBelow(theirVersion, "19.3.0") then
+    SendAddonMessage("LeafVE", "TALREQ:" .. playerName, "GUILD")
+    return
+  end
+  local needTemplate = "0"
+  if not self:TemplateHasTalents(self:GetTalentTemplate(self:GetClassTagForPlayer(playerName), false)) then
+    needTemplate = "1"
+  end
+  SendAddonMessage("LeafVE", "TALREQ2:" .. playerName .. ":" .. needTemplate, "GUILD")
 end
 
-function LeafVE:BroadcastMyTalents(force)
+-- full = also send the legacy payload (for pre-19.3.0 clients / missing templates).
+function LeafVE:BroadcastMyTalents(force, full)
   if not InGuild() then return end
+  if self.perf and self.perf.quiet then
+    self.perf.pending.talents = true
+    return
+  end
   local now = Now()
   if not force and (now - (self.lastTalentBroadcast or 0)) < TALENT_BROADCAST_THROTTLE then
     return
@@ -10888,10 +11322,23 @@ function LeafVE:BroadcastMyTalents(force)
   local me = ShortName(UnitName("player"))
   if not me then return end
 
+  self.lastTalentBroadcast = now
+
+  if full and (now - (self.lastTalentFullBroadcast or 0)) < (TALENT_FULL_BROADCAST_MIN_GAP or 60) then
+    full = nil -- just sent it; the compact form is enough now
+  end
+
+  if not full then
+    local msg = self:BuildCompactTalentMessage(me, snapshot)
+    if msg and string.len(msg) <= 250 then
+      SendAddonMessage("LeafVE", msg, "GUILD")
+      return
+    end
+  end
+
   local payload = self:SerializeTalentSnapshot(snapshot)
   if not payload or payload == "" then return end
-
-  self.lastTalentBroadcast = now
+  self.lastTalentFullBroadcast = now
 
   local chunks = {}
   local startPos = 1
@@ -11235,16 +11682,45 @@ function LeafVE:ScheduleMyGearBroadcast(force)
   self.myGearDirty = true
   if force then
     self.pendingGearBroadcastForce = true
+  elseif self.perf and self.perf.quiet then
+    -- v19.3.0: UNIT_INVENTORY_CHANGED fires constantly in combat; decide
+    -- after leaving combat/instance instead.
+    self.perf.pending.gear = true
+    return
   end
 
   self:ScheduleDeferred("gear_broadcast", GEAR_EVENT_DEBOUNCE, function()
-    local shouldForce = LeafVE.pendingGearBroadcastForce and true or false
-    LeafVE.pendingGearBroadcastForce = nil
-    if shouldForce then
-      LeafVE.lastGearBroadcast = 0
-    end
-    LeafVE:BroadcastMyGear(shouldForce)
+    LeafVE:RunScheduledGearBroadcast()
   end)
+end
+
+function LeafVE:RunScheduledGearBroadcast()
+  local shouldForce = self.pendingGearBroadcastForce and true or false
+  if not shouldForce then
+    if self.perf.quiet then
+      self.perf.pending.gear = true
+      return
+    end
+    -- v19.3.0: bag changes, durability ticks etc. also fire
+    -- UNIT_INVENTORY_CHANGED; only re-send when equipped items changed.
+    if self:GetMyGearSignature() == self.lastGearSignature then
+      self.myGearDirty = nil
+      return
+    end
+    local wait = (GEAR_BROADCAST_THROTTLE or 10) - (Now() - (self.lastGearBroadcast or 0))
+    if wait > 0 then
+      -- Throttled: try again when allowed instead of dropping the change.
+      self:ScheduleDeferred("gear_broadcast", wait + 0.5, function()
+        LeafVE:RunScheduledGearBroadcast()
+      end)
+      return
+    end
+  end
+  self.pendingGearBroadcastForce = nil
+  if shouldForce then
+    self.lastGearBroadcast = 0
+  end
+  self:BroadcastMyGear(shouldForce)
 end
 
 function LeafVE:CaptureAndCacheMyGear(force)
@@ -11335,6 +11811,7 @@ function LeafVE:BroadcastMyGear(force)
   local cache = LeafVE_GlobalDB.gearCache and LeafVE_GlobalDB.gearCache[Lower(me)]
   local snapshot = cache and cache.broadcast
   if not snapshot or not snapshot.slots then return end
+  self.lastGearSignature = self:GetMyGearSignature()
 
   SendChunkedSnapshot("GEAR:", me, snapshot.updatedAt, GEAR_SLOT_NAMES, snapshot.slots or {})
   SendChunkedSnapshot("GICONS:", me, snapshot.updatedAt, GEAR_SLOT_NAMES, snapshot.icons or {})
@@ -14696,6 +15173,341 @@ end
 -- Returns true when the sender is known to be compatible.
 -- Unknown versions are accepted so live updates are not dropped while the
 -- VERSIONREQ/VERSIONRSP handshake is still in flight.
+-------------------------------------------------
+-- PERFORMANCE (v19.3.0): quiet mode + elected guild sync
+--
+-- Background guild sync used to be answered by every online member at once
+-- (each SHOUTSYNCREQ made every guildie re-send the whole shoutout table, on
+-- a 5 minute timer per player), which kept the guild channel at ~50 addon
+-- messages per second. Now:
+--   * Shared data (shoutout history, work orders) is answered by ONE elected
+--     member after a short random delay; anyone who sees another member's
+--     answer start stands down.
+--   * Shoutout history is compared with a one-message digest first and only
+--     sent when it actually differs.
+--   * While the player is in combat, inside an instance, or in a raid group
+--     ("quiet mode"), background sync messages are ignored and periodic
+--     broadcasts pause. One catch-up sync runs after leaving.
+-- Point tracking (group embers, boss kills, quests, shoutouts, point
+-- transactions, leaderboard snapshots) is never paused.
+-- Lua 5.0 / WoW 1.12: no '#', no '%'.
+-------------------------------------------------
+LeafVE.perf = LeafVE.perf or {}
+LeafVE.perf.elect = LeafVE.perf.elect or {}
+LeafVE.perf.pending = LeafVE.perf.pending or {}
+if LeafVE.perf.quiet == nil then LeafVE.perf.quiet = false end
+LeafVE.perf.lastCatchUp = LeafVE.perf.lastCatchUp or -100000
+
+-- "CMD:..." messages ignored while quiet (pure background sync, no points).
+LeafVE.perf.quietDropCmd = {
+  SHOUTSYNC = true, SHDIG = true, ACHSYNC = true,
+  GTALSYNC = true, GTAL2 = true, TALREQ = true, TALREQ2 = true,
+  GEARREQ = true, GEAR = true, GICONS = true, GENCH = true, GSTATS = true, GSPEC = true,
+  WORKORDERSYNC = true, WRECAPREQ = true, PROFREQ = true, RECIPELINK = true,
+}
+-- Whole-message requests ignored while quiet (someone else will answer).
+LeafVE.perf.quietDropMsg = {
+  SHOUTSYNCREQ = true, SHOUTSYNCREQ_FORCE = true,
+  LBOARDREQ = true, LBOARDREQ_FORCE = true,
+  MYSTATSREQ = true, MYSTATSREQ_FORCE = true,
+  WORKORDERREQ = true, WORKORDERREQ_FORCE = true,
+  RECIPELINKREQ = true, RECIPELINKREQ_FORCE = true,
+}
+
+-- Command word of an addon message: "SHOUTSYNC:1/3:..." -> "SHOUTSYNC".
+-- nil when the message has no ':' (whole-word requests like "LBOARDREQ").
+function LeafVE_MsgCommand(message)
+  if not message then return nil end
+  local colon = string.find(message, ":", 1, true)
+  if not colon then return nil end
+  return string.sub(message, 1, colon - 1)
+end
+
+function LeafVE:PerfComputeQuiet()
+  if UnitAffectingCombat and UnitAffectingCombat("player") then return true end
+  if GetNumRaidMembers and GetNumRaidMembers() > 0 then return true end
+  if IsInInstance then
+    local inInstance = IsInInstance()
+    if inInstance then return true end
+  end
+  return false
+end
+
+function LeafVE:IsQuietMode()
+  return self.perf.quiet and true or false
+end
+
+function LeafVE:PerfUpdateQuiet()
+  local p = self.perf
+  local quiet = self:PerfComputeQuiet()
+  if quiet == p.quiet then return end
+  p.quiet = quiet
+  if quiet then
+    p.quietSince = GetTime()
+    return
+  end
+  -- Left quiet mode: flush our own deferred broadcasts, and resync with the
+  -- guild only after a real stretch (a raid/dungeon, not every open-world pull).
+  local quietFor = GetTime() - (p.quietSince or GetTime())
+  local wantResync = quietFor >= 60 and (GetTime() - p.lastCatchUp) >= 300
+  if wantResync then p.pending.resync = true end
+  if p.pending.resync or p.pending.gear or p.pending.talents then
+    self:ScheduleDeferred("perf_quiet_catchup", self:PerfJitter(6, 18), function()
+      LeafVE:PerfQuietCatchUp()
+    end)
+  end
+end
+
+function LeafVE:PerfQuietCatchUp()
+  local p = self.perf
+  if p.quiet then return end -- back in combat/instance; PerfUpdateQuiet reschedules
+  local pend = p.pending
+  if pend.gear then
+    pend.gear = nil
+    self:ScheduleMyGearBroadcast(false)
+  end
+  if pend.talents then
+    pend.talents = nil
+    self:BroadcastMyTalents(true)
+  end
+  if pend.resync then
+    pend.resync = nil
+    p.lastCatchUp = GetTime()
+    if InGuild() then
+      self:SendResyncRequest(false)
+      self:RequestWorkOrderSync(false)
+    end
+  end
+end
+
+-- Deterministic-per-player pseudo random delay in [minDelay, maxDelay].
+-- (math.random is avoided: unseeded clients would all pick the same delay.)
+function LeafVE:PerfJitter(minDelay, maxDelay)
+  local p = self.perf
+  if not p.jitterSeed then
+    local me = UnitName("player") or "?"
+    local h = 7
+    for i = 1, string.len(me) do
+      h = math.mod(h * 31 + string.byte(me, i), 100003)
+    end
+    p.jitterSeed = h
+  end
+  p.jitterSeed = math.mod(p.jitterSeed * 1103 + math.floor(GetTime() * 1000) + 12345, 100003)
+  local span = (maxDelay or 0) - (minDelay or 0)
+  if span <= 0 then return minDelay or 0 end
+  return minDelay + span * (p.jitterSeed / 100003)
+end
+
+function LeafVE:PerfElectState(kind)
+  local st = self.perf.elect[kind]
+  if not st then
+    st = { lastSent = -100000, lastForeign = -100000 }
+    self.perf.elect[kind] = st
+  end
+  return st
+end
+
+-- Answer a guild-wide request only if nobody else does first.
+-- sendFn runs after a random delay unless another member's answer was seen in
+-- the meantime (then standDownFn, if given, runs instead).
+function LeafVE:PerfElect(kind, minDelay, maxDelay, minGap, sendFn, standDownFn)
+  local st = self:PerfElectState(kind)
+  if st.pending then return end
+  local nowT = GetTime()
+  if (nowT - st.lastSent) < (minGap or 0) then return end
+  st.pending = true
+  st.scheduledAt = nowT
+  self:ScheduleDeferred("perf_elect_" .. kind, self:PerfJitter(minDelay, maxDelay), function()
+    st.pending = nil
+    if self.perf.quiet then return end
+    if st.lastForeign >= st.scheduledAt then
+      if standDownFn then standDownFn() end
+      return
+    end
+    st.lastSent = GetTime()
+    sendFn()
+  end)
+end
+
+function LeafVE:PerfNoteForeign(kind)
+  self:PerfElectState(kind).lastForeign = GetTime()
+end
+
+-- Shoutout history digest: entry count + sum of entry days (UTC day numbers).
+-- Days instead of exact timestamps because each client stamps live shoutouts
+-- with its own clock; a few seconds of clock difference must not count as
+-- "different data".
+function LeafVE:GetShoutoutDigest()
+  local all = LeafVE_DB and LeafVE_DB.shoutouts
+  if type(all) ~= "table" then return 0, 0 end
+  local bucket = CurrentWipeVersion()
+  local count, daySum = 0, 0
+  for _, targets in pairs(all) do
+    if type(targets) == "table" then
+      for _, ts in pairs(targets) do
+        if type(ts) == "number" and ts > 0 and (bucket <= 0 or ts >= bucket) then
+          count = count + 1
+          daySum = daySum + math.floor(ts / 86400)
+        end
+      end
+    end
+  end
+  return count, daySum
+end
+
+function LeafVE:SendShoutoutDigest()
+  if not InGuild() or self.perf.quiet then return end
+  local c, s = self:GetShoutoutDigest()
+  SendAddonMessage("LeafVE", "SHDIG:" .. tostring(c) .. ":" .. string.format("%.0f", s), "GUILD")
+end
+
+function LeafVE:RequestElectedShoutoutBroadcast()
+  self:PerfElect("shout", 2, 10, SHOUT_BROADCAST_MIN_GAP or 240, function()
+    LeafVE:BroadcastShoutoutHistory()
+  end)
+end
+
+-- Fingerprint of the equipped items; gear is only re-broadcast when it changes.
+function LeafVE:GetMyGearSignature()
+  local parts = self.perf.gearSigScratch
+  if not parts then
+    parts = {}
+    self.perf.gearSigScratch = parts
+  end
+  for slot = 1, 19 do
+    parts[slot] = GetInventoryItemLink("player", slot) or "-"
+  end
+  return table.concat(parts, ",")
+end
+
+-- Saved-data upkeep (v19.3.0), once per session ~45s after login and never
+-- while quiet. Points, badges, leaderboards and shoutouts are NOT touched.
+--   * talent cache -> compact format (see TALENTS section)
+--   * other players' talent/gear snapshots not refreshed for 90 days
+--   * inspected-gear snapshots older than 30 days
+--   * achievement lists of players with no new achievement in 180 days
+--     (active players re-send theirs at every login)
+--   * other players' point-history rows older than 60 days (display only;
+--     weekly duty counts only look at the current week)
+function LeafVE:RunSavedDataMaintenance()
+  if self.perf.maintenanceDone then return end
+  if self.perf.quiet then
+    self:ScheduleDeferred("perf_saved_data_maintenance", 60, function()
+      LeafVE:RunSavedDataMaintenance()
+    end)
+    return
+  end
+  self.perf.maintenanceDone = true
+  EnsureDB()
+  local now = Now()
+  local stale = SYNC_STALE_CACHE_SECONDS or (90 * 86400)
+  local me = ShortName(UnitName("player"))
+  local meLower = Lower(me or "")
+
+  local ok, err = pcall(function() LeafVE:MigrateTalentCacheToCompact() end)
+  if not ok then LogError(err, "MigrateTalentCacheToCompact") end
+
+  local talents = LeafVE_GlobalDB.talentCache
+  if type(talents) == "table" then
+    for name, snap in pairs(talents) do
+      if type(snap) ~= "table" then
+        talents[name] = nil
+      elseif name ~= meLower and (now - (tonumber(snap.receivedAt or snap.updatedAt) or 0)) > stale then
+        talents[name] = nil
+      end
+    end
+  end
+
+  local gear = LeafVE_GlobalDB.gearCache
+  if type(gear) == "table" then
+    for name, entry in pairs(gear) do
+      if type(entry) ~= "table" then
+        gear[name] = nil
+      elseif name ~= meLower then
+        local b = entry.broadcast
+        local ins = entry.inspected
+        local bt = type(b) == "table" and (tonumber(b.updatedAt) or 0) or 0
+        local it = type(ins) == "table" and (tonumber(ins.updatedAt) or 0) or 0
+        if it > 0 and (now - it) > (30 * 86400) then
+          entry.inspected = nil
+          it = 0
+        end
+        if bt > 0 and (now - bt) > stale then
+          entry.broadcast = nil
+          bt = 0
+        end
+        if bt == 0 and it == 0 and entry.broadcast == nil and entry.inspected == nil then
+          gear[name] = nil
+        end
+      end
+    end
+  end
+
+  local ach = LeafVE_GlobalDB.achievementCache
+  if type(ach) == "table" then
+    for name, list in pairs(ach) do
+      if type(list) ~= "table" then
+        ach[name] = nil
+      elseif Lower(name) ~= meLower then
+        local newest = 0
+        for key, ts in pairs(list) do
+          if key ~= "_totalPoints" then
+            ts = tonumber(ts) or 0
+            if ts > newest then newest = ts end
+          end
+        end
+        if newest > 0 and (now - newest) > (180 * 86400) then
+          ach[name] = nil
+        end
+      end
+    end
+    -- v19.3.1: players the Achievements addon already holds are read from
+    -- there; drop the duplicate copy.
+    local achDB = type(LeafVE_AchTest_DB) == "table" and LeafVE_AchTest_DB.achievements
+    if type(achDB) == "table" then
+      for name in pairs(ach) do
+        if Lower(name) ~= meLower and type(achDB[name]) == "table" then
+          ach[name] = nil
+        end
+      end
+    end
+  end
+
+  local history = LeafVE_DB.pointHistory
+  if type(history) == "table" then
+    local cutoff = now - (OTHER_PLAYER_HISTORY_KEEP_SECONDS or (60 * 86400))
+    for pName, entries in pairs(history) do
+      if type(entries) ~= "table" then
+        history[pName] = nil
+      elseif pName ~= me then
+        local n = table.getn(entries)
+        local hasOld = false
+        for i = 1, n do
+          local e = entries[i]
+          if type(e) ~= "table" or (tonumber(e.timestamp) or 0) < cutoff then
+            hasOld = true
+            break
+          end
+        end
+        if hasOld then
+          local kept = {}
+          for i = 1, n do
+            local e = entries[i]
+            if type(e) == "table" and (tonumber(e.timestamp) or 0) >= cutoff then
+              table.insert(kept, e)
+            end
+          end
+          if table.getn(kept) == 0 then
+            history[pName] = nil
+          else
+            history[pName] = kept
+          end
+        end
+      end
+    end
+  end
+end
+
 local function IsSenderCompatible(sender)
   if not LeafVE.versionResponses then return true end
   local senderVer = LeafVE.versionResponses[sender]
@@ -14710,13 +15522,22 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
   sender = ShortName(sender)
   if not sender then return end
 
+  -- Perf (v19.3.0): parse the command word once; the checks below compare it
+  -- instead of cutting a fresh substring of the message for every check.
+  local msgCmd = LeafVE_MsgCommand(message)
+  if LeafVE.perf.quiet then
+    if (msgCmd and LeafVE.perf.quietDropCmd[msgCmd]) or LeafVE.perf.quietDropMsg[message] then
+      return
+    end
+  end
+
   if (
-    string.sub(message or "", 1, 10) == "ACCESSREQ:" or
-    string.sub(message or "", 1, 11) == "ACCESSRESP:" or
-    string.sub(message or "", 1, 10) == "ROSTERREQ:" or
-    string.sub(message or "", 1, 11) == "ROSTERDATA:" or
-    string.sub(message or "", 1, 8) == "CFGSYNC:" or
-    string.sub(message or "", 1, 7) == "CFGREQ:"
+    msgCmd == "ACCESSREQ" or
+    msgCmd == "ACCESSRESP" or
+    msgCmd == "ROSTERREQ" or
+    msgCmd == "ROSTERDATA" or
+    msgCmd == "CFGSYNC" or
+    msgCmd == "CFGREQ"
   ) then
     local ok, err = pcall(function()
       LeafVE:HandleAllianceControlMessage(sender, tostring((LeafVE.allianceChat and LeafVE.allianceChat.controlPrefix) or "") .. tostring(message or ""))
@@ -14733,7 +15554,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
 
   if channel ~= "GUILD" and channel ~= "PARTY" and channel ~= "RAID" then return end
 
-  if string.sub(message, 1, 9) == "ALLYPRES:" then
+  if msgCmd == "ALLYPRES" then
     local seenAt = tonumber(string.sub(message, 10)) or Now()
     self:RecordAllianceRosterBroadcasterPeer(sender, seenAt)
     return
@@ -14749,7 +15570,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
   end
 
   -- Handle version check response
-  if string.sub(message, 1, 11) == "VERSIONRSP:" then
+  if msgCmd == "VERSIONRSP" then
     local ver = string.sub(message, 12)
     if not LeafVE.versionResponses then LeafVE.versionResponses = {} end
     LeafVE.versionResponses[sender] = ver
@@ -14792,7 +15613,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
         -- Respond with owner-authenticated self snapshot (My Stats exact values).
         LeafVE:BroadcastLeaderboardData(false)
       end
-      if forceRespond or (now - self.lastAchSyncRespondAt) >= LBOARD_RESPOND_COOLDOWN then
+      if forceRespond or (now - self.lastAchSyncRespondAt) >= (ACH_SYNC_RESPOND_COOLDOWN or 120) then
         self.lastAchSyncRespondAt = now
         LeafVE:BroadcastMyAchievements()
       end
@@ -14801,7 +15622,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
   end
 
   -- Weekly recap sync: a returning client asks for last week's champions.
-  if string.sub(message, 1, 10) == "WRECAPREQ:" then
+  if msgCmd == "WRECAPREQ" then
     local me = ShortName(UnitName("player"))
     if not me or SamePlayerName(sender, me) then return end
     local _, _, reqWk, reqThrough = string.find(message, "^WRECAPREQ:(%d+):(%d+)")
@@ -14811,7 +15632,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
   end
 
-  if string.sub(message, 1, 7) == "WRECAP:" then
+  if msgCmd == "WRECAP" then
     if not IsSenderCompatible(sender) then return end
     local me = ShortName(UnitName("player"))
     if not me or SamePlayerName(sender, me) then return end
@@ -14836,7 +15657,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
   end
 
   -- Handle full data wipe broadcast (all points, badges, history, leaderboards)
-  if string.sub(message, 1, 10) == "FULL_WIPE:" then
+  if msgCmd == "FULL_WIPE" then
     local wipeVersion = tonumber(string.sub(message, 11)) or 0
     if wipeVersion > 0 then
       -- Accept any guild relay carrying a newer wipe version so wipe propagation
@@ -14856,7 +15677,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
   end
 
   -- Handle a player resetting their own data (spoof-protected: sender must match the declared name).
-  if string.sub(message, 1, 22) == "LVE_PLAYER_DATA_RESET:" then
+  if msgCmd == "LVE_PLAYER_DATA_RESET" then
     local declaredName = ShortName(string.sub(message, 23))
     local shortSender = ShortName(sender)
     -- Only accept the message when the sender matches the declared name.
@@ -14952,7 +15773,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
   end
 
-  if string.sub(message, 1, 8) == "TITLEEQ:" then
+  if msgCmd == "TITLEEQ" then
     local payload = string.sub(message, 9)
     local fields = SplitByLiteralSep(payload, SEP)
     local updatedAt = tonumber(fields[1]) or Now()
@@ -14984,7 +15805,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
   end
 
   -- Handle explicit remote-gear requests; only the requested player responds.
-  if string.sub(message, 1, 8) == "GEARREQ:" then
+  if msgCmd == "GEARREQ" then
     local requestedName = ShortName(string.sub(message, 9))
     local me = ShortName(UnitName("player"))
     if requestedName and me and Lower(requestedName) == Lower(me) then
@@ -14994,16 +15815,51 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
   end
 
   -- Handle explicit remote-talent requests; only the requested player responds.
-  if string.sub(message, 1, 7) == "TALREQ:" then
+  if msgCmd == "TALREQ" then
     local requestedName = ShortName(string.sub(message, 8))
     local me = ShortName(UnitName("player"))
     if requestedName and me and Lower(requestedName) == Lower(me) then
-      self:BroadcastMyTalents(true)
+      -- Legacy request (pre-19.3.0 client): it only understands the full format.
+      self:BroadcastMyTalents(true, true)
     end
     return
   end
 
-  if string.sub(message, 1, 8) == "PROFREQ:" then
+  -- v19.3.0 talent request: "TALREQ2:<name>:<1 = I also need your class template>"
+  if msgCmd == "TALREQ2" then
+    local _, _, requestedName, needTemplate = string.find(message, "^TALREQ2:([^:]+):?(%d?)")
+    requestedName = ShortName(requestedName)
+    local me = ShortName(UnitName("player"))
+    if requestedName and me and Lower(requestedName) == Lower(me) then
+      self:BroadcastMyTalents(true, needTemplate == "1")
+    end
+    return
+  end
+
+  -- v19.3.0 compact talent snapshot (one message instead of ~150).
+  if msgCmd == "GTAL2" then
+    local _, _, declaredName, updatedAt, classTag, activeTab, pointsList, ranks =
+      string.find(message, "^GTAL2:([^:]+):(%d+):([^:]*):(%d+):([^:]*):([%d%.]*)$")
+    if not declaredName then return end
+    if Lower(sender) ~= Lower(ShortName(declaredName) or declaredName) then return end
+    if self:ApplyCompactTalentMessage(sender, updatedAt, classTag, activeTab, pointsList, ranks) then
+      local nameLower = Lower(sender)
+      if LeafVE.UI and LeafVE.UI.cardCurrentPlayer and Lower(LeafVE.UI.cardCurrentPlayer) == nameLower then
+        local cardClass = LeafVE:GetClassTagForPlayer(LeafVE.UI.cardCurrentPlayer)
+        local spec = LeafVE:GetTalentSpecForPlayer(LeafVE.UI.cardCurrentPlayer, cardClass)
+        if LeafVE.UI.cardTalentBtn then
+          local specName = spec and spec.name or cardClass
+          LeafVE.UI.cardTalentBtn:SetText("Talent Spec: " .. tostring(specName))
+        end
+        if LeafVE.UI.talentPopup and LeafVE.UI.talentPopup:IsVisible() then
+          LeafVE.UI:RefreshTalentPopup(LeafVE.UI.cardCurrentPlayer, true)
+        end
+      end
+    end
+    return
+  end
+
+  if msgCmd == "PROFREQ" then
     local requestedName = ShortName(string.sub(message, 9))
     local me = ShortName(UnitName("player"))
     if requestedName and me and Lower(requestedName) == Lower(me) then
@@ -15012,7 +15868,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
   end
 
-  if string.sub(message, 1, 8) == "PROFDES:" then
+  if msgCmd == "PROFDES" then
     local payload = string.sub(message, 9)
     local fields = SplitByLiteralSep(payload, SEP)
     local secondary = DecodeTalentField(fields[4] or "")
@@ -15049,12 +15905,12 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
   end
 
-  if string.sub(message, 1, 17) == "WORKCRAFTERRESET:" then
+  if msgCmd == "WORKCRAFTERRESET" then
     self:HandleIncomingWorkOrderCrafterSignupReset(string.sub(message, 18), sender)
     return
   end
 
-  if string.sub(message, 1, 12) == "WORKCRAFTER:" then
+  if msgCmd == "WORKCRAFTER" then
     self:HandleIncomingWorkOrderCrafterSignup(string.sub(message, 13), sender)
     return
   end
@@ -15068,7 +15924,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
   end
 
-  if string.sub(message, 1, 11) == "RECIPELINK:" then
+  if msgCmd == "RECIPELINK" then
     self:HandleIncomingRecipeLink(string.sub(message, 12), sender)
     return
   end
@@ -15093,42 +15949,42 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
   end
 
-  if string.sub(message, 1, 11) == "GUILDEVENT:" then
+  if msgCmd == "GUILDEVENT" then
     self:HandleIncomingGuildEventMessage(string.sub(message, 12))
     return
   end
 
-  if string.sub(message, 1, 15) == "GUILDEVENTSYNC:" then
+  if msgCmd == "GUILDEVENTSYNC" then
     self:HandleIncomingGuildEventMessage(string.sub(message, 16))
     return
   end
 
-  if string.sub(message, 1, 15) == "GUILDEVENTRSVP:" then
+  if msgCmd == "GUILDEVENTRSVP" then
     self:HandleIncomingGuildEventRSVPMessage(string.sub(message, 16))
     return
   end
 
-  if string.sub(message, 1, 19) == "GUILDEVENTRSVPSYNC:" then
+  if msgCmd == "GUILDEVENTRSVPSYNC" then
     self:HandleIncomingGuildEventRSVPMessage(string.sub(message, 20))
     return
   end
 
-  if string.sub(message, 1, 10) == "RAIDEVENT:" then
+  if msgCmd == "RAIDEVENT" then
     self:HandleIncomingRaidEventMessage(string.sub(message, 11))
     return
   end
 
-  if string.sub(message, 1, 14) == "RAIDEVENTSYNC:" then
+  if msgCmd == "RAIDEVENTSYNC" then
     self:HandleIncomingRaidEventMessage(string.sub(message, 15))
     return
   end
 
-  if string.sub(message, 1, 11) == "RAIDSIGNUP:" then
+  if msgCmd == "RAIDSIGNUP" then
     self:HandleIncomingRaidSignupMessage(string.sub(message, 12))
     return
   end
 
-  if string.sub(message, 1, 15) == "RAIDSIGNUPSYNC:" then
+  if msgCmd == "RAIDSIGNUPSYNC" then
     self:HandleIncomingRaidSignupMessage(string.sub(message, 16))
     return
   end
@@ -15142,38 +15998,45 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
   end
 
-  if string.sub(message, 1, 11) == "BANNERDUTY:" then
+  if msgCmd == "BANNERDUTY" then
     self:HandleIncomingBannerDuty(string.sub(message, 12), sender, false)
     return
   end
 
-  if string.sub(message, 1, 15) == "BANNERDUTYSYNC:" then
+  if msgCmd == "BANNERDUTYSYNC" then
     self:HandleIncomingBannerDuty(string.sub(message, 16), sender, true)
     return
   end
 
   if message == "WORKORDERREQ" or message == "WORKORDERREQ_FORCE" then
-    local forceRespond = (message == "WORKORDERREQ_FORCE")
     local me = ShortName(UnitName("player"))
     if me and sender ~= me then
-      self:BroadcastWorkOrderSnapshot(forceRespond)
+      -- v19.3.0: one elected member sends the shared snapshot; everyone else
+      -- only re-sends the orders they requested/fill themselves.
+      self:PerfElect("workorders", 1, 6, 30, function()
+        LeafVE:BroadcastWorkOrderSnapshot(true)
+      end, function()
+        LeafVE:BroadcastWorkOrderSnapshot(true, true)
+      end)
     end
     return
   end
 
-  if string.sub(message, 1, 10) == "WORKORDER:" then
+  if msgCmd == "WORKORDER" then
     if not IsSenderCompatible(sender) then return end
     self:HandleIncomingWorkOrderMessage(string.sub(message, 11), sender, nil)
     return
   end
 
-  if string.sub(message, 1, 14) == "WORKORDERSYNC:" then
+  if msgCmd == "WORKORDERSYNC" then
     if not IsSenderCompatible(sender) then return end
+    local meWO = ShortName(UnitName("player"))
+    if not (meWO and Lower(sender) == Lower(meWO)) then self:PerfNoteForeign("workorders") end
     self:HandleIncomingWorkOrderMessage(string.sub(message, 15), sender, true)
     return
   end
 
-  if string.sub(message, 1, 8) == "DUTYREP:" then
+  if msgCmd == "DUTYREP" then
     if not IsSenderCompatible(sender) then return end
     local payload = string.sub(message, 9)
     local fields = SplitByLiteralSep(payload, ":")
@@ -15195,7 +16058,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
   end
 
-  if string.sub(message, 1, 11) == "GBANKOWNER:" then
+  if msgCmd == "GBANKOWNER" then
     local payload = string.sub(message, 12)
     local fields = SplitByLiteralSep(payload, SEP)
     local ownerName = DecodeTalentField(fields[1] or "")
@@ -15222,32 +16085,32 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
   end
 
-  if string.sub(message, 1, 10) == "GBANKMETA:" then
+  if msgCmd == "GBANKMETA" then
     self:HandleIncomingGuildBankMetaPayload(string.sub(message, 11), sender, nil)
     return
   end
 
-  if string.sub(message, 1, 6) == "GBANK:" then
+  if msgCmd == "GBANK" then
     self:HandleIncomingGuildBankCountPayload(string.sub(message, 7), sender, nil)
     return
   end
 
-  if string.sub(message, 1, 10) == "GBANKICON:" then
+  if msgCmd == "GBANKICON" then
     self:HandleIncomingGuildBankIconPayload(string.sub(message, 11), sender, nil)
     return
   end
 
-  if string.sub(message, 1, 15) == "GBANKRELAYMETA:" then
+  if msgCmd == "GBANKRELAYMETA" then
     self:HandleIncomingGuildBankMetaPayload(string.sub(message, 16), sender, true)
     return
   end
 
-  if string.sub(message, 1, 11) == "GBANKRELAY:" then
+  if msgCmd == "GBANKRELAY" then
     self:HandleIncomingGuildBankCountPayload(string.sub(message, 12), sender, true)
     return
   end
 
-  if string.sub(message, 1, 15) == "GBANKRELAYICON:" then
+  if msgCmd == "GBANKRELAYICON" then
     self:HandleIncomingGuildBankIconPayload(string.sub(message, 16), sender, true)
     return
   end
@@ -15261,12 +16124,12 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
   end
 
-  if string.sub(message, 1, 13) == "GBANKITEMREQ:" then
+  if msgCmd == "GBANKITEMREQ" then
     self:HandleIncomingGuildBankRequestMessage(string.sub(message, 14))
     return
   end
 
-  if string.sub(message, 1, 17) == "GBANKITEMREQSYNC:" then
+  if msgCmd == "GBANKITEMREQSYNC" then
     self:HandleIncomingGuildBankRequestMessage(string.sub(message, 18))
     return
   end
@@ -15280,8 +16143,8 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
   end
 
-  if string.sub(message, 1, 11) == "GBANKCLASS:" or string.sub(message, 1, 15) == "GBANKCLASSSYNC:" then
-    local payload = string.sub(message, string.sub(message, 1, 15) == "GBANKCLASSSYNC:" and 16 or 12)
+  if msgCmd == "GBANKCLASS" or msgCmd == "GBANKCLASSSYNC" then
+    local payload = string.sub(message, msgCmd == "GBANKCLASSSYNC" and 16 or 12)
     local fields = SplitByLiteralSep(payload, SEP)
     local itemId = tonumber(fields[1])
     local tabKey = DecodeTalentField(fields[2] or "")
@@ -15300,8 +16163,8 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
   end
 
-  if string.sub(message, 1, 8) == "GBANKHV:" or string.sub(message, 1, 12) == "GBANKHVSYNC:" then
-    local payload = string.sub(message, string.sub(message, 1, 12) == "GBANKHVSYNC:" and 13 or 9)
+  if msgCmd == "GBANKHV" or msgCmd == "GBANKHVSYNC" then
+    local payload = string.sub(message, msgCmd == "GBANKHVSYNC" and 13 or 9)
     local fields = SplitByLiteralSep(payload, SEP)
     local itemId = tonumber(fields[1])
     local isHighValue = tonumber(fields[2]) == 1
@@ -15312,7 +16175,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
   end
 
   -- Handle chunked talent tree sync payload.
-  if string.sub(message, 1, 9) == "GTALSYNC:" then
+  if msgCmd == "GTALSYNC" then
     local rest = string.sub(message, 10)
     local p1 = string.find(rest, ":")
     if not p1 then return end
@@ -15377,7 +16240,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
   end
 
   -- Parse badge sync message
-  if string.sub(message, 1, 7) == "BADGES:" then
+  if msgCmd == "BADGES" then
     if not IsSenderCompatible(sender) then return end
     local badgeData = string.sub(message, 8)
     
@@ -15436,6 +16299,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
         LeafVE_DB.badges[sender][badgeId] = timestamp
       end
     end
+    PurgeRemovedBadgesFromMap(LeafVE_DB.badges[sender])
 
     local cachedTitle = LeafVE_GlobalDB.titleCache and LeafVE_GlobalDB.titleCache[Lower(sender)]
     if cachedTitle and cachedTitle.titleId and cachedTitle.titleId ~= "" then
@@ -15460,7 +16324,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
 
   -- Parse badge progress broadcast
-  elseif string.sub(message, 1, 10) == "BADGEPROG:" then
+  elseif msgCmd == "BADGEPROG" then
     if not IsSenderCompatible(sender) then return end
     local me = ShortName(UnitName("player"))
     if me and SamePlayerName(sender, me) then return end
@@ -15537,7 +16401,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
     
   -- Parse shoutout sync message
-  elseif string.sub(message, 1, 9) == "SHOUTOUT:" then
+  elseif msgCmd == "SHOUTOUT" then
     if not IsSenderCompatible(sender) then return end
     local shoutData = string.sub(message, 10)
     local colonPos = string.find(shoutData, ":")
@@ -15594,7 +16458,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
 
   -- Parse player note sync message
-  elseif string.sub(message, 1, 5) == "NOTE:" then
+  elseif msgCmd == "NOTE" then
     local noteText = string.sub(message, 6)
     
     -- Unescape special characters
@@ -15617,7 +16481,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
     
     -- **NEW: Parse leaderboard sync message**
-  elseif string.sub(message, 1, 7) == "LBOARD:" then
+  elseif msgCmd == "LBOARD" then
     if not IsSenderCompatible(sender) then return end
     local me = ShortName(UnitName("player"))
     if me and SamePlayerName(sender, me) then
@@ -15694,20 +16558,34 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
 
   -- Handle shoutout history sync request
-  elseif message == "SHOUTSYNCREQ" or message == "SHOUTSYNCREQ_FORCE" then
-    local forceRespond = (message == "SHOUTSYNCREQ_FORCE")
+  -- Shoutout digest (v19.3.0): only answer when our history actually differs,
+  -- and only one elected member answers.
+  elseif msgCmd == "SHDIG" then
     local me = ShortName(UnitName("player"))
     if me and sender ~= me then
-      local now = Now()
-      if forceRespond or (now - self.lastShoutSyncRespondAt) >= SHOUT_SYNC_RESPOND_COOLDOWN then
-        self.lastShoutSyncRespondAt = now
-        LeafVE:BroadcastShoutoutHistory()
+      local _, _, theirCount, theirDays = string.find(message, "^SHDIG:(%d+):(%d+)")
+      theirCount = tonumber(theirCount)
+      theirDays = tonumber(theirDays)
+      if theirCount and theirDays then
+        local myCount, myDays = self:GetShoutoutDigest()
+        if myCount ~= theirCount or myDays ~= theirDays then
+          self:RequestElectedShoutoutBroadcast()
+        end
       end
     end
     return
 
+  -- Legacy request from pre-19.3.0 clients: answered by one elected member
+  -- (it used to make every online member re-send everything).
+  elseif message == "SHOUTSYNCREQ" or message == "SHOUTSYNCREQ_FORCE" then
+    local me = ShortName(UnitName("player"))
+    if me and sender ~= me then
+      self:RequestElectedShoutoutBroadcast()
+    end
+    return
+
   -- Handle chunked shoutout history sync payload
-  elseif string.sub(message, 1, 10) == "SHOUTSYNC:" then
+  elseif msgCmd == "SHOUTSYNC" then
     if not IsSenderCompatible(sender) then return end
     local rest = string.sub(message, 11)
     local slashPos = string.find(rest, "/")
@@ -15719,6 +16597,9 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     local totalChunks = tonumber(string.sub(afterSlash, 1, colonPos2 - 1))
     local payload = string.sub(afterSlash, colonPos2 + 1)
     if not chunkNum or not totalChunks or chunkNum < 1 or totalChunks < 1 then return end
+    local meShout = ShortName(UnitName("player"))
+    if meShout and Lower(sender) == Lower(meShout) then return end -- our own echo
+    if chunkNum == 1 then self:PerfNoteForeign("shout") end
     -- Buffer chunks per sender; reset if a new sync starts (different total)
     if not self.shoutSyncBuffer[sender] or self.shoutSyncBuffer[sender].total ~= totalChunks then
       self.shoutSyncBuffer[sender] = {total = totalChunks, chunks = {}}
@@ -15735,18 +16616,35 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
         table.insert(parts, self.shoutSyncBuffer[sender].chunks[i])
       end
       self.shoutSyncBuffer[sender] = nil
-      self:MergeShoutoutHistory(table.concat(parts, ","))
+      local inCount, inDays = self:MergeShoutoutHistory(table.concat(parts, ","))
+      -- We hold entries the sender lacked: share them (elected, rate limited).
+      if inCount then
+        local myCount, myDays = self:GetShoutoutDigest()
+        if myCount > inCount or myDays > inDays then
+          self:RequestElectedShoutoutBroadcast()
+        end
+      end
     end
     return
 
   -- Handle admin config broadcast
-  elseif string.sub(message, 1, 17) == "LVE_ADMIN_CONFIG:" then
+  elseif msgCmd == "LVE_ADMIN_CONFIG" then
     -- No longer used; configurable admin settings have been removed.
     return
 
   -- Handle achievement data sync from a guild member
-  elseif string.sub(message, 1, 8) == "ACHSYNC:" then
+  elseif msgCmd == "ACHSYNC" then
     if not IsSenderCompatible(sender) then return end
+    -- v19.3.1: when the Achievements addon already holds this player's
+    -- achievements, that copy is what every view reads (see
+    -- GetAchievementsTestEntriesForPlayer); keeping a second copy here only
+    -- cost memory and parsing. This cache is now just the fallback for
+    -- players the Achievements addon hasn't heard from.
+    if type(LeafVE_AchTest_DB) == "table" and type(LeafVE_AchTest_DB.achievements) == "table"
+       and type(LeafVE_AchTest_DB.achievements[sender]) == "table" then
+      if LeafVE_GlobalDB.achievementCache then LeafVE_GlobalDB.achievementCache[sender] = nil end
+      return
+    end
     local achData = string.sub(message, 9)
     EnsureDB()
     if not LeafVE_GlobalDB.achievementCache then
@@ -15809,7 +16707,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
 
   -- Handle gear cache broadcast from a guild member
-  elseif string.sub(message, 1, 5) == "GEAR:" then
+  elseif msgCmd == "GEAR" then
     local rest = string.sub(message, 6)
     local firstColon = string.find(rest, ":")
     if not firstColon then return end
@@ -15867,7 +16765,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
 
   -- Handle gear icon cache broadcast from a guild member
-  elseif string.sub(message, 1, 7) == "GICONS:" then
+  elseif msgCmd == "GICONS" then
     local rest = string.sub(message, 8)
     local firstColon = string.find(rest, ":")
     if not firstColon then return end
@@ -15921,7 +16819,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
 
   -- Handle gear enchant cache broadcast from a guild member
-  elseif string.sub(message, 1, 6) == "GENCH:" then
+  elseif msgCmd == "GENCH" then
     local rest = string.sub(message, 7)
     local firstColon = string.find(rest, ":")
     if not firstColon then return end
@@ -15975,7 +16873,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
 
   -- Handle gear stats cache broadcast from a guild member
-  elseif string.sub(message, 1, 7) == "GSTATS:" then
+  elseif msgCmd == "GSTATS" then
     local rest = string.sub(message, 8)
     local firstColon = string.find(rest, ":")
     if not firstColon then return end
@@ -16029,7 +16927,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
 
   -- Handle selected spec cache broadcast from a guild member
-  elseif string.sub(message, 1, 6) == "GSPEC:" then
+  elseif msgCmd == "GSPEC" then
     local rest = string.sub(message, 7)
     local p1 = string.find(rest, ":")
     if not p1 then return end
@@ -16071,7 +16969,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
 
   -- Handle point transaction broadcast from a guild member
-  elseif string.sub(message, 1, 5) == "PTXN:" then
+  elseif msgCmd == "PTXN" then
     if not IsSenderCompatible(sender) then return end
     local rest = string.sub(message, 6)
     -- Format: playerName\31amount\31timestamp\31type\31reason
@@ -16164,7 +17062,7 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
     return
 
   -- Handle group award broadcast from guildie broadcaster
-  elseif string.sub(message, 1, 9) == "GRPAWARD:" then
+  elseif msgCmd == "GRPAWARD" then
     -- Parse "GRPAWARD:pointsPerGuildie|numGuildies|guildie1,guildie2,..."
     local rest = string.sub(message, 10)
     local p1 = string.find(rest, "|")
@@ -27142,7 +28040,7 @@ function LeafVE:BroadcastWorkOrder(order, messageType)
   SendAddonMessage("LeafVE", messageType .. payload, "GUILD")
 end
 
-function LeafVE:BroadcastWorkOrderSnapshot(force)
+function LeafVE:BroadcastWorkOrderSnapshot(force, onlyMine)
   if not InGuild() then return end
 
   local now = Now()
@@ -27152,8 +28050,14 @@ function LeafVE:BroadcastWorkOrderSnapshot(force)
   self.lastWorkOrderSyncRespondAt = now
 
   EnsureDB()
+  local meLower = Lower(ShortName(UnitName("player")) or "")
   for _, order in pairs(LeafVE_GlobalDB.workOrders or {}) do
-    if type(order) == "table" and self:IsValidWorkOrderRecord(order) then
+    local include = true
+    if onlyMine and type(order) == "table" then
+      include = (Lower(ShortName(order.requester) or "") == meLower)
+        or (Lower(ShortName(order.fulfiller or order.crafter) or "") == meLower)
+    end
+    if include and type(order) == "table" and self:IsValidWorkOrderRecord(order) then
       local effectiveStatus = self:GetEffectiveWorkOrderStatus(order, now)
       local updatedAt = tonumber(order.updatedAt or order.createdAt or 0) or 0
       if effectiveStatus == "open" or effectiveStatus == "pending" or updatedAt >= (now - (7 * SECONDS_PER_DAY)) then
@@ -45156,7 +46060,10 @@ function LeafVE.UI:Build()
 
   f:SetScript("OnUpdate", function()
     if this and this._ashenBgDidInitialRefresh then return end
-    if this then this._ashenBgDidInitialRefresh = true end
+    if this then
+      this._ashenBgDidInitialRefresh = true
+      this:SetScript("OnUpdate", nil) -- one-shot (v19.3.0): don't run every frame afterwards
+    end
     if LeafVE_CreateAshenTileBackground then LeafVE_CreateAshenTileBackground(f) end
   end)
 
@@ -47480,6 +48387,8 @@ LeafVE_updateTimers = {
   achievementLeaderboard = 0,
   wipeMarkerPoll = 0,
   bankWatcher = 0,
+  perfQuiet = 0,
+  shoutDigest = 0,
 }
 
 LeafVE_eventFrame:SetScript("OnEvent", function()
@@ -47621,6 +48530,9 @@ function LeafVE_OnEventBody()
       end
     end)
 
+    LeafVE:ScheduleDeferred("perf_saved_data_maintenance", 45, function()
+      LeafVE:RunSavedDataMaintenance()
+    end)
     LeafVE:ScheduleDeferred("player_login_sync_phase_1", 5, function()
       LeafVE:ApplyGuildWipeMarkerIfNeeded()
       if InGuild() then
@@ -47794,7 +48706,12 @@ function LeafVE_OnEventBody()
   end
 
   if event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
-    LeafVE:OnGroupUpdate()
+    -- v19.3.0: RAID_ROSTER_UPDATE fires in bursts in a raid; collapse each
+    -- burst into one group check (the 30s group-ember timer is unaffected).
+    LeafVE:ScheduleDeferred("group_roster_update", 1, function()
+      LeafVE:OnGroupUpdate()
+    end)
+    LeafVE:PerfUpdateQuiet()
     return
   end
 
@@ -47833,6 +48750,7 @@ function LeafVE_OnEventBody()
   if event == "PLAYER_REGEN_DISABLED" then
     LeafVE.lastCombatAt = Now()
     LeafVE:RecordActivity()
+    LeafVE:PerfUpdateQuiet()
     return
   end
 
@@ -47913,6 +48831,15 @@ LeafVE_updateFrame:SetScript("OnUpdate", function(_, elapsed)
   LeafVE_updateTimers.achievementLeaderboard = LeafVE_updateTimers.achievementLeaderboard + elapsed
   LeafVE_updateTimers.wipeMarkerPoll = LeafVE_updateTimers.wipeMarkerPoll + elapsed
   LeafVE_updateTimers.bankWatcher = LeafVE_updateTimers.bankWatcher + elapsed
+  LeafVE_updateTimers.perfQuiet = LeafVE_updateTimers.perfQuiet + elapsed
+  LeafVE_updateTimers.shoutDigest = LeafVE_updateTimers.shoutDigest + elapsed
+
+  -- v19.3.0: combat / instance / raid-group detection (see PERFORMANCE section).
+  if LeafVE_updateTimers.perfQuiet >= 1 then
+    LeafVE_updateTimers.perfQuiet = 0
+    LeafVE:PerfUpdateQuiet()
+  end
+  local quiet = LeafVE.perf.quiet
 
   if LeafVE_updateTimers.groupCheck >= 30 then
     LeafVE_updateTimers.groupCheck = 0
@@ -47921,7 +48848,9 @@ LeafVE_updateFrame:SetScript("OnUpdate", function(_, elapsed)
   
   if LeafVE_updateTimers.notification >= 0.1 then
     LeafVE_updateTimers.notification = 0
-    LeafVE:ProcessNotifications()
+    if table.getn(LeafVE.notificationQueue) > 0 then
+      LeafVE:ProcessNotifications()
+    end
   end
   
   if LeafVE_updateTimers.attendance >= 300 then
@@ -47931,7 +48860,8 @@ LeafVE_updateFrame:SetScript("OnUpdate", function(_, elapsed)
   
   -- Keep automatic leaderboard convergence, but do not rebroadcast
   -- unrelated badge/gear/talent data on the same 5-minute timer.
-  if LeafVE_updateTimers.badgeSync >= 300 then
+  -- (paused while quiet; runs right after leaving combat/instance)
+  if LeafVE_updateTimers.badgeSync >= 300 and not quiet then
     LeafVE_updateTimers.badgeSync = 0
     if InGuild() then
       LeafVE:BroadcastLeaderboardData()
@@ -47941,13 +48871,10 @@ LeafVE_updateFrame:SetScript("OnUpdate", function(_, elapsed)
   -- Achievement leaderboard auto-refresh every 5 minutes
   if LeafVE_updateTimers.achievementLeaderboard >= 300 then
     LeafVE_updateTimers.achievementLeaderboard = 0
-    -- Request a leaderboard resync from the guild (respects cooldown)
-    if InGuild() then
-      -- SendResyncRequest applies the cooldown and stamps lastResyncRequestAt
-      -- itself; stamping it here first made it return without sending.
-      LeafVE:SendResyncRequest()
-      LeafVE:RequestWeeklyRecapSync(PreviousWeekKey())
-    end
+    -- v19.3.0: no periodic guild-wide resync request any more. Every member
+    -- already broadcasts their own leaderboard row every 5 minutes (badgeSync
+    -- above); the old request made all ~30 online members answer every
+    -- request with their achievements (~10 messages each).
     -- Refresh the achievement leaderboard panel if it is currently open
     if LeafVE.UI and LeafVE.UI.panels and
        LeafVE.UI.panels.achievements and LeafVE.UI.panels.achievements:IsVisible() then
@@ -47957,7 +48884,12 @@ LeafVE_updateFrame:SetScript("OnUpdate", function(_, elapsed)
 
   -- Periodically poll the guild wipe marker so missed addon packets still
   -- converge to the latest wipe version while players remain online.
-  if LeafVE_updateTimers.wipeMarkerPoll >= 60 then
+  if LeafVE_updateTimers.shoutDigest >= (SHOUT_DIGEST_INTERVAL or 900) and not quiet then
+    LeafVE_updateTimers.shoutDigest = 0
+    LeafVE:SendShoutoutDigest()
+  end
+
+  if LeafVE_updateTimers.wipeMarkerPoll >= 60 and not quiet then
     LeafVE_updateTimers.wipeMarkerPoll = 0
     LeafVE:PurgeStaleWeeklyData()
     LeafVE:MarkWeekSeen()
