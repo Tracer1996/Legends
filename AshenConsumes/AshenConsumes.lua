@@ -66,6 +66,19 @@ local KNOWN = {
 }
 local IGNORE_LEARN = { ["food"] = true, ["drink"] = true }
 
+-- Weapon oils and stones are temporary weapon enchants, not player buffs: they are tracked
+-- through GetWeaponEnchantInfo() on the main hand and applied to the main-hand slot.
+local WEAPON_BUFF = "Main-hand enchant"
+local MAIN_HAND_SLOT = 16
+local WEAPON_ITEM_PATTERNS = { " oil$", "sharpening stone$", "weightstone$" }
+local function IsWeaponItem(name)
+    local n = string.lower(name or "")
+    for i = 1, table.getn(WEAPON_ITEM_PATTERNS) do
+        if string.find(n, WEAPON_ITEM_PATTERNS[i]) then return true end
+    end
+    return false
+end
+
 -- Consumes inside one group overwrite each other, so only one per group may be in the lineup.
 -- Matched as plain lower-case substrings of the item name. Food is handled separately (Well Fed).
 -- Anything missing here is learned automatically: if using A knocks B's buff off, they're marked.
@@ -79,6 +92,7 @@ local GROUPS = {
     { "Armor elixir", { "elixir of superior defense", "elixir of greater defense", "elixir of defense", "elixir of minor defense" } },
     { "Arcane elixir", { "greater arcane elixir", "arcane elixir" } },
     { "Fire power", { "elixir of greater firepower", "elixir of firepower" } },
+    { "Weapon enchant", { "wizard oil", "mana oil", "sharpening stone", "weightstone" } },
 }
 
 local SORTS = { "priority", "name", "missing", "time" }
@@ -315,6 +329,8 @@ local function RefreshBags()
             if name then
                 local key = Norm(name)
                 local tex, stack = GetContainerItemInfo(bag, slot)
+                -- 1.12 reports items with charges (oils, etc.) as -charges.
+                if stack and stack < 0 then stack = -stack end
                 if not items[key] then
                     items[key] = {bag, slot, tex, stack or 1, stack or 1}
                 else
@@ -446,6 +462,7 @@ local function BuildBagList()
                 local c = Classify(bag, slot, link, name)
                 if c.usable and (c.buff or AshenConsumesDB.showAllBag) then
                     local tex, count = GetContainerItemInfo(bag, slot)
+                    if count and count < 0 then count = -count end
                     local k = Norm(name)
                     local e = byName[k]
                     if e then
@@ -507,7 +524,7 @@ local function AdoptSimilarBuffs()
     if not entries then return end
     for i = 1, table.getn(entries) do
         local e = entries[i]
-        if not snapshot[Norm(e.buff)] and not e.food then
+        if not snapshot[Norm(e.buff)] and not e.food and not e.weapon then
             local item = Norm(e.item)
             for k, v in pairs(snapshot) do
                 if not IGNORE_LEARN[k] and SimilarName(k, item) then
@@ -528,6 +545,11 @@ local function ForceScan()
 end
 
 local function CheckBuff(entry, now)
+    if entry.weapon then
+        local has, ms = GetWeaponEnchantInfo()
+        if not has then return nil end
+        return (ms or 0) / 1000
+    end
     local b = snapshot[Norm(entry.buff)]
     if not b then return nil end
     if b.left >= 100000 then return b.left end
@@ -782,15 +804,20 @@ local function TrackItem(name, tex, food)
         return false
     end
     local known = KNOWN[Norm(name)]
-    local buff = (food and "Well Fed") or known or name
+    local weapon = IsWeaponItem(name)
+    if weapon then food = false end
+    local buff = (weapon and WEAPON_BUFF) or (food and "Well Fed") or known or name
     table.insert(AshenConsumesDB.entries, {
         item = name, buff = buff, enabled = true, food = food and true or false,
-        icon = tex, learned = (known or food) and true or false, want = 1,
+        icon = tex, learned = (known or food or weapon) and true or false, want = 1,
+        weapon = weapon or nil,
     })
     RebuildClashes()
     scrollOffset = math.max(0, table.getn(AshenConsumesDB.entries) - MAX_ROWS)
     pending = nil
-    if known or food then
+    if weapon then
+        Say("Tracking " .. name .. " (main-hand weapon enchant).")
+    elseif known or food then
         Say("Tracking " .. name .. " (buff: " .. buff .. ").")
     else
         Say("Tracking " .. name .. ". Its buff will be detected automatically the first time you use it.")
@@ -867,6 +894,24 @@ end
 -- Using items
 ---------------------------------------------------------------------------
 local function UseEntry(entry, bag, slot, now)
+    if entry.weapon then
+        if not GetInventoryItemLink("player", MAIN_HAND_SLOT) then
+            Say("No main-hand weapon equipped for " .. entry.item .. ".")
+            return
+        end
+        -- Oils/stones have a 3 sec cast; give it time before anything else is tried.
+        pending = { item = entry.item, buff = entry.buff, weapon = true, untilTime = now + 3.5 }
+        recentUse[entry] = now + 10
+        ui.weaponApplyUntil = now + 2
+        ui.selfUse = true
+        UseContainerItem(bag, slot)
+        ui.selfUse = nil
+        if SpellIsTargeting and SpellIsTargeting() then PickupInventoryItem(MAIN_HAND_SLOT) end
+        if SpellIsTargeting and SpellIsTargeting() then SpellStopTargeting() end
+        Say("Applying " .. entry.item .. " to your main hand.")
+        RefreshUI(GetTime())
+        return
+    end
     BeginLearn(entry, now)
     BeginWatch(entry, now)
     pending = { item = entry.item, buff = entry.buff, untilTime = now + (entry.food and 12 or 1.3) }
@@ -892,6 +937,11 @@ local function NoticeManualUse(name)
     if not idx then return end
     local e = AshenConsumesDB.entries[idx]
     local now = GetTime()
+    if e.weapon then
+        -- Nothing to learn: weapon enchants aren't buffs.
+        recentUse[e] = now + 10
+        return
+    end
     ForceScan()
     BeginLearn(e, now)
     BeginWatch(e, now)
@@ -1986,6 +2036,19 @@ local function LoadDB()
             e.buff = e.item
             e.learned = false
         end
+        -- Migrate oils/stones tracked before weapon-enchant support: drop any player buff
+        -- or clash that was wrongly learned for them.
+        if IsWeaponItem(e.item) then
+            e.weapon = true
+            e.food = false
+            e.buff = WEAPON_BUFF
+            e.learned = true
+            local ni = Norm(e.item)
+            AshenConsumesDB.conflicts[ni] = nil
+            for _, set in pairs(AshenConsumesDB.conflicts) do set[ni] = nil end
+        else
+            e.weapon = nil
+        end
     end
     RebuildClashes()
 end
@@ -2075,8 +2138,8 @@ local function AfterAuraChange(now)
     ForceScan()
     CheckLearn(now)
     CheckWatch(now)
-    if pending and CheckBuff({ buff = pending.buff }, now) and
-        CheckBuff({ buff = pending.buff }, now) > AshenConsumesDB.threshold then
+    local pb = pending and { buff = pending.buff, weapon = pending.weapon }
+    if pending and CheckBuff(pb, now) and CheckBuff(pb, now) > AshenConsumesDB.threshold then
         pending = nil
     end
 end
@@ -2087,7 +2150,26 @@ eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_AURAS_CHANGED")
 eventFrame:RegisterEvent("BAG_UPDATE")
 eventFrame:RegisterEvent("UNIT_AURA")
+eventFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
+eventFrame:RegisterEvent("REPLACE_ENCHANT")
 eventFrame:SetScript("OnEvent", function()
+    -- Our own oil/stone press: confirm "replace the existing enchant?" (only reached when the
+    -- current enchant is below the refresh threshold).
+    if event == "REPLACE_ENCHANT" then
+        if ui.weaponApplyUntil and GetTime() < ui.weaponApplyUntil then
+            ui.weaponApplyUntil = nil
+            ReplaceEnchant()
+            StaticPopup_Hide("REPLACE_ENCHANT")
+        end
+        return
+    end
+    if initialized and event == "UNIT_INVENTORY_CHANGED" then
+        if arg1 == "player" then
+            AfterAuraChange(GetTime())
+            RefreshUI(GetTime())
+        end
+        return
+    end
     if event == "PLAYER_LOGIN" then
         if not initialized then
             LoadDB()
