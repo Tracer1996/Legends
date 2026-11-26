@@ -1,7 +1,7 @@
 ## Interface: 11200
 ## Title: The Ashen Banner
 ## Notes: The Ashen Banner guild utility addon for WoW 1.12 (includes the Quartermaster window: /qm).
-## Version: 19.3.1
+## Version: 19.3.2
 ## OptionalDeps: AshenKeeper
 ## SavedVariables: LeafVE_GlobalDB, LeafVE_AshenDossierLayout, LeafVE_AshenBGLayout, LeafVE_QuartermasterDB, LeafVE_QuartermasterCache
 ## SavedVariablesPerCharacter: LeafVE_DB

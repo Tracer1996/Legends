@@ -5,7 +5,7 @@ AtlasLoot_Data = AtlasLoot_Data or {}
 LeafVE = LeafVE or {}
 LeafVE.name = "LeafVillageLegends"
 LeafVE.prefix = "LeafVE"
-LeafVE.version = "19.3.1"
+LeafVE.version = "19.3.2"
 LeafVE.allianceEnabled = false
 LeafVE.isAllianceStandalone = false
 LeafVE.guildBankOwner = "Methllyy"
@@ -2833,9 +2833,8 @@ function LeafVE:StoreShinobiDutyRepBonus(playerName, amount, updatedAt, suppress
   updatedAt = tonumber(updatedAt) or Now()
   local existing = self:GetShinobiDutyRepBonusEntry(shortName)
   local activeWipeVersion = (LeafVE_GlobalDB and tonumber(LeafVE_GlobalDB.fullWipeVersion)) or 0
-  if not recordAsGain and activeWipeVersion > 0 and updatedAt < activeWipeVersion then
-    return existing
-  end
+  -- v19.3.2: wipes are disabled, so rep updates are never discarded by wipe
+  -- version (with version 9999999999 this silently dropped every rep sync).
   local existingAmount = math.max(0, tonumber(existing and existing.amount) or 0)
   local trackingBefore = self:GetBannerRepTrackingRecord(shortName, false)
   local hadTrackingBaseline = type(trackingBefore) == "table" and trackingBefore.initialized == true
@@ -6757,6 +6756,28 @@ local function PruneLeaderboardForCurrentWipe()
   end
 end
 
+-- v19.3.2 Ember restore. LeafVE_EmberRestore (end of Core\Constants.lua)
+-- holds each member's lifetime Ashen Embers from the Nov 15 2026 backup, keyed
+-- by lowercase name. A snapshot below that backup comes from a client that was
+-- wiped and has not updated yet: add the backup on top of what it earned since.
+-- An updated client already reports backup + new points, so nothing is added.
+function LVE_GetEmberRestoreEntry(name)
+  if type(LeafVE_EmberRestore) ~= "table" or not name then return nil end
+  local r = LeafVE_EmberRestore[string.lower(name)]
+  if type(r) ~= "table" then return nil end
+  return r
+end
+
+function LVE_ApplyEmberRestoreFloor(name, L, G, S)
+  local r = LVE_GetEmberRestoreEntry(name)
+  if not r then return L, G, S end
+  local rL, rG, rS = tonumber(r.L) or 0, tonumber(r.G) or 0, tonumber(r.S) or 0
+  if (L + G + S) < (rL + rG + rS) then
+    return L + rL, G + rG, S + rS
+  end
+  return L, G, S
+end
+
 local function StoreLifetimeSnapshot(name, L, G, S, sourceName, authoritative, overwriteSharedCache)
   EnsureDB()
   name = ShortName(name)
@@ -6765,6 +6786,7 @@ local function StoreLifetimeSnapshot(name, L, G, S, sourceName, authoritative, o
   L = tonumber(L) or 0
   G = tonumber(G) or 0
   S = tonumber(S) or 0
+  L, G, S = LVE_ApplyEmberRestoreFloor(name, L, G, S)
   if (L + G + S) <= 0 then return end
 
   LeafVE_DB.lboard.alltime[name] = {L = L, G = G, S = S}
@@ -7129,6 +7151,10 @@ function LeafVE:MergeSharedLeaderboardIntoLocal()
   local wk = WeekKey()
 
   for name, entry in pairs(cache.alltime or {}) do
+    if type(entry) == "table" then
+      local fL, fG, fS = LVE_ApplyEmberRestoreFloor(name, tonumber(entry.L) or 0, tonumber(entry.G) or 0, tonumber(entry.S) or 0)
+      entry = {L = fL, G = fG, S = fS}
+    end
     if LboardEntryTotal(entry) > LboardEntryTotal(LeafVE_DB.lboard.alltime[name]) then
       LeafVE_DB.lboard.alltime[name] = {
         L = entry.L or 0,
@@ -7965,6 +7991,8 @@ local function LVE_StampTodayLoginAsHandled()
 end
 
 local function LVE_ApplyFullWipeVersion(wipeVersion, announceMessage)
+  -- v19.3.2: full wipes are disabled; never erase points, history or reputation.
+  do return false end
   wipeVersion = tonumber(wipeVersion) or 0
   if wipeVersion <= 0 then return false end
 
@@ -7983,6 +8011,10 @@ local function LVE_ApplyFullWipeVersion(wipeVersion, announceMessage)
 end
 
 local function ShouldApplyIncomingWipeVersion(incomingVersion)
+  -- v19.3.2: guild-wide full wipes are permanently disabled. A forged/stray
+  -- FULL_WIPE (version 9999999999, Nov 2026) erased everyone's lifetime Ashen
+  -- Embers. Lifetime Embers must never be wiped, so no wipe version is ever applied.
+  do return false end
   incomingVersion = tonumber(incomingVersion) or 0
   if incomingVersion <= 0 then return false end
   local localVersion = (LeafVE_GlobalDB and tonumber(LeafVE_GlobalDB.fullWipeVersion)) or 0
@@ -7992,6 +8024,7 @@ local function ShouldApplyIncomingWipeVersion(incomingVersion)
 end
 
 function LeafVE:BroadcastFullWipeVersion(wipeVersion)
+  do return end -- v19.3.2: full wipes are disabled; never relay a wipe.
   if not InGuild() then return end
   local version = tonumber(wipeVersion) or ((LeafVE_GlobalDB and LeafVE_GlobalDB.fullWipeVersion) or 0)
   if version and version > 0 then
@@ -8016,6 +8049,7 @@ local function BuildGuildInfoTextWithWipeMarker(infoText, wipeVersion)
 end
 
 function LeafVE:PublishGuildWipeMarker(wipeVersion)
+  do return false, "disabled" end -- v19.3.2: full wipes are disabled.
   if not wipeVersion or wipeVersion <= 0 then return false, "invalid_version" end
   if not InGuild() then return false, "not_in_guild" end
   if not GetGuildInfoText or not SetGuildInfoText then
@@ -8034,6 +8068,7 @@ function LeafVE:PublishGuildWipeMarker(wipeVersion)
 end
 
 function LeafVE:ApplyGuildWipeMarkerIfNeeded()
+  do return false end -- v19.3.2: guild-info wipe markers are ignored.
   EnsureDB()
   if not InGuild() then return false end
   if not GetGuildInfoText then return false end
@@ -8091,6 +8126,10 @@ end
 
 -- Admin-only full wipe. This is the sole guild-wide reset path.
 function LeafVE:ExecuteAdminFullDataWipe()
+  do
+    Print("|cFFFFAA00[LVL]|r The guild-wide full data wipe has been removed. Lifetime Ashen Embers are never wiped.")
+    return
+  end
   if not self:IsAdminRank() then
 Print("|cFFFF4444Access denied: only Flame / Flame Keeper can perform a full data wipe.|r")
     return
@@ -8112,6 +8151,48 @@ Print("|cFFFF4444Access denied: only Flame / Flame Keeper can perform a full dat
     LeafVE.UI:Refresh()
   end
   Print("|cFFFF2222[LVL]|r Full data wipe complete for all guild members.")
+end
+
+-- v19.3.2: one-time restore after the stray guild-wide wipe (version 9999999999).
+--  * Own lifetime Embers: if below the Nov 15 backup (i.e. wiped), add the
+--    backup on top of everything earned since. Never lowers anything.
+--  * Banner reputation (current): refill missing entries from the Nov 15 backup
+--    (LeafVE_RepRestore). Newer synced values still win by updatedAt.
+function LeafVE:ApplyEmberRestore20261115()
+  EnsureDB()
+  local me = ShortName(UnitName("player"))
+  if me and not LeafVE_DB.emberRestore20261115 then
+    local r = LVE_GetEmberRestoreEntry(me)
+    if r then
+      local rL, rG, rS = tonumber(r.L) or 0, tonumber(r.G) or 0, tonumber(r.S) or 0
+      local cur = EnsurePointEntryCurrentBucket(LeafVE_DB.alltime, me)
+      local curTotal = (cur.L or 0) + (cur.G or 0) + (cur.S or 0)
+      -- Below the backup means the wipe hit this character: add the backup on top.
+      -- At or above it means it was not wiped or is already restored: leave it.
+      if curTotal < (rL + rG + rS) then
+        cur.L = (cur.L or 0) + rL
+        cur.G = (cur.G or 0) + rG
+        cur.S = (cur.S or 0) + rS
+        LeafVE_DB.alltime[me] = cur
+        StoreLifetimeSnapshot(me, cur.L, cur.G, cur.S, me, true, true)
+        Print("|cFFFFD700[LVL]|r Your lifetime Ashen Embers were restored from the Nov 15 backup ("
+          .. tostring(math.floor(cur.L + cur.G + cur.S)) .. " total).")
+      end
+    end
+    LeafVE_DB.emberRestore20261115 = Now()
+  end
+
+  if type(LeafVE_RepRestore) == "table" and not LeafVE_GlobalDB.repRestore20261115 then
+    for key, r in pairs(LeafVE_RepRestore) do
+      if type(r) == "table" and (tonumber(r.amount) or 0) > 0 then
+        local existing = self:GetShinobiDutyRepBonusEntry(r.name or key)
+        if (tonumber(existing and existing.amount) or 0) <= 0 then
+          self:StoreShinobiDutyRepBonus(r.name or key, r.amount, r.updatedAt, true, false)
+        end
+      end
+    end
+    LeafVE_GlobalDB.repRestore20261115 = Now()
+  end
 end
 
 -- Confirmation popup for the per-user "Reset All Data" feature.
@@ -16517,12 +16598,8 @@ function LeafVE:OnAddonMessage(prefix, message, channel, sender)
         localWipeVersion = effectiveLocalVersion
       end
       -- Ignore snapshots that do not match the now-active wipe version.
-      if incomingWipeVersion ~= localWipeVersion then
-        return
-      end
-    elseif effectiveLocalVersion > 0 then
-      -- We have wipe-versioned data locally; ignore legacy snapshots without FW.
-      return
+      -- v19.3.2: wipes are disabled, so a different FW: version is no reason
+      -- to drop a guildmate's snapshot.
     end
     if lboardData == "" then
       return
@@ -48462,13 +48539,9 @@ function LeafVE_OnEventBody()
       end
       LeafVE_DB.migratedTriggerHistory = true
     end
-    -- Apply a pending full data wipe (all points/badges/history) for offline members
-    if ShouldApplyIncomingWipeVersion(LeafVE_GlobalDB.fullWipeVersion or 0) then
-      LVE_ApplyFullWipeVersion(
-        LeafVE_GlobalDB.fullWipeVersion or 0,
-        "|cFFFFD700[LVL]|r Your Ashen Embers data was reset by a guild admin. Welcome to the new season!"
-      )
-    end
+    -- v19.3.2: the offline "pending full wipe" step is gone. Instead, restore
+    -- what the stray Nov 2026 wipe erased.
+    LeafVE:ApplyEmberRestore20261115()
     local bannerRepPlayer = ShortName(UnitName("player"))
     if bannerRepPlayer then
       local bannerRepEntry = LeafVE:GetShinobiDutyRepBonusEntry(bannerRepPlayer)
